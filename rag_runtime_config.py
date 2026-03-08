@@ -11,6 +11,10 @@ STORE_ROOT = BASE_DIR / "stores"
 USE_OPENAI = False
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
+# ===== 分块参数 =====
+CHUNK_SIZE = 600
+CHUNK_OVERLAP = 150
+
 # ===== 输出与调试 =====
 DEBUG = False
 DEFAULT_MODE = "brief"   # brief / full

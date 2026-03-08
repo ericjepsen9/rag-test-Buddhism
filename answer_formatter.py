@@ -25,11 +25,20 @@ def format_structured_answer(
 
     if evidence:
         out.append("依据：")
+        seen_sources = set()
         for ev in evidence[:6]:
             source_file = ev.get("meta", {}).get("source_file", "unknown")
             chunk = ev.get("meta", {}).get("chunk_id", "?")
             stype = ev.get("meta", {}).get("source_type", "unknown")
-            out.append(f"- 来源文件：{source_file}｜段落：{chunk}｜类型：{stype}")
+            kepan = ev.get("kepan_breadcrumb") or ev.get("meta", {}).get("kepan_breadcrumb", "")
+            if kepan:
+                source_key = f"{source_file}|{kepan}"
+                if source_key in seen_sources:
+                    continue
+                seen_sources.add(source_key)
+                out.append(f"- 来源：{source_file}｜科判：{kepan}｜段落：{chunk}")
+            else:
+                out.append(f"- 来源文件：{source_file}｜段落：{chunk}｜类型：{stype}")
 
     out.append("提示：")
     out.append(f"- {REFERENCE_NOTE}")

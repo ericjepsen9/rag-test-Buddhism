@@ -124,7 +124,12 @@ def detect_route(question: str) -> str:
 def build_evidence(hits: List[Dict]) -> List[Dict]:
     ev = []
     for h in hits[:6]:
-        ev.append({"meta": h.get("meta", {})})
+        meta = h.get("meta", {})
+        entry = {"meta": meta}
+        # 如果有科判面包屑，加入 evidence 以便格式化时引用
+        if meta.get("kepan_breadcrumb"):
+            entry["kepan_breadcrumb"] = meta["kepan_breadcrumb"]
+        ev.append(entry)
     return ev
 
 

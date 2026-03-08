@@ -1,5 +1,105 @@
 import re
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
+
+
+# ===== 科判（层级大纲标记）解析 =====
+# 佛教论典常用的层级编号：甲一 > 乙一 > 丙一 > 丁一 > 戊一 > 己一 > 庚一 > 辛一 > 壬一 > 癸一
+_KEPAN_TIAN_GAN = "甲乙丙丁戊己庚辛壬癸"
+_KEPAN_NUM = "一二三四五六七八九十"
+
+# 匹配科判标记，如 "甲一"、"乙二（论义）"、"丙一（真实宣说）分三"
+_KEPAN_RE = re.compile(
+    r'^(' + '|'.join(_KEPAN_TIAN_GAN) + ')([' + _KEPAN_NUM + r']+)'
+    r'(?:[、，\s（(].*)?$'
+)
+
+# 简单编号匹配（一、二、三...）
+_SIMPLE_NUM_RE = re.compile(r'^[' + _KEPAN_NUM + r']+、')
+
+
+def kepan_level(marker_char: str) -> int:
+    """返回科判层级，甲=0, 乙=1, 丙=2..."""
+    idx = _KEPAN_TIAN_GAN.find(marker_char)
+    return idx if idx >= 0 else -1
+
+
+def parse_kepan_marker(line: str) -> Optional[Dict]:
+    """解析一行文本，如果是科判标记则返回信息字典"""
+    line = line.strip()
+    m = _KEPAN_RE.match(line)
+    if not m:
+        return None
+    gan = m.group(1)       # 如 "甲"
+    num = m.group(2)       # 如 "一"
+    level = kepan_level(gan)
+    return {
+        "level": level,
+        "marker": f"{gan}{num}",
+        "full_line": line,
+        "title": line,
+    }
+
+
+def split_by_kepan(text: str) -> List[Dict]:
+    """
+    按科判标记切分文本。
+    返回列表，每项包含:
+      - title: 科判标题行
+      - level: 层级深度
+      - marker: 如 "甲一"
+      - breadcrumb: 完整层级路径，如 "甲二（论义）> 乙一（入造论之理）> 丙一（真实宣说）"
+      - body: 该科判下的正文内容
+    如果文本不含科判，返回空列表。
+    """
+    lines = text.split("\n")
+    sections = []
+    # 维护层级栈：stack[level] = title
+    stack = {}
+
+    current = None
+    body_lines = []
+
+    def flush():
+        nonlocal current, body_lines
+        if current is not None:
+            current["body"] = "\n".join(body_lines).strip()
+            sections.append(current)
+            body_lines = []
+
+    for line in lines:
+        info = parse_kepan_marker(line)
+        if info:
+            flush()
+            level = info["level"]
+            # 更新层级栈：清除同级及更深的层级
+            for k in list(stack.keys()):
+                if k >= level:
+                    del stack[k]
+            stack[level] = info["title"]
+            # 构建面包屑路径
+            breadcrumb_parts = []
+            for k in sorted(stack.keys()):
+                breadcrumb_parts.append(stack[k])
+            current = {
+                "title": info["title"],
+                "level": level,
+                "marker": info["marker"],
+                "breadcrumb": " > ".join(breadcrumb_parts),
+            }
+            body_lines = []
+        else:
+            body_lines.append(line)
+
+    flush()
+    return sections
+
+
+def has_kepan_structure(text: str) -> bool:
+    """检查文本是否包含科判结构"""
+    for line in text.split("\n")[:200]:
+        if parse_kepan_marker(line.strip()):
+            return True
+    return False
 
 
 def normalize_text(text: str) -> str:
@@ -76,6 +176,12 @@ _BUDDHIST_VOCAB = {
     "阿弥陀佛", "极乐世界", "白马寺", "鸠摩罗什", "玄奘", "达摩", "慧能",
     "龙树", "宗喀巴", "人间佛教", "大悲咒", "楞严咒", "六字大明咒",
     "苦谛", "集谛", "灭谛", "道谛", "色即是空", "应无所住",
+    # 入菩萨行论及论典常见术语
+    "入菩萨行论", "寂天", "善说海", "无著菩萨",
+    "菩萨戒", "律仪", "暇满", "人身难得", "发心", "回向",
+    "安忍", "静虑", "智慧品", "不放逸", "正知正念",
+    "礼赞句", "立誓句", "善逝", "法身", "佛子",
+    "科判", "品", "偈颂", "颂词", "注释",
 }
 
 
