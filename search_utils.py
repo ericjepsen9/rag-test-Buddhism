@@ -1098,28 +1098,97 @@ def tokenize_chinese(text: str) -> List[str]:
     return tokens
 
 
-def keyword_score(query: str, text: str) -> float:
+import math
+
+# BM25 参数
+_BM25_K1 = 1.2   # 词频饱和参数
+_BM25_B = 0.75   # 文档长度归一化参数
+
+
+def _count_term(term: str, text: str) -> int:
+    """统计 term 在 text 中的出现次数"""
+    count = 0
+    start = 0
+    while True:
+        idx = text.find(term, start)
+        if idx == -1:
+            break
+        count += 1
+        start = idx + len(term)
+    return count
+
+
+def keyword_score_bm25(query: str, text: str, avg_dl: float, n_docs: int,
+                       doc_freq: Dict[str, int]) -> float:
+    """BM25 评分：考虑词频、文档长度和逆文档频率"""
     q_tokens = tokenize_chinese(query.lower())
     if not q_tokens:
         return 0.0
+    # 去重 tokens 以避免重叠 n-gram 导致的重复计分
+    q_tokens = list(dict.fromkeys(q_tokens))
     t_lower = (text or "").lower()
-    hit = 0
+    dl = len(t_lower)
+    if dl == 0 or avg_dl == 0:
+        return 0.0
+
+    score = 0.0
     for term in q_tokens:
-        if term in t_lower:
-            hit += 1
-    return hit / max(len(q_tokens), 1)
+        tf = _count_term(term, t_lower)
+        if tf == 0:
+            continue
+        df = doc_freq.get(term, 0)
+        # IDF: log((N - df + 0.5) / (df + 0.5) + 1)
+        idf = math.log((n_docs - df + 0.5) / (df + 0.5) + 1.0)
+        # BM25 TF 归一化
+        tf_norm = (tf * (_BM25_K1 + 1)) / (tf + _BM25_K1 * (1 - _BM25_B + _BM25_B * dl / avg_dl))
+        score += idf * tf_norm
+
+    return score
 
 
 def keyword_search(query: str, docs: List[Dict], top_k: int = 8) -> List[Dict]:
-    scored = []
+    """BM25 关键词搜索"""
+    if not docs:
+        return []
+
+    q_tokens = list(dict.fromkeys(tokenize_chinese(query.lower())))
+    if not q_tokens:
+        return []
+
+    # 预计算：文档频率和平均文档长度
+    n_docs = len(docs)
+    total_len = 0
+    doc_freq: Dict[str, int] = {}
+    doc_texts = []
     for d in docs:
-        score = keyword_score(query, d.get("text", ""))
+        t = (d.get("text", "") or "").lower()
+        doc_texts.append(t)
+        total_len += len(t)
+        seen_terms = set()
+        for term in q_tokens:
+            if term in t and term not in seen_terms:
+                doc_freq[term] = doc_freq.get(term, 0) + 1
+                seen_terms.add(term)
+    avg_dl = total_len / max(n_docs, 1)
+
+    scored = []
+    for i, d in enumerate(docs):
+        score = keyword_score_bm25(query, doc_texts[i], avg_dl, n_docs, doc_freq)
         if score <= 0:
             continue
         x = dict(d)
         x["keyword_score"] = score
         scored.append(x)
+
     scored.sort(key=lambda x: x.get("keyword_score", 0.0), reverse=True)
+
+    # 归一化到 0-1 范围（与向量分数可比）
+    if scored:
+        max_score = scored[0].get("keyword_score", 1.0)
+        if max_score > 0:
+            for x in scored:
+                x["keyword_score"] = x["keyword_score"] / max_score
+
     return scored[:top_k]
 
 
@@ -1164,16 +1233,62 @@ def detect_terms(question: str, term_map: Dict[str, List[str]]) -> List[str]:
     return uniq(found)
 
 
-def match_faq(question: str, faq_text: str, faq_keyword_map: Dict[str, str]) -> str:
-    """尝试精确匹配 FAQ 问答对，命中则直接返回答案"""
+def _load_alias_map(alias_text: str) -> Dict[str, List[str]]:
+    """从 alias.txt 构建 {别名: [主词, 其他别名...]} 的映射"""
+    alias_map: Dict[str, List[str]] = {}
+    if not alias_text:
+        return alias_map
+    for line in alias_text.strip().split("\n"):
+        terms = line.strip().split()
+        if len(terms) < 2:
+            continue
+        for t in terms:
+            alias_map[t] = terms
+    return alias_map
+
+
+def _normalize_for_faq(text: str) -> str:
+    """归一化文本用于 FAQ 匹配：去空格、统一标点"""
+    t = (text or "").strip().lower()
+    t = re.sub(r'\s+', '', t)  # 去掉所有空白
+    # 统一常见标点
+    t = t.replace('？', '').replace('?', '').replace('，', '').replace(',', '')
+    t = t.replace('。', '').replace('.', '').replace('！', '').replace('!', '')
+    return t
+
+
+def match_faq(question: str, faq_text: str, faq_keyword_map: Dict[str, str],
+              alias_text: str = "") -> str:
+    """尝试匹配 FAQ 问答对，支持别名扩展和文本归一化"""
     if not faq_text:
         return ""
     q = (question or "").strip()
+    q_norm = _normalize_for_faq(q)
 
-    # 找到最匹配的 FAQ 关键词
+    # 构建别名映射，将问题中的词扩展为所有别名
+    alias_map = _load_alias_map(alias_text)
+    expanded_keywords = set()
+    for keyword in faq_keyword_map.keys():
+        expanded_keywords.add(keyword)
+        # 加入该关键词的所有别名
+        if keyword in alias_map:
+            for alias in alias_map[keyword]:
+                expanded_keywords.add(alias)
+
+    # 构建 {扩展关键词 -> 原始topic} 的完整映射
+    expanded_map: Dict[str, str] = {}
+    for keyword, topic in faq_keyword_map.items():
+        expanded_map[keyword] = topic
+        if keyword in alias_map:
+            for alias in alias_map[keyword]:
+                if alias not in expanded_map:
+                    expanded_map[alias] = topic
+
+    # 按长度降序匹配（长的优先，避免短子串误匹配）
     matched_topic = None
-    for keyword, topic in sorted(faq_keyword_map.items(), key=lambda x: len(x[0]), reverse=True):
-        if keyword in q:
+    for keyword, topic in sorted(expanded_map.items(), key=lambda x: len(x[0]), reverse=True):
+        # 同时检查原始问题和归一化后的问题
+        if keyword in q or keyword in q_norm:
             matched_topic = topic
             break
 

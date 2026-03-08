@@ -17,7 +17,8 @@ from rag_runtime_config import (
     KNOWLEDGE_DIR, STORE_ROOT, DEFAULT_MODE, DEFAULT_TOP_K,
     USE_OPENAI, OPENAI_MODEL, DEBUG, QUESTION_ROUTES, SECTION_RULES,
     PRODUCT_ALIASES, PROJECT_ALIASES, VECTOR_TOP_K, KEYWORD_TOP_K,
-    HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, FAQ_KEYWORD_MAP
+    HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, FAQ_KEYWORD_MAP,
+    SCORE_THRESHOLD
 )
 from search_utils import (
     normalize_text, normalize_lines, uniq, is_faq_line, section_block,
@@ -133,18 +134,41 @@ def build_evidence(hits: List[Dict]) -> List[Dict]:
     return ev
 
 
+def filter_by_score(hits: List[Dict], threshold: float = None) -> List[Dict]:
+    """过滤低于分数阈值的检索结果"""
+    if threshold is None:
+        threshold = SCORE_THRESHOLD
+    return [h for h in hits if h.get("hybrid_score", h.get("score", 0.0)) >= threshold]
+
+
 def extract_chunks_as_context(hits: List[Dict], max_chunks: int = 6) -> str:
-    """从检索结果中提取完整 chunk 文本作为 LLM 上下文"""
+    """从检索结果中提取 chunk 文本 + 来源元数据作为 LLM 上下文"""
     if not hits:
         return ""
     chunks = []
     seen = set()
-    for h in hits[:max_chunks]:
+    for idx, h in enumerate(hits[:max_chunks], 1):
         text = h.get("text", "").strip()
         if not text or text in seen:
             continue
         seen.add(text)
-        chunks.append(text)
+        # 构建来源标签
+        meta = h.get("meta", {})
+        source = meta.get("source_file", "")
+        kepan = meta.get("kepan_breadcrumb", "")
+        section = meta.get("section_title", "")
+        ctype = meta.get("content_type", "")
+        label_parts = []
+        if source:
+            label_parts.append(source)
+        if kepan:
+            label_parts.append(f"科判：{kepan}")
+        elif section:
+            label_parts.append(f"章节：{section}")
+        if ctype:
+            label_parts.append(f"类型：{ctype}")
+        label = "｜".join(label_parts) if label_parts else f"段落{idx}"
+        chunks.append(f"[来源{idx}：{label}]\n{text}")
     return "\n\n---\n\n".join(chunks)
 
 
@@ -219,9 +243,10 @@ def answer_one(question: str, mode: str) -> str:
     route = detect_route(question)
     rewrite = rewrite_query(question)
 
-    # 1. 尝试 FAQ 精确匹配
+    # 1. 尝试 FAQ 精确匹配（带别名扩展）
     faq_text = read_knowledge_file(product, "faq.txt")
-    faq_answer = match_faq(question, faq_text, FAQ_KEYWORD_MAP)
+    alias_text = read_knowledge_file(product, "alias.txt")
+    faq_answer = match_faq(question, faq_text, FAQ_KEYWORD_MAP, alias_text)
     if faq_answer:
         return format_structured_answer(route, [faq_answer], [], add_risk_note=False)
 
@@ -230,6 +255,9 @@ def answer_one(question: str, mode: str) -> str:
     _, docs = load_store(product)
     keyword_hits = keyword_search(rewrite["expanded"], docs, KEYWORD_TOP_K) if docs else []
     hits = merge_hybrid(vector_hits, keyword_hits, HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, DEFAULT_TOP_K) if (vector_hits or keyword_hits) else []
+
+    # 过滤低分结果，减少噪音和幻觉风险
+    hits = filter_by_score(hits)
 
     if not hits:
         fallback = [
@@ -282,10 +310,12 @@ def openai_rag_generate(question: str, context: str, route: str) -> str:
             "你是一个佛教知识问答助手。请严格基于以下【参考资料】回答用户的问题。\n"
             "规则：\n"
             "1. 只使用参考资料中的内容回答，不要编造或添加资料中没有的信息\n"
-            "2. 如果参考资料不足以完整回答问题，请如实说明哪些部分无法回答\n"
+            "2. 如果参考资料不足以完整回答问题，明确说「根据现有资料无法回答这一部分」\n"
             "3. 回答要条理清晰、准确专业\n"
             "4. 适当引用经典原文（如果参考资料中有的话）\n"
-            "5. 回答末尾加上：「以上内容基于佛教经典与传统教义整理，仅供学习参考。」\n"
+            "5. 每个关键论点后用 [来源N] 标注出处，N 对应参考资料的编号\n"
+            "6. 如果不同来源有矛盾，指出差异而非只取一方\n"
+            "7. 回答末尾加上：「以上内容基于佛教经典与传统教义整理，仅供学习参考。」\n"
         )
 
         user_prompt = (
