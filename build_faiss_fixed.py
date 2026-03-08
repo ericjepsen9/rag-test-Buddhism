@@ -225,7 +225,13 @@ def build_for_product(product_id: str):
         print("请先创建目录结构，例如 knowledge/buddhism/main.txt")
         return
 
+    # 固定文件 + 自动发现额外 .txt 文件
+    fixed_names = {"main.txt", "faq.txt", "alias.txt"}
     parts = [("main", pdir / "main.txt"), ("faq", pdir / "faq.txt"), ("alias", pdir / "alias.txt")]
+    for txt_file in sorted(pdir.glob("*.txt")):
+        if txt_file.name not in fixed_names:
+            part_name = txt_file.stem  # e.g. "ruxinglun"
+            parts.append((part_name, txt_file))
     records: List[Dict[str, Any]] = []
 
     for part, fp in parts:
