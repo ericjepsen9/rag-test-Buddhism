@@ -76,10 +76,12 @@ def health():
 
 @app.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest):
+    if not req.question or not req.question.strip():
+        return AskResponse(ok=False, answer="请输入问题。", route="")
     try:
         from rag_answer import answer_question, detect_route
-        answer = answer_question(req.question, req.mode)
         route = detect_route(req.question)
+        answer = answer_question(req.question, req.mode)
         media = [MediaItem(**m) for m in find_media(req.question)]
         debug = None
         if req.debug:

@@ -82,8 +82,17 @@ def rebuild(req: RebuildRequest) -> Dict[str, Any]:
             env=env,
             shell=False,
         )
+        success = proc.returncode == 0
+        # 重建成功后清理内存缓存，下次查询自动加载新索引
+        if success:
+            try:
+                from rag_answer import _store_cache, _store_mtime
+                _store_cache.pop(req.product, None)
+                _store_mtime.pop(req.product, None)
+            except ImportError:
+                pass
         return {
-            "ok": proc.returncode == 0,
+            "ok": success,
             "cmd": cmd,
             "return_code": proc.returncode,
             "stdout": (proc.stdout or "")[-4000:],
