@@ -248,7 +248,12 @@ def answer_one(question: str, mode: str) -> str:
     alias_text = read_knowledge_file(product, "alias.txt")
     faq_answer = match_faq(question, faq_text, FAQ_KEYWORD_MAP, alias_text)
     if faq_answer:
-        return format_structured_answer(route, [faq_answer], [], add_risk_note=False)
+        faq_evidence = [{"meta": {
+            "source_file": "faq.txt",
+            "source_type": "faq",
+            "chunk_id": "faq_match",
+        }}]
+        return format_structured_answer(route, [faq_answer], faq_evidence, add_risk_note=False)
 
     # 2. 向量 + 关键词混合检索
     vector_hits = vector_search(product, rewrite["expanded"], VECTOR_TOP_K)

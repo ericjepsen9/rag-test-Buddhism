@@ -1,3 +1,4 @@
+import math
 import re
 from typing import List, Dict, Tuple, Optional
 
@@ -367,6 +368,9 @@ def detect_content_type(text: str) -> str:
     检测佛教内容的类型。
     返回: "kepan" | "pin" | "ritual" | "qa" | "gongan" | "commentary" |
           "verse_collection" | "letter" | "talk" | "method" | "article" | "plain"
+
+    阈值自适应：根据采样行数动态调整，避免长文档误判。
+    短文档（<100行）使用固定最小阈值，长文档要求更高的标记密度。
     """
     if has_kepan_structure(text):
         return "kepan"
@@ -374,7 +378,9 @@ def detect_content_type(text: str) -> str:
         return "pin"
 
     lines = text.split("\n")
-    sample_lines = [l.strip() for l in lines[:300] if l.strip()]
+    # 扩大采样范围到 500 行，更好地覆盖长文档
+    sample_lines = [l.strip() for l in lines[:500] if l.strip()]
+    n = len(sample_lines)
 
     ritual_count = 0
     topic_count = 0
@@ -409,32 +415,37 @@ def detect_content_type(text: str) -> str:
         if _LETTER_RE.match(line):
             letter_count += 1
 
-    # 仪轨类：多个仪轨标记
-    if ritual_count >= 3:
+    def adaptive_threshold(min_count: int, density: float) -> int:
+        """自适应阈值：max(固定最小值, 采样行数 * 密度比例)"""
+        return max(min_count, int(n * density))
+
+    # 仪轨类：标记密度 >= 1%，至少3个
+    if ritual_count >= adaptive_threshold(3, 0.01):
         return "ritual"
-    # 问答体：问答成对出现
-    if qa_q_count >= 2 and qa_a_count >= 2:
+    # 问答体：问答成对出现，各至少2个，密度 >= 0.5%
+    qa_thresh = adaptive_threshold(2, 0.005)
+    if qa_q_count >= qa_thresh and qa_a_count >= qa_thresh:
         return "qa"
-    # 公案/语录体：多个对话标记
-    if gongan_count >= 3:
+    # 公案/语录体：密度 >= 1%，至少3个
+    if gongan_count >= adaptive_threshold(3, 0.01):
         return "gongan"
-    # 注疏体：大量引用+解释交替
-    if commentary_count >= 4:
+    # 注疏体：密度 >= 1.5%，至少4个
+    if commentary_count >= adaptive_threshold(4, 0.015):
         return "commentary"
-    # 偈颂集：大量等长短句
-    if verse_count >= 6 and verse_count > len(sample_lines) * 0.3:
+    # 偈颂集：至少6行且占采样行数 20%（从30%降低，更合理）
+    if verse_count >= 6 and verse_count > n * 0.2:
         return "verse_collection"
-    # 书信体：有称谓或落款
+    # 书信体：有称谓或落款（保持不变，1个即可）
     if letter_count >= 1:
         return "letter"
-    # 方法指导类：步骤/要点标记
-    if step_count >= 3:
+    # 方法指导类：密度 >= 1%，至少3个
+    if step_count >= adaptive_threshold(3, 0.01):
         return "method"
-    # 演讲/开示类：话题转换标记
-    if topic_count >= 2:
+    # 演讲/开示类：密度 >= 0.5%，至少2个
+    if topic_count >= adaptive_threshold(2, 0.005):
         return "talk"
-    # 文章类：有小节标题
-    if heading_count >= 3:
+    # 文章类：密度 >= 1%，至少3个
+    if heading_count >= adaptive_threshold(3, 0.01):
         return "article"
 
     return "plain"
@@ -1079,26 +1090,36 @@ _BUDDHIST_VOCAB = {
 
 
 def tokenize_chinese(text: str) -> List[str]:
-    """轻量中文分词：先匹配佛教术语词典，再按 2-4 gram 切分"""
+    """轻量中文分词：先匹配佛教术语词典，再按 bigram 补充未覆盖部分"""
     text = (text or "").strip()
     if not text:
         return []
     tokens = []
-    # 1. 匹配词典中的术语
+    seen = set()
+    # 1. 匹配词典中的术语（长词优先，消除已覆盖的字符）
+    remaining = text.lower()
     for term in sorted(_BUDDHIST_VOCAB, key=len, reverse=True):
-        if term in text:
-            tokens.append(term)
+        if term in remaining:
+            if term not in seen:
+                tokens.append(term)
+                seen.add(term)
+            # 标记已覆盖的位置，避免 bigram 重复覆盖
+            remaining = remaining.replace(term, "\x00" * len(term))
     # 2. 提取非中文的完整词（英文、数字等）
     for m in re.finditer(r"[a-zA-Z0-9]+", text):
-        tokens.append(m.group().lower())
-    # 3. 提取中文 bigram 作为补充
-    chinese_chars = re.findall(r"[\u4e00-\u9fff]", text)
+        w = m.group().lower()
+        if w not in seen:
+            tokens.append(w)
+            seen.add(w)
+    # 3. 只对未被词典覆盖的部分提取 bigram
+    chinese_chars = re.findall(r"[\u4e00-\u9fff]", remaining)
     for i in range(len(chinese_chars) - 1):
-        tokens.append(chinese_chars[i] + chinese_chars[i + 1])
+        bigram = chinese_chars[i] + chinese_chars[i + 1]
+        if bigram not in seen:
+            tokens.append(bigram)
+            seen.add(bigram)
     return tokens
 
-
-import math
 
 # BM25 参数
 _BM25_K1 = 1.2   # 词频饱和参数
