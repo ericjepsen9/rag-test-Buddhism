@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.pyo
+stores/
+logs/
+answer.txt
