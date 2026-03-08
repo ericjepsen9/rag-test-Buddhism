@@ -30,6 +30,7 @@ from answer_formatter import format_structured_answer
 _model = None
 _faiss = None
 _store_cache = {}  # 缓存已加载的 index + docs
+_store_mtime = {}  # 缓存文件修改时间，用于自动失效
 
 
 def get_faiss():
@@ -57,16 +58,20 @@ def embed_query(text: str) -> np.ndarray:
 
 
 def load_store(product: str):
-    """加载向量索引和文档，带缓存"""
-    if product in _store_cache:
-        return _store_cache[product]
+    """加载向量索引和文档，带基于 mtime 的缓存失效"""
     store_dir = STORE_ROOT / product
     index_path = store_dir / "index.faiss"
     docs_path = store_dir / "docs.jsonl"
     if not index_path.exists() or not docs_path.exists():
-        result = (None, [])
-        _store_cache[product] = result
-        return result
+        _store_cache[product] = (None, [])
+        _store_mtime.pop(product, None)
+        return _store_cache[product]
+    # 检查文件是否更新（重建索引后自动重新加载）
+    current_mtime = (index_path.stat().st_mtime, docs_path.stat().st_mtime)
+    if product in _store_cache and _store_mtime.get(product) == current_mtime:
+        return _store_cache[product]
+    if product in _store_cache and DEBUG:
+        print(f"[DEBUG] 重新加载 {product} 索引（文件已更新）")
     index = get_faiss().read_index(str(index_path))
     docs = []
     with docs_path.open("r", encoding="utf-8") as f:
@@ -76,6 +81,7 @@ def load_store(product: str):
                 docs.append(json.loads(line))
     result = (index, docs)
     _store_cache[product] = result
+    _store_mtime[product] = current_mtime
     return result
 
 
@@ -84,14 +90,23 @@ def vector_search(product: str, query: str, top_k: int) -> List[Dict]:
     if index is None or not docs:
         return []
     qv = embed_query(query)
+    # 维度校验：embedding 维度必须与索引一致
+    if qv.shape[1] != index.d:
+        if DEBUG:
+            print(f"[WARN] 向量维度不匹配：查询={qv.shape[1]}, 索引={index.d}")
+        return []
     scores, ids = index.search(qv, min(top_k, len(docs)))
     hits = []
+    invalid_count = 0
     for i, idx in enumerate(ids[0]):
         if idx < 0 or idx >= len(docs):
+            invalid_count += 1
             continue
         d = dict(docs[idx])
         d["score"] = float(scores[0][i])
         hits.append(d)
+    if invalid_count > 0 and DEBUG:
+        print(f"[WARN] 向量搜索跳过 {invalid_count} 个无效索引（索引可能与文档不同步）")
     return hits
 
 
@@ -333,7 +348,12 @@ def answer_one(question: str, mode: str) -> str:
         return llm_answer
 
     # 4. 无 LLM 时：向量检索结果直接作为答案段落（保留完整段落）
+    # 二次质量检查：过滤过短的段落（有效内容 <15 字的跳过）
     body_lines = extract_from_hits(hits, route, mode)
+    body_lines = [
+        p for p in body_lines
+        if len(re.sub(r"[\s\u3000，。、！？；：""''（）【】《》]", "", p)) >= 15
+    ]
 
     if not body_lines:
         # 兜底：章节提取

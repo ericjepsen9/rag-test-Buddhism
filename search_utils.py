@@ -1171,7 +1171,7 @@ def keyword_score_bm25(query: str, text: str, avg_dl: float, n_docs: int,
 
 
 def keyword_search(query: str, docs: List[Dict], top_k: int = 8) -> List[Dict]:
-    """BM25 关键词搜索"""
+    """BM25 关键词搜索（内存优化：不复制全量 doc_texts）"""
     if not docs:
         return []
 
@@ -1179,14 +1179,12 @@ def keyword_search(query: str, docs: List[Dict], top_k: int = 8) -> List[Dict]:
     if not q_tokens:
         return []
 
-    # 预计算：文档频率和平均文档长度
+    # 预计算：文档频率和平均文档长度（单次遍历，不存储 doc_texts）
     n_docs = len(docs)
     total_len = 0
     doc_freq: Dict[str, int] = {}
-    doc_texts = []
     for d in docs:
         t = (d.get("text", "") or "").lower()
-        doc_texts.append(t)
         total_len += len(t)
         seen_terms = set()
         for term in q_tokens:
@@ -1196,8 +1194,9 @@ def keyword_search(query: str, docs: List[Dict], top_k: int = 8) -> List[Dict]:
     avg_dl = total_len / max(n_docs, 1)
 
     scored = []
-    for i, d in enumerate(docs):
-        score = keyword_score_bm25(query, doc_texts[i], avg_dl, n_docs, doc_freq)
+    for d in docs:
+        doc_text = (d.get("text", "") or "").lower()
+        score = keyword_score_bm25(query, doc_text, avg_dl, n_docs, doc_freq)
         if score <= 0:
             continue
         x = dict(d)
@@ -1320,20 +1319,27 @@ def match_faq(question: str, faq_text: str, faq_keyword_map: Dict[str, str],
         return ""
 
     # 在 FAQ 文本中查找对应的 Q&A 对
+    # 同时用归一化后的 topic 进行匹配，提高容错
+    topic_norm = _normalize_for_faq(matched_topic)
     lines = faq_text.split("\n")
     for i, line in enumerate(lines):
         line_s = line.strip()
-        if line_s.startswith("【Q】") and matched_topic in line_s:
-            # 收集后续的 【A】 内容
-            answer_parts = []
-            for j in range(i + 1, len(lines)):
-                al = lines[j].strip()
-                if al.startswith("【Q】"):
-                    break
-                if al.startswith("【A】"):
-                    answer_parts.append(al[3:].strip())
-                elif al and answer_parts:
-                    answer_parts[-1] += " " + al
-            if answer_parts:
-                return "\n".join(answer_parts)
+        if line_s.startswith("【Q】"):
+            line_norm = _normalize_for_faq(line_s)
+            if matched_topic in line_s or topic_norm in line_norm:
+                # 收集后续的 【A】 内容
+                answer_parts = []
+                for j in range(i + 1, len(lines)):
+                    al = lines[j].strip()
+                    if al.startswith("【Q】"):
+                        break
+                    if al.startswith("【A】"):
+                        answer_parts.append(al[3:].strip())
+                    elif al and answer_parts:
+                        answer_parts[-1] += " " + al
+                if answer_parts:
+                    return "\n".join(answer_parts)
+    # 配置-数据不一致：关键词匹配到 topic 但 FAQ 中无对应条目
+    import sys
+    print(f"[WARN] FAQ 关键词映射到「{matched_topic}」但 faq.txt 中未找到对应【Q】条目", file=sys.stderr)
     return ""
