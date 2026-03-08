@@ -256,7 +256,8 @@ def _looks_like_verse_start(line: str, all_lines: List[str], idx: int) -> bool:
 
 
 # ===== 内容类型检测与分段 =====
-# 支持：演讲/开示、仪轨、方法指导、生活佛法等非论典格式
+# 支持：演讲/开示、仪轨、方法指导、生活佛法、问答体、公案语录、
+#       注疏体、偈颂集、书信体等非论典格式
 
 # 话题转换标记（演讲/开示类）
 _TOPIC_SHIFT_RE = re.compile(
@@ -304,11 +305,68 @@ _HEADING_RE = re.compile(
     r')'
 )
 
+# 问答体标记（问：...答：... 成对出现）
+_QA_QUESTION_RE = re.compile(
+    r'^(?:'
+    r'问[:：]|'
+    r'问题[:：]|'
+    r'(?:有人|弟子|居士|学员|某某|信众)(?:问|请问|启问)[:：]?|'
+    r'Q[:：]|'
+    r'【Q】|【问】'
+    r')'
+)
+_QA_ANSWER_RE = re.compile(
+    r'^(?:'
+    r'答[:：]|'
+    r'回答[:：]|'
+    r'(?:上师|法师|师父|堪布|仁波切|大师|和尚|长老)(?:答|回答|开示|说)[:：]?|'
+    r'A[:：]|'
+    r'【A】|【答】'
+    r')'
+)
+
+# 公案/语录体标记
+_GONGAN_RE = re.compile(
+    r'^(?:'
+    r'(?:师|祖|和尚)(?:云|曰|示众|上堂|问|答)|'
+    r'(?:僧|学人|弟子|一人)(?:问|云|曰)|'
+    r'举[:：]|颂[:：]|颂曰[:：]?|评唱[:：]|着语[:：]|'
+    r'(?:垂示|本则|评唱)[:：]?|'
+    r'公案|则\s*$'
+    r')'
+)
+
+# 注疏体标记（引用原文 + 解释）
+_COMMENTARY_QUOTE_RE = re.compile(
+    r'^(?:'
+    r'[「『"《]|'                         # 引号/书名号开头
+    r'(?:经|论|颂|偈)(?:云|曰|中说|言)[:：]?|'
+    r'(?:原文|正文|颂词|根本颂|论文)[:：]|'
+    r'(?:释|解|注|疏|讲|释义|解释|注释)[:：]'
+    r')'
+)
+
+# 偈颂集特征：连续短句、等长、以逗号/句号结尾
+_VERSE_COUPLET_RE = re.compile(
+    r'^[\u4e00-\u9fff]{3,12}[，,。．][\u4e00-\u9fff]{3,12}[，,。．、！]?\s*$'
+)
+
+# 书信体标记
+_LETTER_RE = re.compile(
+    r'^(?:'
+    r'.{1,10}(?:居士|法师|仁者|大德|道友|檀越|施主|长老)(?:慈鉴|鉴|尊鉴|道鉴|惠鉴|足下|法席)[：:]?|'
+    r'(?:复|答|与|致|上|覆).{1,10}(?:居士|法师|仁者)(?:书|函|启)|'
+    r'(?:谨复|敬覆|奉复|恭答)|'
+    r'(?:谨此|敬颂|即颂|此致|肃此)\s*(?:法安|道安|吉祥|如意|安好)'
+    r')'
+)
+
 
 def detect_content_type(text: str) -> str:
     """
     检测佛教内容的类型。
-    返回: "kepan" | "pin" | "ritual" | "talk" | "method" | "article" | "plain"
+    返回: "kepan" | "pin" | "ritual" | "qa" | "gongan" | "commentary" |
+          "verse_collection" | "letter" | "talk" | "method" | "article" | "plain"
     """
     if has_kepan_structure(text):
         return "kepan"
@@ -322,6 +380,12 @@ def detect_content_type(text: str) -> str:
     topic_count = 0
     step_count = 0
     heading_count = 0
+    qa_q_count = 0
+    qa_a_count = 0
+    gongan_count = 0
+    commentary_count = 0
+    verse_count = 0
+    letter_count = 0
 
     for line in sample_lines:
         if _RITUAL_MARKERS.search(line):
@@ -332,10 +396,37 @@ def detect_content_type(text: str) -> str:
             step_count += 1
         if _HEADING_RE.match(line):
             heading_count += 1
+        if _QA_QUESTION_RE.match(line):
+            qa_q_count += 1
+        if _QA_ANSWER_RE.match(line):
+            qa_a_count += 1
+        if _GONGAN_RE.match(line):
+            gongan_count += 1
+        if _COMMENTARY_QUOTE_RE.match(line):
+            commentary_count += 1
+        if _VERSE_COUPLET_RE.match(line):
+            verse_count += 1
+        if _LETTER_RE.match(line):
+            letter_count += 1
 
     # 仪轨类：多个仪轨标记
     if ritual_count >= 3:
         return "ritual"
+    # 问答体：问答成对出现
+    if qa_q_count >= 2 and qa_a_count >= 2:
+        return "qa"
+    # 公案/语录体：多个对话标记
+    if gongan_count >= 3:
+        return "gongan"
+    # 注疏体：大量引用+解释交替
+    if commentary_count >= 4:
+        return "commentary"
+    # 偈颂集：大量等长短句
+    if verse_count >= 6 and verse_count > len(sample_lines) * 0.3:
+        return "verse_collection"
+    # 书信体：有称谓或落款
+    if letter_count >= 1:
+        return "letter"
     # 方法指导类：步骤/要点标记
     if step_count >= 3:
         return "method"
@@ -505,6 +596,233 @@ def split_by_headings(text: str) -> List[Dict]:
             clean_title = re.sub(r'^#+\s*', '', stripped)
             clean_title = re.sub(r'^【(.+?)】.*', r'\1', clean_title)
             current_title = clean_title[:30]
+
+        body_lines.append(stripped)
+
+    flush()
+    return sections
+
+
+def split_by_qa(text: str) -> List[Dict]:
+    """
+    切分问答体文本。
+    每个"问+答"作为一个完整单元，不拆开。
+    支持：问：/答：、【Q】/【A】、弟子问/上师答 等格式。
+    """
+    lines = text.split("\n")
+    sections = []
+    current_title = "序"
+    body_lines = []
+    in_qa = False
+
+    def flush():
+        nonlocal current_title, body_lines, in_qa
+        body = "\n".join(body_lines).strip()
+        if body:
+            sections.append({"title": current_title, "body": body})
+        body_lines = []
+        in_qa = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            body_lines.append(line)
+            continue
+
+        is_q = _QA_QUESTION_RE.match(stripped)
+        if is_q and body_lines:
+            flush()
+            # 提取问题摘要作为标题
+            q_text = re.sub(r'^(?:问[:：]|【Q】|【问】)\s*', '', stripped)
+            current_title = f"问：{q_text[:25]}" if q_text else "问答"
+            in_qa = True
+
+        body_lines.append(stripped)
+
+    flush()
+    return sections
+
+
+def split_by_gongan(text: str) -> List[Dict]:
+    """
+    切分公案/语录体文本。
+    每则公案（含举、颂、评唱）作为一个单元。
+    禅宗语录按对话轮次分段。
+    """
+    lines = text.split("\n")
+    sections = []
+    current_title = "语录"
+    body_lines = []
+
+    # 公案起始标记
+    case_start_re = re.compile(
+        r'^(?:'
+        r'第?[一二三四五六七八九十百\d]+则|'
+        r'举[:：]|'
+        r'垂示[:：]|'
+        r'本则[:：]|'
+        r'师(?:上堂|示众|云|曰)[:：]?'
+        r')'
+    )
+
+    def flush():
+        nonlocal current_title, body_lines
+        body = "\n".join(body_lines).strip()
+        if body:
+            sections.append({"title": current_title, "body": body})
+        body_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            body_lines.append(line)
+            continue
+
+        if case_start_re.match(stripped) and body_lines and len(body_lines) > 1:
+            flush()
+            current_title = stripped[:30]
+
+        body_lines.append(stripped)
+
+    flush()
+    return sections
+
+
+def split_by_commentary(text: str) -> List[Dict]:
+    """
+    切分注疏体文本。
+    将"原文引用 + 解释"作为一个单元。
+    引用和紧随的注释保持在一起。
+    """
+    lines = text.split("\n")
+    sections = []
+    current_title = "注疏"
+    body_lines = []
+
+    # 新的引用段起始
+    quote_start_re = re.compile(
+        r'^(?:'
+        r'[「『"《]|'
+        r'(?:经|论|颂|偈)(?:云|曰|中说)[:：]?|'
+        r'(?:原文|正文|颂词|根本颂|论文)[:：]'
+        r')'
+    )
+
+    def flush():
+        nonlocal current_title, body_lines
+        body = "\n".join(body_lines).strip()
+        if body:
+            sections.append({"title": current_title, "body": body})
+        body_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            body_lines.append(line)
+            continue
+
+        if quote_start_re.match(stripped) and body_lines and len(body_lines) > 2:
+            flush()
+            # 提取引用内容摘要
+            quote_preview = re.sub(r'^[「『"《]', '', stripped)[:20]
+            current_title = f"注：{quote_preview}" if quote_preview else "注疏"
+
+        body_lines.append(stripped)
+
+    flush()
+    return sections
+
+
+def split_by_verse_collection(text: str) -> List[Dict]:
+    """
+    切分偈颂集文本。
+    每首偈颂（通常4句或8句为一组）作为一个单元。
+    如有标题或编号则在标题处分段。
+    """
+    lines = text.split("\n")
+    sections = []
+    current_title = "偈颂"
+    body_lines = []
+    verse_line_count = 0
+
+    # 偈颂标题标记
+    verse_title_re = re.compile(
+        r'^(?:'
+        r'第?[一二三四五六七八九十百\d]+(?:首|偈|颂|章)|'
+        r'【.+?】|'
+        r'[一二三四五六七八九十]+[、，]'
+        r')'
+    )
+
+    def flush():
+        nonlocal current_title, body_lines, verse_line_count
+        body = "\n".join(body_lines).strip()
+        if body:
+            sections.append({"title": current_title, "body": body})
+        body_lines = []
+        verse_line_count = 0
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            # 空行后如果已有>=4行偈颂，则分段
+            if verse_line_count >= 4 and body_lines:
+                flush()
+            else:
+                body_lines.append(line)
+            continue
+
+        if verse_title_re.match(stripped) and body_lines:
+            flush()
+            current_title = stripped[:30]
+
+        if _VERSE_COUPLET_RE.match(stripped):
+            verse_line_count += 1
+        else:
+            verse_line_count = 0
+
+        body_lines.append(stripped)
+
+    flush()
+    return sections
+
+
+def split_by_letter(text: str) -> List[Dict]:
+    """
+    切分书信体文本。
+    每封信（称谓到落款）作为一个单元。
+    支持：复某某居士书、某某居士慈鉴 等格式。
+    """
+    lines = text.split("\n")
+    sections = []
+    current_title = "书信"
+    body_lines = []
+
+    # 信件起始标记（称谓行或标题行）
+    letter_start_re = re.compile(
+        r'^(?:'
+        r'.{1,10}(?:居士|法师|仁者|大德|道友)(?:慈鉴|鉴|尊鉴|道鉴|惠鉴|足下)[：:]?|'
+        r'(?:复|答|与|致|上|覆).{1,10}(?:居士|法师|仁者)(?:书|函|启)'
+        r')'
+    )
+
+    def flush():
+        nonlocal current_title, body_lines
+        body = "\n".join(body_lines).strip()
+        if body:
+            sections.append({"title": current_title, "body": body})
+        body_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            body_lines.append(line)
+            continue
+
+        m = letter_start_re.match(stripped)
+        if m and body_lines:
+            flush()
+            current_title = stripped[:30]
 
         body_lines.append(stripped)
 

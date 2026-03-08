@@ -41,8 +41,12 @@ def format_structured_answer(
                 seen_sources.add(source_key)
                 out.append(f"- 来源：{source_file}｜科判：{kepan}｜段落：{chunk}")
             elif section:
-                ctype_label = {"ritual": "仪轨", "talk": "开示", "method": "方法",
-                               "article": "文章"}.get(ctype, "章节")
+                ctype_label = {
+                    "ritual": "仪轨", "talk": "开示", "method": "方法",
+                    "article": "文章", "qa": "问答", "gongan": "公案",
+                    "commentary": "注疏", "verse_collection": "偈颂",
+                    "letter": "书信",
+                }.get(ctype, "章节")
                 source_key = f"{source_file}|{section}"
                 if source_key in seen_sources:
                     continue

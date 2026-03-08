@@ -20,6 +20,8 @@ from search_utils import (
     has_pin_structure, split_by_pin, split_semantic_paragraphs,
     detect_content_type, split_by_topic, split_by_ritual_section,
     split_by_steps, split_by_headings,
+    split_by_qa, split_by_gongan, split_by_commentary,
+    split_by_verse_collection, split_by_letter,
 )
 
 MODEL_NAME = "BAAI/bge-m3"
@@ -235,13 +237,27 @@ def _chunk_sectioned(sections: List[Dict], chunk_size: int, overlap: int,
 def chunk_smart(text: str, chunk_size: int = 600, overlap: int = 80):
     """
     智能分块：自动检测文本结构并选择最佳分块策略。
-    优先级：科判 > 品 > 仪轨 > 方法步骤 > 演讲话题 > 文章小节 > 语义段落 > 滑动窗口
+    优先级：科判 > 品 > 仪轨 > 问答 > 公案 > 注疏 > 偈颂集 > 书信 >
+            方法步骤 > 演讲话题 > 文章小节 > 语义段落 > 滑动窗口
     """
     text = normalize_text(text)
     if not text:
         return []
 
     content_type = detect_content_type(text)
+
+    # 分类型处理的映射表
+    _splitter_map = {
+        "ritual":           (split_by_ritual_section, "ritual"),
+        "qa":               (split_by_qa,             "qa"),
+        "gongan":           (split_by_gongan,         "gongan"),
+        "commentary":       (split_by_commentary,     "commentary"),
+        "verse_collection": (split_by_verse_collection, "verse_collection"),
+        "letter":           (split_by_letter,         "letter"),
+        "method":           (split_by_steps,          "method"),
+        "talk":             (split_by_topic,          "talk"),
+        "article":          (split_by_headings,       "article"),
+    }
 
     # 1. 科判结构（正式论典）
     if content_type == "kepan":
@@ -251,29 +267,12 @@ def chunk_smart(text: str, chunk_size: int = 600, overlap: int = 80):
     if content_type == "pin":
         return chunk_by_pin(text, chunk_size, overlap)
 
-    # 3. 仪轨类（念诵、修法仪轨）
-    if content_type == "ritual":
-        sections = split_by_ritual_section(text)
+    # 3-11. 其他结构化类型
+    if content_type in _splitter_map:
+        splitter, ctype = _splitter_map[content_type]
+        sections = splitter(text)
         if sections:
-            return _chunk_sectioned(sections, chunk_size, overlap, "ritual")
-
-    # 4. 方法指导类（步骤、要点）
-    if content_type == "method":
-        sections = split_by_steps(text)
-        if sections:
-            return _chunk_sectioned(sections, chunk_size, overlap, "method")
-
-    # 5. 演讲/开示类（话题转换）
-    if content_type == "talk":
-        sections = split_by_topic(text)
-        if sections:
-            return _chunk_sectioned(sections, chunk_size, overlap, "talk")
-
-    # 6. 文章类（有标题/小节）
-    if content_type == "article":
-        sections = split_by_headings(text)
-        if sections:
-            return _chunk_sectioned(sections, chunk_size, overlap, "article")
+            return _chunk_sectioned(sections, chunk_size, overlap, ctype)
 
     # 7. 无明显结构，用语义段落分块
     paragraphs = split_semantic_paragraphs(text)
@@ -323,6 +322,8 @@ def collect_product_records(product: str):
             ctype = detect_content_type(text)
             type_names = {
                 "kepan": "科判", "pin": "品", "ritual": "仪轨",
+                "qa": "问答体", "gongan": "公案/语录", "commentary": "注疏体",
+                "verse_collection": "偈颂集", "letter": "书信体",
                 "method": "方法步骤", "talk": "演讲/开示",
                 "article": "文章", "plain": "通用",
             }
