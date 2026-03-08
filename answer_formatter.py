@@ -30,13 +30,24 @@ def format_structured_answer(
             source_file = ev.get("meta", {}).get("source_file", "unknown")
             chunk = ev.get("meta", {}).get("chunk_id", "?")
             stype = ev.get("meta", {}).get("source_type", "unknown")
-            kepan = ev.get("kepan_breadcrumb") or ev.get("meta", {}).get("kepan_breadcrumb", "")
+            meta = ev.get("meta", {})
+            kepan = ev.get("kepan_breadcrumb") or meta.get("kepan_breadcrumb", "")
+            section = meta.get("section_title", "")
+            ctype = meta.get("content_type", "")
             if kepan:
                 source_key = f"{source_file}|{kepan}"
                 if source_key in seen_sources:
                     continue
                 seen_sources.add(source_key)
                 out.append(f"- 来源：{source_file}｜科判：{kepan}｜段落：{chunk}")
+            elif section:
+                ctype_label = {"ritual": "仪轨", "talk": "开示", "method": "方法",
+                               "article": "文章"}.get(ctype, "章节")
+                source_key = f"{source_file}|{section}"
+                if source_key in seen_sources:
+                    continue
+                seen_sources.add(source_key)
+                out.append(f"- 来源：{source_file}｜{ctype_label}：{section}｜段落：{chunk}")
             else:
                 out.append(f"- 来源文件：{source_file}｜段落：{chunk}｜类型：{stype}")
 

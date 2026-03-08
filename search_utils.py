@@ -255,6 +255,263 @@ def _looks_like_verse_start(line: str, all_lines: List[str], idx: int) -> bool:
     return False
 
 
+# ===== 内容类型检测与分段 =====
+# 支持：演讲/开示、仪轨、方法指导、生活佛法等非论典格式
+
+# 话题转换标记（演讲/开示类）
+_TOPIC_SHIFT_RE = re.compile(
+    r'^(?:'
+    r'今天(?:我们)?(?:讲|来谈|来讲|来说|讨论|学习)|'
+    r'下面(?:我们)?(?:讲|来谈|来讲|来说|来看|谈)|'
+    r'接下来|接着(?:讲|说|谈)|'
+    r'第[一二三四五六七八九十\d]+[、，,\s]|'
+    r'首先|其次|再[次者]|最后|'
+    r'问[:：]|答[:：]|'
+    r'(?:有人|弟子|居士|学员|同学)(?:问|提问)|'
+    r'(?:上师|法师|师父|堪布|仁波切)(?:答|开示|说|回答)'
+    r')'
+)
+
+# 仪轨标记
+_RITUAL_MARKERS = re.compile(
+    r'(?:念[三七二十百千万\d]+遍|'
+    r'[（(](?:合掌|顶礼|跪|长跪|起立|站立|绕行|三拜|拈香|问讯)[）)]|'
+    r'[（(](?:念诵|唱诵|默念|齐念|和念)[）)]|'
+    r'唵|嗡|南无|皈依|发愿文|回向文|回向偈|忏悔文|'
+    r'愿以此功德|上报四重恩|'
+    r'[（(](?:主法|维那|大众)[）)])'
+)
+
+# 方法/步骤标记
+_STEP_RE = re.compile(
+    r'^(?:'
+    r'第[一二三四五六七八九十\d]+步|'
+    r'步骤[一二三四五六七八九十\d]+|'
+    r'要点[一二三四五六七八九十\d]+|'
+    r'方法[一二三四五六七八九十\d]+|'
+    r'注意事项|要领|窍诀|关键|'
+    r'\d+[）\)\.、]'
+    r')'
+)
+
+# 标题/小节标记（通用）
+_HEADING_RE = re.compile(
+    r'^(?:'
+    r'【.+?】|'                           # 【标题】
+    r'[一二三四五六七八九十]+[、，]\s*\S|'   # 一、标题
+    r'\d+[\.、]\s*\S|'                    # 1. 标题 / 1、标题
+    r'#{1,4}\s+\S'                        # markdown 标题
+    r')'
+)
+
+
+def detect_content_type(text: str) -> str:
+    """
+    检测佛教内容的类型。
+    返回: "kepan" | "pin" | "ritual" | "talk" | "method" | "article" | "plain"
+    """
+    if has_kepan_structure(text):
+        return "kepan"
+    if has_pin_structure(text):
+        return "pin"
+
+    lines = text.split("\n")
+    sample_lines = [l.strip() for l in lines[:300] if l.strip()]
+
+    ritual_count = 0
+    topic_count = 0
+    step_count = 0
+    heading_count = 0
+
+    for line in sample_lines:
+        if _RITUAL_MARKERS.search(line):
+            ritual_count += 1
+        if _TOPIC_SHIFT_RE.match(line):
+            topic_count += 1
+        if _STEP_RE.match(line):
+            step_count += 1
+        if _HEADING_RE.match(line):
+            heading_count += 1
+
+    # 仪轨类：多个仪轨标记
+    if ritual_count >= 3:
+        return "ritual"
+    # 方法指导类：步骤/要点标记
+    if step_count >= 3:
+        return "method"
+    # 演讲/开示类：话题转换标记
+    if topic_count >= 2:
+        return "talk"
+    # 文章类：有小节标题
+    if heading_count >= 3:
+        return "article"
+
+    return "plain"
+
+
+def split_by_topic(text: str) -> List[Dict]:
+    """
+    按话题切分演讲/开示类文本。
+    在话题转换处（"下面讲..."、"问："、"第一，"等）分段。
+    每段保留完整的话题讨论（问答不拆开）。
+    """
+    lines = text.split("\n")
+    sections = []
+    current_title = "开场"
+    body_lines = []
+
+    def flush():
+        nonlocal current_title, body_lines
+        body = "\n".join(body_lines).strip()
+        if body:
+            sections.append({"title": current_title, "body": body})
+        body_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            body_lines.append(line)
+            continue
+
+        is_topic = _TOPIC_SHIFT_RE.match(stripped)
+        # 问答对中的"答"不作为分割点
+        is_answer = re.match(r'^(?:答|(?:上师|法师|师父)(?:答|回答|说))', stripped)
+
+        if is_topic and not is_answer and body_lines:
+            flush()
+            # 用转换句作为新话题标题
+            current_title = stripped[:30]
+
+        body_lines.append(stripped)
+
+    flush()
+    return sections
+
+
+def split_by_ritual_section(text: str) -> List[Dict]:
+    """
+    切分仪轨类文本。
+    按仪轨段落分：发愿、皈依、正行、回向等。
+    咒语/念诵指令和正文保持在一起。
+    """
+    lines = text.split("\n")
+    sections = []
+    current_title = "仪轨"
+    body_lines = []
+
+    # 仪轨大段标记
+    ritual_section_re = re.compile(
+        r'^(?:【.+?】|'
+        r'[一二三四五六七八九十]+[、，]\s*|'
+        r'(?:前行|正行|结行|回向|发愿|皈依|忏悔|供养|礼赞|加持|灌顶|传承|观想|持咒|念诵|祈请))'
+    )
+
+    def flush():
+        nonlocal current_title, body_lines
+        body = "\n".join(body_lines).strip()
+        if body:
+            sections.append({"title": current_title, "body": body})
+        body_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            body_lines.append(line)
+            continue
+
+        m = ritual_section_re.match(stripped)
+        if m and body_lines and len(body_lines) > 1:
+            flush()
+            current_title = stripped[:30]
+
+        body_lines.append(stripped)
+
+    flush()
+    return sections
+
+
+def split_by_steps(text: str) -> List[Dict]:
+    """
+    切分方法指导类文本。
+    按主要步骤/要点分段。编号子项（1）2）3）等）不单独成段，
+    归入其前面的步骤或要点中。
+    """
+    # 主步骤标记（不含简单的 1）2）3） 编号）
+    major_step_re = re.compile(
+        r'^(?:'
+        r'第[一二三四五六七八九十\d]+步|'
+        r'步骤[一二三四五六七八九十\d]+|'
+        r'要点[一二三四五六七八九十\d]+|'
+        r'方法[一二三四五六七八九十\d]+|'
+        r'注意事项|要领|窍诀|关键'
+        r')'
+    )
+
+    lines = text.split("\n")
+    sections = []
+    current_title = "概述"
+    body_lines = []
+
+    def flush():
+        nonlocal current_title, body_lines
+        body = "\n".join(body_lines).strip()
+        if body:
+            sections.append({"title": current_title, "body": body})
+        body_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            body_lines.append(line)
+            continue
+
+        # 只在主步骤处分段，编号子项不分段
+        if major_step_re.match(stripped) and body_lines:
+            flush()
+            current_title = stripped[:30]
+
+        body_lines.append(stripped)
+
+    flush()
+    return sections
+
+
+def split_by_headings(text: str) -> List[Dict]:
+    """
+    按标题/小节切分文章类文本。
+    识别 【标题】、一、标题、1. 标题、# 标题 等格式。
+    """
+    lines = text.split("\n")
+    sections = []
+    current_title = "引言"
+    body_lines = []
+
+    def flush():
+        nonlocal current_title, body_lines
+        body = "\n".join(body_lines).strip()
+        if body:
+            sections.append({"title": current_title, "body": body})
+        body_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            body_lines.append(line)
+            continue
+
+        if _HEADING_RE.match(stripped) and body_lines:
+            flush()
+            # 清理标题：去掉 #、【】 等
+            clean_title = re.sub(r'^#+\s*', '', stripped)
+            clean_title = re.sub(r'^【(.+?)】.*', r'\1', clean_title)
+            current_title = clean_title[:30]
+
+        body_lines.append(stripped)
+
+    flush()
+    return sections
+
+
 def normalize_text(text: str) -> str:
     text = text or ""
     text = text.replace("\ufeff", "")

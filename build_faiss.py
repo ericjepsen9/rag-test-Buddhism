@@ -18,6 +18,8 @@ from rag_runtime_config import KNOWLEDGE_DIR, STORE_ROOT, CHUNK_SIZE, CHUNK_OVER
 from search_utils import (
     normalize_text, has_kepan_structure, split_by_kepan,
     has_pin_structure, split_by_pin, split_semantic_paragraphs,
+    detect_content_type, split_by_topic, split_by_ritual_section,
+    split_by_steps, split_by_headings,
 )
 
 MODEL_NAME = "BAAI/bge-m3"
@@ -199,30 +201,87 @@ def chunk_by_pin(text: str, chunk_size: int = 600, overlap: int = 80):
     return results
 
 
+def _chunk_sectioned(sections: List[Dict], chunk_size: int, overlap: int,
+                     content_type: str) -> List[Dict]:
+    """
+    通用：将 split_by_xxx 产出的 sections 列表分块。
+    每个 section 加上标题前缀，正文按语义边界切分。
+    """
+    results = []
+    for sec in sections:
+        sec_title = sec["title"]
+        body = sec["body"].strip()
+        if not body:
+            results.append({"text": sec_title, "section_title": sec_title,
+                            "content_type": content_type})
+            continue
+
+        prefix = f"【{sec_title}】\n"
+        effective_size = chunk_size - len(prefix)
+        if effective_size < 100:
+            effective_size = 100
+
+        if len(body) <= effective_size:
+            results.append({"text": prefix + body, "section_title": sec_title,
+                            "content_type": content_type})
+        else:
+            sub_chunks = _sub_chunk_semantic(body, effective_size, overlap)
+            for sc in sub_chunks:
+                results.append({"text": prefix + sc, "section_title": sec_title,
+                                "content_type": content_type})
+    return results
+
+
 def chunk_smart(text: str, chunk_size: int = 600, overlap: int = 80):
     """
     智能分块：自动检测文本结构并选择最佳分块策略。
-    优先级：科判 > 品 > 语义段落 > 滑动窗口
+    优先级：科判 > 品 > 仪轨 > 方法步骤 > 演讲话题 > 文章小节 > 语义段落 > 滑动窗口
     """
     text = normalize_text(text)
     if not text:
         return []
 
-    # 1. 有科判结构
-    if has_kepan_structure(text):
+    content_type = detect_content_type(text)
+
+    # 1. 科判结构（正式论典）
+    if content_type == "kepan":
         return chunk_by_kepan(text, chunk_size, overlap)
 
-    # 2. 有品结构
-    if has_pin_structure(text):
+    # 2. 品结构
+    if content_type == "pin":
         return chunk_by_pin(text, chunk_size, overlap)
 
-    # 3. 无明显结构，用语义段落分块
+    # 3. 仪轨类（念诵、修法仪轨）
+    if content_type == "ritual":
+        sections = split_by_ritual_section(text)
+        if sections:
+            return _chunk_sectioned(sections, chunk_size, overlap, "ritual")
+
+    # 4. 方法指导类（步骤、要点）
+    if content_type == "method":
+        sections = split_by_steps(text)
+        if sections:
+            return _chunk_sectioned(sections, chunk_size, overlap, "method")
+
+    # 5. 演讲/开示类（话题转换）
+    if content_type == "talk":
+        sections = split_by_topic(text)
+        if sections:
+            return _chunk_sectioned(sections, chunk_size, overlap, "talk")
+
+    # 6. 文章类（有标题/小节）
+    if content_type == "article":
+        sections = split_by_headings(text)
+        if sections:
+            return _chunk_sectioned(sections, chunk_size, overlap, "article")
+
+    # 7. 无明显结构，用语义段落分块
     paragraphs = split_semantic_paragraphs(text)
     if len(paragraphs) > 1:
         sub_chunks = _sub_chunk_semantic(text, chunk_size, overlap)
         return [{"text": c} for c in sub_chunks]
 
-    # 4. 回退到滑动窗口
+    # 8. 回退到滑动窗口
     return [{"text": c} for c in chunk_text(text, chunk_size, overlap)]
 
 
@@ -259,18 +318,16 @@ def collect_product_records(product: str):
 
         if stype == "alias":
             chunks_data = [{"text": text}]
-        elif stype in ("main", "faq"):
-            # 智能检测结构：科判 > 品 > 语义段落 > 滑动窗口
-            if has_kepan_structure(text):
-                print(f"[INFO] {product}/{fname}: 检测到科判结构，使用层级分块")
-                chunks_data = chunk_by_kepan(text, CHUNK_SIZE, CHUNK_OVERLAP)
-            elif has_pin_structure(text):
-                print(f"[INFO] {product}/{fname}: 检测到品结构，使用品章节分块")
-                chunks_data = chunk_by_pin(text, CHUNK_SIZE, CHUNK_OVERLAP)
-            else:
-                chunks_data = chunk_smart(text, CHUNK_SIZE, CHUNK_OVERLAP)
         else:
-            chunks_data = [{"text": c} for c in chunk_text(text, CHUNK_SIZE, CHUNK_OVERLAP)]
+            # 统一使用智能分块
+            ctype = detect_content_type(text)
+            type_names = {
+                "kepan": "科判", "pin": "品", "ritual": "仪轨",
+                "method": "方法步骤", "talk": "演讲/开示",
+                "article": "文章", "plain": "通用",
+            }
+            print(f"[INFO] {product}/{fname}: 检测到「{type_names.get(ctype, ctype)}」结构")
+            chunks_data = chunk_smart(text, CHUNK_SIZE, CHUNK_OVERLAP)
 
         print(f"[OK] {product}/{fname}: {len(chunks_data)} chunks")
         for i, cd in enumerate(chunks_data, 1):
@@ -280,13 +337,17 @@ def collect_product_records(product: str):
                 "source_type": stype,
                 "chunk_id": i,
             }
-            # 保存结构元数据（科判/品）
+            # 保存结构元数据（科判/品/内容类型）
             if "kepan_breadcrumb" in cd:
                 meta["kepan_breadcrumb"] = cd["kepan_breadcrumb"]
                 meta["kepan_marker"] = cd.get("kepan_marker", "")
                 meta["kepan_title"] = cd.get("kepan_title", "")
             if "pin_title" in cd:
                 meta["pin_title"] = cd["pin_title"]
+            if "content_type" in cd:
+                meta["content_type"] = cd["content_type"]
+            if "section_title" in cd:
+                meta["section_title"] = cd["section_title"]
             records.append({
                 "text": cd["text"],
                 "meta": meta,
