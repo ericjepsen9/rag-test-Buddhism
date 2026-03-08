@@ -294,26 +294,63 @@ def embed_texts(texts):
     return vecs
 
 
+def _infer_source_type(fname: str) -> str:
+    """根据文件名推断 source_type"""
+    name_lower = fname.lower().replace(".txt", "")
+    if name_lower in ("faq", "faq_", "常见问题"):
+        return "faq"
+    if name_lower in ("alias", "aliases", "别名"):
+        return "alias"
+    return "main"
+
+
+def _collect_txt_files(pdir):
+    """
+    收集产品目录及子目录下所有 .txt 文件。
+    支持子目录分类，如：
+      knowledge/buddhism/
+        main.txt              → 通用知识
+        faq.txt               → FAQ
+        alias.txt             → 别名
+        入菩萨行论.txt          → 独立论典
+        讲记/                  → 子目录
+          菩提心讲记.txt
+          禅修开示.txt
+        仪轨/
+          金刚萨埵修法.txt
+    返回: [(文件路径, source_type, 显示名), ...]
+    """
+    results = []
+
+    # 1. 根目录下的文件
+    for fp in sorted(pdir.glob("*.txt")):
+        stype = _infer_source_type(fp.name)
+        results.append((fp, stype, fp.name))
+
+    # 2. 子目录下的文件（一级子目录）
+    for subdir in sorted(pdir.iterdir()):
+        if not subdir.is_dir() or subdir.name.startswith("."):
+            continue
+        for fp in sorted(subdir.glob("*.txt")):
+            stype = _infer_source_type(fp.name)
+            # 显示名带上子目录前缀，如 "讲记/菩提心讲记.txt"
+            display_name = f"{subdir.name}/{fp.name}"
+            results.append((fp, stype, display_name))
+
+    return results
+
+
 def collect_product_records(product: str):
     pdir = KNOWLEDGE_DIR / product
     if not pdir.exists():
         raise FileNotFoundError(f"未找到产品目录：{pdir}")
-    # 收集目录下所有 .txt 文件
-    known_files = [("main.txt", "main"), ("faq.txt", "faq"), ("alias.txt", "alias")]
-    known_names = {name for name, _ in known_files}
-    # 自动发现额外的 .txt 文件（如论典原文）
-    extra_files = []
-    for fp in sorted(pdir.glob("*.txt")):
-        if fp.name not in known_names:
-            extra_files.append((fp.name, "main"))
 
-    all_files = known_files + extra_files
+    all_files = _collect_txt_files(pdir)
+    if not all_files:
+        raise FileNotFoundError(f"目录为空：{pdir}")
     records = []
-    for fname, stype in all_files:
-        f = pdir / fname
-        if not f.exists():
-            continue
-        text = f.read_text(encoding="utf-8")
+    for fpath, stype, display_name in all_files:
+        text = fpath.read_text(encoding="utf-8")
 
         if stype == "alias":
             chunks_data = [{"text": text}]
@@ -327,14 +364,14 @@ def collect_product_records(product: str):
                 "method": "方法步骤", "talk": "演讲/开示",
                 "article": "文章", "plain": "通用",
             }
-            print(f"[INFO] {product}/{fname}: 检测到「{type_names.get(ctype, ctype)}」结构")
+            print(f"[INFO] {product}/{display_name}: 检测到「{type_names.get(ctype, ctype)}」结构")
             chunks_data = chunk_smart(text, CHUNK_SIZE, CHUNK_OVERLAP)
 
-        print(f"[OK] {product}/{fname}: {len(chunks_data)} chunks")
+        print(f"[OK] {product}/{display_name}: {len(chunks_data)} chunks")
         for i, cd in enumerate(chunks_data, 1):
             meta = {
                 "product_id": product,
-                "source_file": f.name,
+                "source_file": display_name,
                 "source_type": stype,
                 "chunk_id": i,
             }
