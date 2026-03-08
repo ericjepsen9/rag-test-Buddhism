@@ -1,5 +1,6 @@
 import math
 import re
+import sys
 from typing import List, Dict, Tuple, Optional
 
 
@@ -1208,12 +1209,18 @@ def keyword_search(query: str, docs: List[Dict], top_k: int = 8) -> List[Dict]:
 
     scored.sort(key=lambda x: x.get("keyword_score", 0.0), reverse=True)
 
-    # 归一化到 0-1 范围（与向量分数可比）
+    # 归一化到 0-1 范围（用 75th percentile 避免单个异常值膨胀）
     if scored:
-        max_score = scored[0].get("keyword_score", 1.0)
-        if max_score > 0:
+        all_scores = [x.get("keyword_score", 0.0) for x in scored]
+        # 75th percentile 作为基准（≥3 个结果时），否则用 max
+        if len(all_scores) >= 3:
+            idx_75 = max(0, int(len(all_scores) * 0.25))  # sorted descending
+            norm_base = all_scores[idx_75]
+        else:
+            norm_base = all_scores[0]
+        if norm_base > 0:
             for x in scored:
-                x["keyword_score"] = x["keyword_score"] / max_score
+                x["keyword_score"] = min(1.0, x["keyword_score"] / norm_base)
 
     return scored[:top_k]
 
@@ -1236,6 +1243,15 @@ def merge_hybrid(vector_hits: List[Dict], keyword_hits: List[Dict], vw: float, k
     return out[:top_k]
 
 
+def _ngram_overlap(a: str, b: str, n: int = 3) -> float:
+    """快速计算两个短文本的 n-gram 重叠率"""
+    if not a or not b or len(a) < n or len(b) < n:
+        return 0.0
+    sa = set(a[i:i+n] for i in range(len(a) - n + 1))
+    sb = set(b[i:i+n] for i in range(len(b) - n + 1))
+    return len(sa & sb) / min(len(sa), len(sb)) if sa and sb else 0.0
+
+
 def split_multi_question(question: str, separators: List[str] = None) -> List[str]:
     separators = separators or ["；", ";", "。", "，另外", "并且", "同时", "还有"]
     parts = [question]
@@ -1245,7 +1261,16 @@ def split_multi_question(question: str, separators: List[str] = None) -> List[st
             next_parts.extend(p.split(sep))
         parts = next_parts
     parts = [p.strip() for p in parts if p.strip()]
-    return uniq(parts)
+    parts = uniq(parts)
+    # 语义去重：重叠度 >75% 的子问题只保留较长的
+    if len(parts) <= 1:
+        return parts
+    deduped = [parts[0]]
+    for p in parts[1:]:
+        is_dup = any(_ngram_overlap(p, d) > 0.75 for d in deduped)
+        if not is_dup:
+            deduped.append(p)
+    return deduped
 
 
 def detect_terms(question: str, term_map: Dict[str, List[str]]) -> List[str]:
@@ -1343,6 +1368,5 @@ def match_faq(question: str, faq_text: str, faq_keyword_map: Dict[str, str],
                 if answer_parts:
                     return "\n".join(answer_parts)
     # 配置-数据不一致：关键词匹配到 topic 但 FAQ 中无对应条目
-    import sys
     print(f"[WARN] FAQ 关键词映射到「{matched_topic}」但 faq.txt 中未找到对应【Q】条目", file=sys.stderr)
     return ""

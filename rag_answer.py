@@ -75,10 +75,16 @@ def load_store(product: str):
     index = get_faiss().read_index(str(index_path))
     docs = []
     with docs_path.open("r", encoding="utf-8") as f:
-        for line in f:
+        for i, line in enumerate(f):
             line = line.strip()
             if line:
-                docs.append(json.loads(line))
+                doc = json.loads(line)
+                # 确保每个 doc 都有 chunk_id（兼容旧索引）
+                meta = doc.get("meta", {})
+                if not meta.get("chunk_id"):
+                    meta["chunk_id"] = f"_doc{i}"
+                    doc["meta"] = meta
+                docs.append(doc)
     result = (index, docs)
     _store_cache[product] = result
     _store_mtime[product] = current_mtime
@@ -114,7 +120,13 @@ def read_knowledge_file(product: str, fname: str) -> str:
     p = KNOWLEDGE_DIR / product / fname
     if not p.exists():
         return ""
-    return p.read_text(encoding="utf-8")
+    # 编码容错：优先 UTF-8，回退 GBK，最后 latin-1（不会失败）
+    for enc in ("utf-8", "gb2312", "latin-1"):
+        try:
+            return p.read_text(encoding=enc)
+        except (UnicodeDecodeError, ValueError):
+            continue
+    return ""
 
 
 def detect_product(question: str) -> str:
@@ -348,7 +360,12 @@ def answer_one(question: str, mode: str) -> str:
     # 3. 优先使用 LLM 基于检索上下文生成答案（真正的 RAG）
     context = extract_chunks_as_context(hits, max_chunks=6)
     llm_answer = openai_rag_generate(question, context, route)
-    # 要求 LLM 答案至少 15 字（佛学短答案也有效，如"四圣谛即苦集灭道"）
+    # 验证 LLM 答案：至少 15 字 + 不是单纯复述问题
+    if llm_answer and len(llm_answer.strip()) >= 15:
+        # 回声检测：如果答案与问题重叠度 >80%，视为无效复述
+        echo_ratio = _text_overlap_ratio(question.strip(), llm_answer.strip()[:len(question) * 2])
+        if echo_ratio > 0.8:
+            llm_answer = ""  # 走 fallback
     if llm_answer and len(llm_answer.strip()) >= 15:
         # LLM 答案也附上依据来源，保持格式一致
         evidence = build_evidence(hits)
