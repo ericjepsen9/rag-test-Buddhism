@@ -113,13 +113,16 @@ def detect_product(question: str) -> str:
 
 
 def detect_route(question: str) -> str:
+    """多类评分路由：按匹配关键词的总字符长度评分，长词匹配权重更高"""
     q = (question or "").lower()
-    order = ["doctrine", "practice", "scripture", "sect", "concept", "history", "ritual", "basic"]
-    for route in order:
-        for kw in QUESTION_ROUTES.get(route, []):
-            if kw.lower() in q:
-                return route
-    return "basic"
+    route_scores = {}
+    for route_name, keywords in QUESTION_ROUTES.items():
+        score = sum(len(kw) for kw in keywords if kw.lower() in q)
+        if score > 0:
+            route_scores[route_name] = score
+    if not route_scores:
+        return "basic"
+    return max(route_scores.items(), key=lambda x: x[1])[0]
 
 
 def build_evidence(hits: List[Dict]) -> List[Dict]:
@@ -275,7 +278,8 @@ def answer_one(question: str, mode: str) -> str:
     # 3. 优先使用 LLM 基于检索上下文生成答案（真正的 RAG）
     context = extract_chunks_as_context(hits, max_chunks=6)
     llm_answer = openai_rag_generate(question, context, route)
-    if llm_answer:
+    # 要求 LLM 答案至少 30 字，避免残缺/无意义的短回复
+    if llm_answer and len(llm_answer.strip()) >= 30:
         return llm_answer
 
     # 4. 无 LLM 时：向量检索结果直接作为答案段落（保留完整段落）
@@ -352,10 +356,13 @@ def answer_question(question: str, mode: str) -> str:
     outputs = []
     seen = set()
     for subq in rewrite["sub_questions"][:4]:
+        # 用问题文本去重，避免重复调用 LLM 回答同义子问题
+        subq_key = subq.strip()
+        if subq_key in seen:
+            continue
+        seen.add(subq_key)
         ans = answer_one(subq, mode)
-        key = ans.strip()
-        if key and key not in seen:
-            seen.add(key)
+        if ans and ans.strip():
             outputs.append(ans)
     return "\n\n".join(outputs)
 

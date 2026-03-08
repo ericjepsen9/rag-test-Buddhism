@@ -1160,6 +1160,9 @@ def keyword_score_bm25(query: str, text: str, avg_dl: float, n_docs: int,
         df = doc_freq.get(term, 0)
         # IDF: log((N - df + 0.5) / (df + 0.5) + 1)
         idf = math.log((n_docs - df + 0.5) / (df + 0.5) + 1.0)
+        # 稀有佛教术语加权：出现在不到 10% 文档中的词典术语额外提升
+        if term in _BUDDHIST_VOCAB and df < n_docs * 0.1:
+            idf *= 1.3
         # BM25 TF 归一化
         tf_norm = (tf * (_BM25_K1 + 1)) / (tf + _BM25_K1 * (1 - _BM25_B + _BM25_B * dl / avg_dl))
         score += idf * tf_norm
@@ -1215,12 +1218,12 @@ def keyword_search(query: str, docs: List[Dict], top_k: int = 8) -> List[Dict]:
 
 def merge_hybrid(vector_hits: List[Dict], keyword_hits: List[Dict], vw: float, kw: float, top_k: int) -> List[Dict]:
     merged = {}
-    for h in vector_hits:
-        key = h.get("id", h.get("text", ""))
+    for i, h in enumerate(vector_hits):
+        key = h.get("chunk_id") or h.get("id") or h.get("text", "") or f"_v{i}"
         merged[key] = dict(h)
         merged[key]["hybrid_score"] = float(h.get("score", 0.0)) * vw
-    for h in keyword_hits:
-        key = h.get("id", h.get("text", ""))
+    for i, h in enumerate(keyword_hits):
+        key = h.get("chunk_id") or h.get("id") or h.get("text", "") or f"_k{i}"
         if key not in merged:
             merged[key] = dict(h)
             merged[key]["score"] = 0.0
