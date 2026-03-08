@@ -1,0 +1,31 @@
+﻿防伪鉴别（资料提取）：
+结论：
+- 防伪验证主体：
+- 韩国(株)G-international 公司
+- 官方验证方式：
+- 使用 HiddenTag APP 扫描验证
+- 其他扫码方式无效（资料描述）
+- 【防伪步骤】
+- STEP 1：
+- 在手机应用商店下载 HiddenTag APP
+- STEP 2：
+- 打开 APP，点击“正品认证”
+- STEP 3：
+- 肉眼确认产品标签是否为正品标签
+- STEP 4：
+- 扫描产品上的 HiddenTag 标签
+- 建议在不反光环境下扫描，提高识别成功率
+- STEP 5：
+- 验证成功后，APP 显示韩国(株)G-international 官方认证图片
+- 【防伪注意事项】
+- 仅 HiddenTag APP 可用于验证
+- 标签保持平整、避免反光
+- 以官方认证结果为准
+依据：
+- 来源文件：alias.txt｜段落：1｜类型：alias
+- 来源文件：faq.txt｜段落：1｜类型：faq
+- 来源文件：main.txt｜段落：1｜类型：main
+- 来源文件：main.txt｜段落：2｜类型：main
+- 来源文件：main.txt｜段落：3｜类型：main
+注意事项：
+- 结果仅供参考，需询问专业医师。

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RAG 后台管理页</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background:#f7f7f9; color:#222; }
+    .card { background:#fff; border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+    button { padding:8px 14px; border:none; border-radius:8px; cursor:pointer; }
+    input { padding:8px; width:240px; }
+    pre { white-space:pre-wrap; word-break:break-word; background:#fafafa; padding:12px; border-radius:8px; }
+  </style>
+</head>
+<body>
+  <h1>RAG 后台管理页</h1>
+
+  <div class="card">
+    <h2>知识库产品列表</h2>
+    <button onclick="loadProducts()">刷新</button>
+    <pre id="products">点击刷新查看</pre>
+  </div>
+
+  <div class="card">
+    <h2>一键重建索引</h2>
+    <input id="product" placeholder="例如 feiluoao" value="feiluoao">
+    <button onclick="rebuild()">开始重建</button>
+    <pre id="rebuild_out">等待执行</pre>
+  </div>
+
+  <div class="card">
+    <h2>最近问答日志</h2>
+    <button onclick="loadLogs('qa')">刷新问答</button>
+    <pre id="qa_logs">点击刷新查看</pre>
+  </div>
+
+  <div class="card">
+    <h2>最近未命中</h2>
+    <button onclick="loadLogs('miss')">刷新未命中</button>
+    <pre id="miss_logs">点击刷新查看</pre>
+  </div>
+
+  <script>
+    async function loadProducts() {
+      const r = await fetch('/admin/products');
+      const j = await r.json();
+      document.getElementById('products').textContent = JSON.stringify(j, null, 2);
+    }
+
+    async function rebuild() {
+      const product = document.getElementById('product').value.trim();
+      const out = document.getElementById('rebuild_out');
+      out.textContent = '执行中...';
+      const r = await fetch('/admin/rebuild', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({product, timeout_sec: 180})
+      });
+      const j = await r.json();
+      out.textContent = JSON.stringify(j, null, 2);
+    }
+
+    async function loadLogs(kind) {
+      const r = await fetch('/admin/logs/' + kind + '?limit=20');
+      const j = await r.json();
+      document.getElementById(kind + '_logs').textContent = JSON.stringify(j, null, 2);
+    }
+  </script>
+</body>
+</html>
