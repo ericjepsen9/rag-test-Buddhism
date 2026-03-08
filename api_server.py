@@ -1,23 +1,36 @@
-import os
 import sys
-import subprocess
+import logging
 from pathlib import Path
 from typing import Optional, Literal, Dict, Any, List
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from media_router import find_media
 
 BASE_DIR = Path(__file__).resolve().parent
-RAG_SCRIPT = BASE_DIR / "rag_answer.py"
-ANSWER_FILE = BASE_DIR / "answer.txt"
 INDEX_PAGE = BASE_DIR / "index.html"
-PYTHON_EXE = sys.executable
 
-app = FastAPI(title="Buddhist Knowledge RAG API", version="1.0.0")
+logger = logging.getLogger("rag_api")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """启动时预加载模型，避免首次请求卡顿"""
+    logger.info("Preloading BGE-M3 model...")
+    try:
+        from rag_answer import get_model
+        get_model()
+        logger.info("Model loaded successfully.")
+    except Exception as e:
+        logger.warning(f"Model preload failed (will retry on first query): {e}")
+    yield
+
+
+app = FastAPI(title="Buddhist Knowledge RAG API", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,7 +43,6 @@ app.add_middleware(
 class AskRequest(BaseModel):
     question: str
     mode: Literal["brief", "full"] = "brief"
-    timeout_sec: int = 90
     debug: bool = False
 
 
@@ -44,19 +56,8 @@ class AskResponse(BaseModel):
     ok: bool
     answer: str
     media: List[MediaItem] = []
-    stderr: str = ""
+    route: str = ""
     debug: Optional[Dict[str, Any]] = None
-
-
-def read_text(path: Path) -> str:
-    if not path.exists():
-        return ""
-    for enc in ("utf-8-sig", "utf-8", "gbk"):
-        try:
-            return path.read_text(encoding=enc).strip()
-        except Exception:
-            pass
-    return ""
 
 
 @app.get("/")
@@ -66,41 +67,30 @@ def root():
 
 @app.get("/health")
 def health():
+    from rag_answer import _model
     return {
         "status": "ok",
-        "rag_script_exists": RAG_SCRIPT.exists(),
-        "answer_file_exists": ANSWER_FILE.exists(),
-        "python_exe": PYTHON_EXE,
+        "model_loaded": _model is not None,
     }
 
 
 @app.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest):
-    cmd = [PYTHON_EXE, str(RAG_SCRIPT), req.question, req.mode]
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
     try:
-        proc = subprocess.run(
-            cmd,
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=max(5, req.timeout_sec),
-            env=env,
-        )
-        answer = read_text(ANSWER_FILE)
+        from rag_answer import answer_question, detect_route
+        answer = answer_question(req.question, req.mode)
+        route = detect_route(req.question)
         media = [MediaItem(**m) for m in find_media(req.question)]
         debug = None
         if req.debug:
-            debug = {"cmd": cmd, "stdout": (proc.stdout or "")[:2000], "stderr": (proc.stderr or "")[:2000]}
+            debug = {"route": route, "mode": req.mode, "question": req.question}
         return AskResponse(
-            ok=(proc.returncode == 0),
+            ok=True,
             answer=answer,
             media=media,
-            stderr=(proc.stderr or "")[:2000],
+            route=route,
             debug=debug,
         )
     except Exception as e:
-        return AskResponse(ok=False, answer="接口执行异常", stderr=repr(e))
+        logger.exception("Error answering question")
+        return AskResponse(ok=False, answer=f"处理异常：{e}", route="")

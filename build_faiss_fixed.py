@@ -42,8 +42,8 @@ MODEL_NAME = os.environ.get("BGE_MODEL_NAME", "BAAI/bge-m3")
 
 
 # ====== chunk 参数（可按需要调）======
-CHUNK_SIZE = int(os.environ.get("RAG_CHUNK_SIZE", "420"))
-CHUNK_OVERLAP = int(os.environ.get("RAG_CHUNK_OVERLAP", "100"))
+CHUNK_SIZE = int(os.environ.get("RAG_CHUNK_SIZE", "600"))
+CHUNK_OVERLAP = int(os.environ.get("RAG_CHUNK_OVERLAP", "150"))
 
 
 def read_text_auto(p: Path) -> str:

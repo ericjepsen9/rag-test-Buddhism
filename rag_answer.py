@@ -3,7 +3,7 @@ import sys
 import json
 import re
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 try:
@@ -14,14 +14,14 @@ except Exception:
 import numpy as np
 
 from rag_runtime_config import (
-    KNOWLEDGE_DIR, STORE_ROOT, OUT_PATH, DEFAULT_MODE, DEFAULT_TOP_K,
+    KNOWLEDGE_DIR, STORE_ROOT, DEFAULT_MODE, DEFAULT_TOP_K,
     USE_OPENAI, OPENAI_MODEL, DEBUG, QUESTION_ROUTES, SECTION_RULES,
     PRODUCT_ALIASES, PROJECT_ALIASES, VECTOR_TOP_K, KEYWORD_TOP_K,
-    HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT
+    HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, FAQ_KEYWORD_MAP
 )
 from search_utils import (
     normalize_text, normalize_lines, uniq, is_faq_line, section_block,
-    keyword_search, merge_hybrid, detect_terms
+    keyword_search, merge_hybrid, detect_terms, match_faq
 )
 from query_rewrite import rewrite_query
 from answer_formatter import format_structured_answer
@@ -29,6 +29,7 @@ from answer_formatter import format_structured_answer
 _model = None
 _faiss = None
 _BGEM3 = None
+_store_cache = {}  # 缓存已加载的 index + docs
 
 
 def get_faiss():
@@ -45,10 +46,6 @@ def get_bg_cls():
         from FlagEmbedding import BGEM3FlagModel as _cls
         _BGEM3 = _cls
     return _BGEM3
-
-
-def save_answer(text: str):
-    OUT_PATH.write_text((text or "").strip() + "\n", encoding="utf-8-sig")
 
 
 def get_model():
@@ -78,11 +75,16 @@ def embed_query(text: str) -> np.ndarray:
 
 
 def load_store(product: str):
+    """加载向量索引和文档，带缓存"""
+    if product in _store_cache:
+        return _store_cache[product]
     store_dir = STORE_ROOT / product
     index_path = store_dir / "index.faiss"
     docs_path = store_dir / "docs.jsonl"
     if not index_path.exists() or not docs_path.exists():
-        return None, []
+        result = (None, [])
+        _store_cache[product] = result
+        return result
     index = get_faiss().read_index(str(index_path))
     docs = []
     with docs_path.open("r", encoding="utf-8") as f:
@@ -90,7 +92,9 @@ def load_store(product: str):
             line = line.strip()
             if line:
                 docs.append(json.loads(line))
-    return index, docs
+    result = (index, docs)
+    _store_cache[product] = result
+    return result
 
 
 def vector_search(product: str, query: str, top_k: int) -> List[Dict]:
@@ -139,10 +143,28 @@ def detect_route(question: str) -> str:
 def build_evidence(hits: List[Dict]) -> List[Dict]:
     ev = []
     for h in hits[:6]:
-        ev.append({
-            "meta": h.get("meta", {})
-        })
+        ev.append({"meta": h.get("meta", {})})
     return ev
+
+
+def extract_from_hits(hits: List[Dict], route: str, mode: str) -> List[str]:
+    """从向量检索结果中提取答案行（真正的 RAG）"""
+    if not hits:
+        return []
+    lines = []
+    for h in hits:
+        text = h.get("text", "").strip()
+        if not text:
+            continue
+        for ln in normalize_lines(text):
+            clean = ln.lstrip("-").strip()
+            if not clean or is_faq_line(clean):
+                continue
+            if len(clean) <= 150:
+                lines.append(clean)
+    lines = uniq(lines)
+    limit = 14 if mode == "brief" else 28
+    return lines[:limit]
 
 
 def parse_bullets_from_section(main_text: str, faq_text: str, route: str, mode: str) -> List[str]:
@@ -180,14 +202,53 @@ def parse_bullets_from_section(main_text: str, faq_text: str, route: str, mode: 
     }
     brief_limit, full_limit = limits.get(route, (12, 20))
     limit = brief_limit if mode == "brief" else full_limit
-
     return items[:limit]
 
 
-def parse_answer(route: str, product: str, mode: str) -> List[str]:
-    main_text = read_knowledge_file(product, "main.txt")
+def answer_one(question: str, mode: str) -> str:
+    product = detect_product(question)
+    route = detect_route(question)
+    rewrite = rewrite_query(question)
+
+    # 1. 尝试 FAQ 精确匹配
     faq_text = read_knowledge_file(product, "faq.txt")
-    return parse_bullets_from_section(main_text, faq_text, route, mode)
+    faq_answer = match_faq(question, faq_text, FAQ_KEYWORD_MAP)
+    if faq_answer:
+        return format_structured_answer(route, [faq_answer], [], add_risk_note=False)
+
+    # 2. 向量 + 关键词混合检索
+    vector_hits = vector_search(product, rewrite["expanded"], VECTOR_TOP_K)
+    _, docs = load_store(product)
+    keyword_hits = keyword_search(rewrite["expanded"], docs, KEYWORD_TOP_K) if docs else []
+    hits = merge_hybrid(vector_hits, keyword_hits, HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, DEFAULT_TOP_K) if (vector_hits or keyword_hits) else []
+
+    # 3. 章节提取（结构化文档）
+    main_text = read_knowledge_file(product, "main.txt")
+    body_lines = parse_bullets_from_section(main_text, faq_text, route, mode)
+
+    # 4. 如果章节提取为空，用向量检索结果兜底（真正的 RAG）
+    if not body_lines and hits:
+        body_lines = extract_from_hits(hits, route, mode)
+
+    if not body_lines:
+        fallback = [
+            "当前知识库未覆盖该问题的直接内容。",
+            "建议方向：请查阅相关佛教经典或咨询法师。",
+            "您也可以尝试更具体的关键词进行提问。",
+        ]
+        return format_structured_answer(route, fallback, build_evidence(hits), add_risk_note=False)
+
+    # 5. 如果有检索命中，将最相关的检索内容补充到答案中
+    if hits and body_lines:
+        hit_extras = extract_from_hits(hits[:3], route, mode)
+        existing = set(body_lines)
+        for extra in hit_extras[:5]:
+            if extra not in existing:
+                body_lines.append(extra)
+                existing.add(extra)
+
+    text = format_structured_answer(route, body_lines, build_evidence(hits), add_risk_note=(route == "practice"))
+    return openai_rewrite_answer(text, route)
 
 
 def openai_rewrite_answer(text: str, route: str) -> str:
@@ -209,31 +270,8 @@ def openai_rewrite_answer(text: str, route: str) -> str:
         return text
 
 
-def answer_one(question: str, mode: str) -> str:
-    product = detect_product(question)
-    route = detect_route(question)
-    rewrite = rewrite_query(question)
-
-    vector_hits = vector_search(product, rewrite["expanded"], VECTOR_TOP_K)
-    _, docs = load_store(product)
-    keyword_hits = keyword_search(rewrite["expanded"], docs, KEYWORD_TOP_K) if docs else []
-    hits = merge_hybrid(vector_hits, keyword_hits, HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, DEFAULT_TOP_K) if (vector_hits or keyword_hits) else []
-
-    body_lines = parse_answer(route, product, mode)
-
-    if not body_lines:
-        fallback = [
-            "当前知识库未覆盖该问题的直接内容。",
-            "建议方向：请查阅相关佛教经典或咨询法师。",
-            "您也可以尝试更具体的关键词进行提问。",
-        ]
-        return format_structured_answer(route, fallback, build_evidence(hits), add_risk_note=False)
-
-    text = format_structured_answer(route, body_lines, build_evidence(hits), add_risk_note=(route == "practice"))
-    return openai_rewrite_answer(text, route)
-
-
 def answer_question(question: str, mode: str) -> str:
+    """主入口：回答问题，返回字符串"""
     rewrite = rewrite_query(question)
     outputs = []
     seen = set()
@@ -258,15 +296,11 @@ def main():
         mode = sys.argv[2].strip()
 
     ans = answer_question(question, mode)
-    save_answer(ans)
-    print("\n===== Answer saved =====")
-    print(f"Saved to: {OUT_PATH}")
+    print(ans)
 
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        save_answer("ERROR: " + repr(e))
-        print("\n===== Answer saved =====")
-        print(f"Saved to: {OUT_PATH}")
+        print("ERROR: " + repr(e))

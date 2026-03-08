@@ -19,8 +19,8 @@ MODEL_NAME = "BAAI/bge-m3"
 USE_FP16 = True
 
 # ========= Chunk 参数（建库用）=========
-CHUNK_SIZE = 420
-CHUNK_OVERLAP = 100
+CHUNK_SIZE = 600
+CHUNK_OVERLAP = 150
 
 # ========= 回答输出 =========
 OUT_PATH = str(BASE_DIR / "answer.txt")

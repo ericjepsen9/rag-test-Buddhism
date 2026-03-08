@@ -15,7 +15,7 @@ def rewrite_query(question: str) -> Dict[str, Any]:
     for pid in products:
         expanded_terms.extend(PRODUCT_ALIASES.get(pid, [])[:4])
     for pj in projects:
-        expanded_terms.extend(PROJECT_ALIASES.get(pj, [])[:3])
+        expanded_terms.extend(PROJECT_ALIASES.get(pj, [])[:4])
     expanded_terms.extend(buddhist)
     expanded_terms.extend(concepts)
 
