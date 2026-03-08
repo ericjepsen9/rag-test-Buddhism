@@ -175,10 +175,11 @@ def _text_overlap_ratio(a: str, b: str) -> float:
     return len(ngrams_short & ngrams_long) / len(ngrams_short)
 
 
-def _deduplicate_hits(hits: List[Dict], overlap_threshold: float = 0.7,
+def _deduplicate_hits(hits: List[Dict], base_overlap_threshold: float = 0.7,
                       max_per_source: int = 3) -> List[Dict]:
     """语义去重 + 来源多样性控制
-    - 移除与已选 chunk 重叠度 > overlap_threshold 的 chunk
+    - 移除与已选 chunk 重叠度超过阈值的 chunk
+    - 阈值自适应：短 chunk（<200字）提高到 0.85，避免因共同短语误杀
     - 限制同一来源文件最多 max_per_source 个 chunk
     """
     if not hits:
@@ -193,11 +194,14 @@ def _deduplicate_hits(hits: List[Dict], overlap_threshold: float = 0.7,
         source = h.get("meta", {}).get("source_file", "_unknown")
         if source_counts.get(source, 0) >= max_per_source:
             continue
-        # 语义去重：与已选的每个 chunk 比较重叠率
+        # 语义去重：短文本用更高阈值避免误杀
         is_dup = False
         for sel in selected:
             sel_text = sel.get("text", "")
-            if _text_overlap_ratio(text, sel_text) > overlap_threshold:
+            min_len = min(len(text), len(sel_text))
+            # 短 chunk 阈值提高（200字以下用 0.85），长 chunk 用基础阈值
+            threshold = base_overlap_threshold + 0.15 * max(0, 1 - min_len / 200)
+            if _text_overlap_ratio(text, sel_text) > threshold:
                 is_dup = True
                 break
         if is_dup:
@@ -322,7 +326,8 @@ def answer_one(question: str, mode: str) -> str:
         return format_structured_answer(route, [faq_answer], faq_evidence, add_risk_note=False)
 
     # 2. 向量 + 关键词混合检索
-    vector_hits = vector_search(product, rewrite["expanded"], VECTOR_TOP_K)
+    # 向量搜索用原始问题（保持语义纯净），关键词搜索用扩展查询（覆盖别名/同义词）
+    vector_hits = vector_search(product, question, VECTOR_TOP_K)
     _, docs = load_store(product)
     keyword_hits = keyword_search(rewrite["expanded"], docs, KEYWORD_TOP_K) if docs else []
     hits = merge_hybrid(vector_hits, keyword_hits, HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, DEFAULT_TOP_K) if (vector_hits or keyword_hits) else []
@@ -343,8 +348,26 @@ def answer_one(question: str, mode: str) -> str:
     # 3. 优先使用 LLM 基于检索上下文生成答案（真正的 RAG）
     context = extract_chunks_as_context(hits, max_chunks=6)
     llm_answer = openai_rag_generate(question, context, route)
-    # 要求 LLM 答案至少 30 字，避免残缺/无意义的短回复
-    if llm_answer and len(llm_answer.strip()) >= 30:
+    # 要求 LLM 答案至少 15 字（佛学短答案也有效，如"四圣谛即苦集灭道"）
+    if llm_answer and len(llm_answer.strip()) >= 15:
+        # LLM 答案也附上依据来源，保持格式一致
+        evidence = build_evidence(hits)
+        if evidence:
+            source_lines = []
+            for ev in evidence:
+                m = ev.get("meta", {})
+                parts = []
+                if m.get("source_file"):
+                    parts.append(m["source_file"])
+                if m.get("kepan_breadcrumb"):
+                    parts.append(m["kepan_breadcrumb"])
+                elif m.get("section_title"):
+                    parts.append(m["section_title"])
+                if parts:
+                    source_lines.append("｜".join(parts))
+            if source_lines:
+                sources_text = "\n".join(f"- {s}" for s in dict.fromkeys(source_lines))
+                return f"{llm_answer}\n\n**依据来源：**\n{sources_text}"
         return llm_answer
 
     # 4. 无 LLM 时：向量检索结果直接作为答案段落（保留完整段落）
@@ -414,7 +437,7 @@ def openai_rag_generate(question: str, context: str, route: str) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.3,
+            temperature=0.5,
             max_tokens=1500,
         )
         answer = (resp.choices[0].message.content or "").strip()

@@ -227,6 +227,9 @@ def _split_by_content_boundary(text: str) -> List[str]:
             # 新的引用起始："《XX》中云："、"如云："
             elif re.match(r'^(关于|所谓|《|如云|如经|经中)', stripped):
                 is_boundary = True
+            # 偈颂/引用内联标记："偈云："、"颂曰："、"论云："
+            elif re.match(r'^(偈云|偈曰|颂[云曰]|论[云曰]|经[云曰]|故[云曰]|又[云曰])[:：]', stripped):
+                is_boundary = True
 
         if is_boundary and current_block:
             blocks.append("\n".join(current_block))
