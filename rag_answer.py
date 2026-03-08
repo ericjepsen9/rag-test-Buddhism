@@ -298,6 +298,10 @@ def parse_bullets_from_section(main_text: str, faq_text: str, route: str, mode: 
         clean = ln.lstrip("-").strip()
         if not clean:
             continue
+        # 最小有效字符检查：去除标点后至少 8 字
+        eff_len = len(re.sub(r"[\s\u3000，。、！？；：""''（）【】《》\-—·]", "", clean))
+        if eff_len < 8:
+            continue
         if re.match(r"^\d+[）\)]", clean):
             items.append(clean)
             continue
@@ -362,10 +366,14 @@ def answer_one(question: str, mode: str) -> str:
     llm_answer = openai_rag_generate(question, context, route)
     # 验证 LLM 答案：至少 15 字 + 不是单纯复述问题
     if llm_answer and len(llm_answer.strip()) >= 15:
-        # 回声检测：如果答案与问题重叠度 >80%，视为无效复述
-        echo_ratio = _text_overlap_ratio(question.strip(), llm_answer.strip()[:len(question) * 2])
-        if echo_ratio > 0.8:
-            llm_answer = ""  # 走 fallback
+        # 回声检测：答案长度与问题接近且高度重叠时才判为复述
+        # 短问题（<10字）跳过检测，因为合理答案必然包含问题关键词
+        q_stripped = question.strip()
+        a_stripped = llm_answer.strip()
+        if len(q_stripped) >= 10 and len(a_stripped) < len(q_stripped) * 3:
+            echo_ratio = _text_overlap_ratio(q_stripped, a_stripped[:len(q_stripped) * 3])
+            if echo_ratio > 0.85:
+                llm_answer = ""  # 走 fallback
     if llm_answer and len(llm_answer.strip()) >= 15:
         # LLM 答案也附上依据来源，保持格式一致
         evidence = build_evidence(hits)
