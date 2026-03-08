@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -8,7 +9,7 @@ STORE_ROOT = BASE_DIR / "stores"
 
 # ===== OpenAI 开关 =====
 USE_OPENAI = False
-OPENAI_MODEL = "gpt-4o-mini"
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
 # ===== 输出与调试 =====
 DEBUG = False

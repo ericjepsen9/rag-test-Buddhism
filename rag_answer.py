@@ -147,24 +147,47 @@ def build_evidence(hits: List[Dict]) -> List[Dict]:
     return ev
 
 
+def extract_chunks_as_context(hits: List[Dict], max_chunks: int = 6) -> str:
+    """从检索结果中提取完整 chunk 文本作为 LLM 上下文"""
+    if not hits:
+        return ""
+    chunks = []
+    seen = set()
+    for h in hits[:max_chunks]:
+        text = h.get("text", "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        chunks.append(text)
+    return "\n\n---\n\n".join(chunks)
+
+
 def extract_from_hits(hits: List[Dict], route: str, mode: str) -> List[str]:
-    """从向量检索结果中提取答案行（真正的 RAG）"""
+    """从向量检索结果中提取答案段落（保留完整段落，不再按行碎片化）"""
     if not hits:
         return []
-    lines = []
+    paragraphs = []
+    seen = set()
     for h in hits:
         text = h.get("text", "").strip()
         if not text:
             continue
+        # 保留完整段落而非拆成单行
+        key = re.sub(r"\s+", " ", text)[:200]
+        if key in seen:
+            continue
+        seen.add(key)
+        # 清理 FAQ 标记行但保留其他内容
+        cleaned_lines = []
         for ln in normalize_lines(text):
             clean = ln.lstrip("-").strip()
             if not clean or is_faq_line(clean):
                 continue
-            if len(clean) <= 150:
-                lines.append(clean)
-    lines = uniq(lines)
-    limit = 14 if mode == "brief" else 28
-    return lines[:limit]
+            cleaned_lines.append(clean)
+        if cleaned_lines:
+            paragraphs.append("\n".join(cleaned_lines))
+    limit = 6 if mode == "brief" else 12
+    return paragraphs[:limit]
 
 
 def parse_bullets_from_section(main_text: str, faq_text: str, route: str, mode: str) -> List[str]:
@@ -222,13 +245,27 @@ def answer_one(question: str, mode: str) -> str:
     keyword_hits = keyword_search(rewrite["expanded"], docs, KEYWORD_TOP_K) if docs else []
     hits = merge_hybrid(vector_hits, keyword_hits, HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, DEFAULT_TOP_K) if (vector_hits or keyword_hits) else []
 
-    # 3. 章节提取（结构化文档）
-    main_text = read_knowledge_file(product, "main.txt")
-    body_lines = parse_bullets_from_section(main_text, faq_text, route, mode)
+    if not hits:
+        fallback = [
+            "当前知识库未覆盖该问题的直接内容。",
+            "建议方向：请查阅相关佛教经典或咨询法师。",
+            "您也可以尝试更具体的关键词进行提问。",
+        ]
+        return format_structured_answer(route, fallback, [], add_risk_note=False)
 
-    # 4. 如果章节提取为空，用向量检索结果兜底（真正的 RAG）
-    if not body_lines and hits:
-        body_lines = extract_from_hits(hits, route, mode)
+    # 3. 优先使用 LLM 基于检索上下文生成答案（真正的 RAG）
+    context = extract_chunks_as_context(hits, max_chunks=6)
+    llm_answer = openai_rag_generate(question, context, route)
+    if llm_answer:
+        return llm_answer
+
+    # 4. 无 LLM 时：向量检索结果直接作为答案段落（保留完整段落）
+    body_lines = extract_from_hits(hits, route, mode)
+
+    if not body_lines:
+        # 兜底：章节提取
+        main_text = read_knowledge_file(product, "main.txt")
+        body_lines = parse_bullets_from_section(main_text, faq_text, route, mode)
 
     if not body_lines:
         fallback = [
@@ -238,36 +275,54 @@ def answer_one(question: str, mode: str) -> str:
         ]
         return format_structured_answer(route, fallback, build_evidence(hits), add_risk_note=False)
 
-    # 5. 如果有检索命中，将最相关的检索内容补充到答案中
-    if hits and body_lines:
-        hit_extras = extract_from_hits(hits[:3], route, mode)
-        existing = set(body_lines)
-        for extra in hit_extras[:5]:
-            if extra not in existing:
-                body_lines.append(extra)
-                existing.add(extra)
-
     text = format_structured_answer(route, body_lines, build_evidence(hits), add_risk_note=(route == "practice"))
-    return openai_rewrite_answer(text, route)
+    return text
 
 
-def openai_rewrite_answer(text: str, route: str) -> str:
+def openai_rag_generate(question: str, context: str, route: str) -> str:
+    """真正的 RAG：将检索到的知识库内容作为上下文，让 LLM 生成准确答案"""
     if not USE_OPENAI:
-        return text
+        return ""
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key:
-        return text
+        return ""
+    if not context.strip():
+        return ""
     try:
         from openai import OpenAI
         client = OpenAI(api_key=key)
-        prompt = (
-            "请在不改变事实的前提下，将以下基于佛教知识库的回答整理得更专业、更流畅。"
-            "不要新增事实。保留结构化格式。\n\n" + text
+
+        system_prompt = (
+            "你是一个佛教知识问答助手。请严格基于以下【参考资料】回答用户的问题。\n"
+            "规则：\n"
+            "1. 只使用参考资料中的内容回答，不要编造或添加资料中没有的信息\n"
+            "2. 如果参考资料不足以完整回答问题，请如实说明哪些部分无法回答\n"
+            "3. 回答要条理清晰、准确专业\n"
+            "4. 适当引用经典原文（如果参考资料中有的话）\n"
+            "5. 回答末尾加上：「以上内容基于佛教经典与传统教义整理，仅供学习参考。」\n"
         )
-        resp = client.responses.create(model=OPENAI_MODEL, input=prompt)
-        return (resp.output_text or "").strip() or text
-    except Exception:
-        return text
+
+        user_prompt = (
+            f"【参考资料】\n{context}\n\n"
+            f"【用户问题】\n{question}\n\n"
+            "请基于以上参考资料回答问题。"
+        )
+
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
+            max_tokens=1500,
+        )
+        answer = (resp.choices[0].message.content or "").strip()
+        return answer if answer else ""
+    except Exception as e:
+        if DEBUG:
+            print(f"[DEBUG] OpenAI RAG generation failed: {e}")
+        return ""
 
 
 def answer_question(question: str, mode: str) -> str:
