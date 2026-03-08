@@ -15,7 +15,10 @@ import faiss
 from sentence_transformers import SentenceTransformer
 
 from rag_runtime_config import KNOWLEDGE_DIR, STORE_ROOT, CHUNK_SIZE, CHUNK_OVERLAP
-from search_utils import normalize_text, has_kepan_structure, split_by_kepan
+from search_utils import (
+    normalize_text, has_kepan_structure, split_by_kepan,
+    has_pin_structure, split_by_pin, split_semantic_paragraphs,
+)
 
 MODEL_NAME = "BAAI/bge-m3"
 _model = None
@@ -46,10 +49,53 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 80):
     return chunks
 
 
+def _sub_chunk_semantic(body: str, max_size: int, overlap: int) -> List[str]:
+    """
+    将一段正文按语义边界切分为子块。
+    优先在段落/颂词/引用边界处分割，避免把颂词和注释拆开。
+    如果单个语义段落超长，才回退到滑动窗口。
+    """
+    paragraphs = split_semantic_paragraphs(body)
+    if not paragraphs:
+        return chunk_text(body, max_size, overlap)
+
+    chunks = []
+    current_parts = []
+    current_len = 0
+
+    for para in paragraphs:
+        para_len = len(para)
+        if para_len > max_size:
+            # 这个段落本身超长，先把积攒的内容产出，再对超长段落滑动切分
+            if current_parts:
+                chunks.append("\n\n".join(current_parts))
+                current_parts = []
+                current_len = 0
+            for sc in chunk_text(para, max_size, overlap):
+                chunks.append(sc)
+            continue
+
+        # 加上这段后是否超限
+        new_len = current_len + para_len + (2 if current_parts else 0)
+        if new_len > max_size and current_parts:
+            # 产出当前积攒的内容
+            chunks.append("\n\n".join(current_parts))
+            current_parts = []
+            current_len = 0
+
+        current_parts.append(para)
+        current_len += para_len + (2 if len(current_parts) > 1 else 0)
+
+    if current_parts:
+        chunks.append("\n\n".join(current_parts))
+
+    return chunks
+
+
 def chunk_by_kepan(text: str, chunk_size: int = 600, overlap: int = 80):
     """
     按科判结构切分文本。每个科判节点生成带层级面包屑的 chunk。
-    如果某个科判下的正文太长，再用滑动窗口二次切分。
+    正文按语义边界（颂词/引用/段落）切分，保证颂词和注释不被拆开。
     返回列表: [{"text": ..., "kepan_breadcrumb": ..., "kepan_marker": ..., "kepan_title": ...}, ...]
     """
     text = normalize_text(text)
@@ -58,7 +104,6 @@ def chunk_by_kepan(text: str, chunk_size: int = 600, overlap: int = 80):
 
     sections = split_by_kepan(text)
     if not sections:
-        # 没有科判结构，回退到普通分块
         return [{"text": c} for c in chunk_text(text, chunk_size, overlap)]
 
     results = []
@@ -69,7 +114,6 @@ def chunk_by_kepan(text: str, chunk_size: int = 600, overlap: int = 80):
         title = sec["title"]
 
         if not body:
-            # 科判标题本身也作为 chunk（有些科判只有标题和子科判）
             prefix = f"【{breadcrumb}】\n{title}"
             results.append({
                 "text": prefix,
@@ -79,14 +123,12 @@ def chunk_by_kepan(text: str, chunk_size: int = 600, overlap: int = 80):
             })
             continue
 
-        # 在正文前加上层级面包屑作为上下文
         prefix = f"【{breadcrumb}】\n"
         effective_size = chunk_size - len(prefix)
         if effective_size < 100:
             effective_size = 100
 
         if len(body) <= effective_size:
-            # 正文较短，直接作为一个 chunk
             results.append({
                 "text": prefix + body,
                 "kepan_breadcrumb": breadcrumb,
@@ -94,8 +136,8 @@ def chunk_by_kepan(text: str, chunk_size: int = 600, overlap: int = 80):
                 "kepan_title": title,
             })
         else:
-            # 正文较长，滑动窗口二次切分
-            sub_chunks = chunk_text(body, effective_size, overlap)
+            # 按语义边界切分，保留颂词+注释完整性
+            sub_chunks = _sub_chunk_semantic(body, effective_size, overlap)
             for sc in sub_chunks:
                 results.append({
                     "text": prefix + sc,
@@ -105,6 +147,83 @@ def chunk_by_kepan(text: str, chunk_size: int = 600, overlap: int = 80):
                 })
 
     return results
+
+
+def chunk_by_pin(text: str, chunk_size: int = 600, overlap: int = 80):
+    """
+    按品结构切分文本（无科判的论典）。
+    每个品内部再按语义段落切分。
+    """
+    text = normalize_text(text)
+    if not text:
+        return []
+
+    pin_sections = split_by_pin(text)
+    if not pin_sections:
+        return [{"text": c} for c in chunk_text(text, chunk_size, overlap)]
+
+    results = []
+    for sec in pin_sections:
+        pin_title = sec["title"]
+        body = sec["body"].strip()
+
+        if not body:
+            results.append({"text": pin_title, "pin_title": pin_title})
+            continue
+
+        # 品内可能包含科判
+        if has_kepan_structure(body):
+            kepan_chunks = chunk_by_kepan(body, chunk_size, overlap)
+            for kc in kepan_chunks:
+                # 在面包屑前加品名
+                if "kepan_breadcrumb" in kc:
+                    kc["kepan_breadcrumb"] = f"{pin_title} > {kc['kepan_breadcrumb']}"
+                    kc["text"] = f"【{kc['kepan_breadcrumb']}】\n" + kc["text"].split("】\n", 1)[-1]
+                else:
+                    kc["pin_title"] = pin_title
+                results.append(kc)
+        else:
+            # 品内无科判，按语义段落切分
+            prefix = f"【{pin_title}】\n"
+            effective_size = chunk_size - len(prefix)
+            if effective_size < 100:
+                effective_size = 100
+
+            if len(body) <= effective_size:
+                results.append({"text": prefix + body, "pin_title": pin_title})
+            else:
+                sub_chunks = _sub_chunk_semantic(body, effective_size, overlap)
+                for sc in sub_chunks:
+                    results.append({"text": prefix + sc, "pin_title": pin_title})
+
+    return results
+
+
+def chunk_smart(text: str, chunk_size: int = 600, overlap: int = 80):
+    """
+    智能分块：自动检测文本结构并选择最佳分块策略。
+    优先级：科判 > 品 > 语义段落 > 滑动窗口
+    """
+    text = normalize_text(text)
+    if not text:
+        return []
+
+    # 1. 有科判结构
+    if has_kepan_structure(text):
+        return chunk_by_kepan(text, chunk_size, overlap)
+
+    # 2. 有品结构
+    if has_pin_structure(text):
+        return chunk_by_pin(text, chunk_size, overlap)
+
+    # 3. 无明显结构，用语义段落分块
+    paragraphs = split_semantic_paragraphs(text)
+    if len(paragraphs) > 1:
+        sub_chunks = _sub_chunk_semantic(text, chunk_size, overlap)
+        return [{"text": c} for c in sub_chunks]
+
+    # 4. 回退到滑动窗口
+    return [{"text": c} for c in chunk_text(text, chunk_size, overlap)]
 
 
 def embed_texts(texts):
@@ -140,10 +259,16 @@ def collect_product_records(product: str):
 
         if stype == "alias":
             chunks_data = [{"text": text}]
-        elif stype == "main" and has_kepan_structure(text):
-            # 检测到科判结构，使用科判分块
-            print(f"[INFO] {product}/{fname}: 检测到科判结构，使用层级分块")
-            chunks_data = chunk_by_kepan(text, CHUNK_SIZE, CHUNK_OVERLAP)
+        elif stype in ("main", "faq"):
+            # 智能检测结构：科判 > 品 > 语义段落 > 滑动窗口
+            if has_kepan_structure(text):
+                print(f"[INFO] {product}/{fname}: 检测到科判结构，使用层级分块")
+                chunks_data = chunk_by_kepan(text, CHUNK_SIZE, CHUNK_OVERLAP)
+            elif has_pin_structure(text):
+                print(f"[INFO] {product}/{fname}: 检测到品结构，使用品章节分块")
+                chunks_data = chunk_by_pin(text, CHUNK_SIZE, CHUNK_OVERLAP)
+            else:
+                chunks_data = chunk_smart(text, CHUNK_SIZE, CHUNK_OVERLAP)
         else:
             chunks_data = [{"text": c} for c in chunk_text(text, CHUNK_SIZE, CHUNK_OVERLAP)]
 
@@ -155,11 +280,13 @@ def collect_product_records(product: str):
                 "source_type": stype,
                 "chunk_id": i,
             }
-            # 保存科判元数据（如果有）
+            # 保存结构元数据（科判/品）
             if "kepan_breadcrumb" in cd:
                 meta["kepan_breadcrumb"] = cd["kepan_breadcrumb"]
                 meta["kepan_marker"] = cd.get("kepan_marker", "")
                 meta["kepan_title"] = cd.get("kepan_title", "")
+            if "pin_title" in cd:
+                meta["pin_title"] = cd["pin_title"]
             records.append({
                 "text": cd["text"],
                 "meta": meta,

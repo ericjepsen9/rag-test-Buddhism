@@ -102,6 +102,159 @@ def has_kepan_structure(text: str) -> bool:
     return False
 
 
+# ===== 品（章节）结构检测 =====
+# 匹配 "第一品"、"第二品 菩提心利益" 等
+_PIN_RE = re.compile(r'^第?([' + _KEPAN_NUM + r']+)品\s*(.*)')
+# 也匹配 "品第一" 格式
+_PIN_ALT_RE = re.compile(r'^(.+?)品第([' + _KEPAN_NUM + r']+)')
+
+
+def parse_pin_marker(line: str) -> Optional[Dict]:
+    """解析品标记，如 '第一品 菩提心利益'"""
+    line = line.strip()
+    m = _PIN_RE.match(line)
+    if m:
+        return {"num": m.group(1), "subtitle": m.group(2).strip(), "full_line": line}
+    m = _PIN_ALT_RE.match(line)
+    if m:
+        return {"num": m.group(2), "subtitle": m.group(1).strip(), "full_line": line}
+    return None
+
+
+def has_pin_structure(text: str) -> bool:
+    """检查文本是否包含品结构"""
+    count = 0
+    for line in text.split("\n"):
+        if parse_pin_marker(line.strip()):
+            count += 1
+            if count >= 2:
+                return True
+    return False
+
+
+def split_by_pin(text: str) -> List[Dict]:
+    """
+    按品切分文本。
+    返回列表，每项包含 title, body。
+    品之前的内容作为 "序言" 部分。
+    """
+    lines = text.split("\n")
+    sections = []
+    current = None
+    body_lines = []
+    preamble_lines = []
+
+    def flush():
+        nonlocal current, body_lines
+        if current is not None:
+            current["body"] = "\n".join(body_lines).strip()
+            sections.append(current)
+            body_lines = []
+
+    for line in lines:
+        info = parse_pin_marker(line)
+        if info:
+            if current is None and preamble_lines:
+                # 品之前的序言内容
+                sections.append({
+                    "title": "序言",
+                    "body": "\n".join(preamble_lines).strip(),
+                })
+            flush()
+            subtitle = info["subtitle"]
+            title = info["full_line"]
+            current = {"title": title}
+            body_lines = []
+        elif current is None:
+            preamble_lines.append(line)
+        else:
+            body_lines.append(line)
+
+    flush()
+    return sections
+
+
+# ===== 颂词 + 注释分块 =====
+# 颂词特征：四句偈（每句以逗号或句号结尾，大致等长），或两句对仗
+_VERSE_LINE_RE = re.compile(r'^[^\d【（(]{2,20}[，,]$')  # 偈颂行：短句+逗号结尾
+_CITATION_RE = re.compile(r'(?:《.+?》|如|经|论|云|中说|中云|偈云|颂云)[:：]')
+
+
+def split_semantic_paragraphs(text: str) -> List[str]:
+    """
+    将一段论典正文按语义边界分成段落。
+    分割点：
+    1. 双换行（空行）
+    2. 颂词起始行（识别偈颂格式）
+    3. 经论引用标记（《XX经》中云：）
+    保证颂词与其紧随的注释在同一段落内。
+    """
+    if not text.strip():
+        return []
+
+    # 先按空行分段
+    raw_paragraphs = re.split(r'\n\s*\n', text)
+    paragraphs = [p.strip() for p in raw_paragraphs if p.strip()]
+
+    if len(paragraphs) <= 1:
+        # 没有空行分隔，尝试按颂词/引用边界分
+        return _split_by_content_boundary(text)
+
+    return paragraphs
+
+
+def _split_by_content_boundary(text: str) -> List[str]:
+    """当文本没有空行时，按内容边界智能分段"""
+    lines = text.split("\n")
+    blocks = []
+    current_block = []
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            if current_block:
+                blocks.append("\n".join(current_block))
+                current_block = []
+            continue
+
+        # 检查是否是新的内容起点
+        is_boundary = False
+        if i > 0 and current_block:
+            # 颂词/偈颂起始（检测连续的短句+逗号模式）
+            if _looks_like_verse_start(stripped, lines, i):
+                is_boundary = True
+            # 新的引用起始："《XX》中云："、"如云："
+            elif re.match(r'^(关于|所谓|《|如云|如经|经中)', stripped):
+                is_boundary = True
+
+        if is_boundary and current_block:
+            blocks.append("\n".join(current_block))
+            current_block = []
+
+        current_block.append(stripped)
+
+    if current_block:
+        blocks.append("\n".join(current_block))
+
+    return [b for b in blocks if b.strip()]
+
+
+def _looks_like_verse_start(line: str, all_lines: List[str], idx: int) -> bool:
+    """
+    判断一行是否像偈颂的开头。
+    佛教偈颂通常是四句（或两句），每句大致等长，以逗号或句号结尾。
+    如：善逝法身佛子伴，及诸应敬我悉礼。
+    """
+    # 如果这一行包含逗号分隔的两个短语，且下一行也有类似格式
+    parts = re.split(r'[，,]', line)
+    if len(parts) >= 2:
+        lens = [len(p.strip()) for p in parts if p.strip()]
+        # 各句长度差别不超过3个字，且每句至少4字
+        if lens and min(lens) >= 4 and max(lens) - min(lens) <= 3:
+            return True
+    return False
+
+
 def normalize_text(text: str) -> str:
     text = text or ""
     text = text.replace("\ufeff", "")
