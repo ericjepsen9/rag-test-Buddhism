@@ -28,7 +28,6 @@ from answer_formatter import format_structured_answer
 
 _model = None
 _faiss = None
-_BGEM3 = None
 _store_cache = {}  # 缓存已加载的 index + docs
 
 
@@ -40,35 +39,17 @@ def get_faiss():
     return _faiss
 
 
-def get_bg_cls():
-    global _BGEM3
-    if _BGEM3 is None:
-        from FlagEmbedding import BGEM3FlagModel as _cls
-        _BGEM3 = _cls
-    return _BGEM3
-
-
 def get_model():
     global _model
     if _model is None:
-        _model = get_bg_cls()("BAAI/bge-m3", use_fp16=False)
+        from sentence_transformers import SentenceTransformer
+        _model = SentenceTransformer("BAAI/bge-m3")
     return _model
 
 
 def embed_query(text: str) -> np.ndarray:
     model = get_model()
-    out = model.encode([text], batch_size=1, max_length=1024)
-    if isinstance(out, dict):
-        if "dense_vecs" in out:
-            vec = out["dense_vecs"]
-        elif "dense" in out:
-            vec = out["dense"]
-        elif "embeddings" in out:
-            vec = out["embeddings"]
-        else:
-            raise ValueError("未找到查询向量字段")
-    else:
-        vec = out
+    vec = model.encode([text], normalize_embeddings=False)
     vec = np.asarray(vec, dtype="float32")
     get_faiss().normalize_L2(vec)
     return vec

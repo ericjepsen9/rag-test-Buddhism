@@ -12,7 +12,7 @@ except Exception:
 
 import numpy as np
 import faiss
-from FlagEmbedding import BGEM3FlagModel
+from sentence_transformers import SentenceTransformer
 
 from rag_runtime_config import KNOWLEDGE_DIR, STORE_ROOT
 from search_utils import normalize_text
@@ -25,7 +25,7 @@ def get_model():
     global _model
     if _model is None:
         print(f"[INFO] 加载模型：{MODEL_NAME}")
-        _model = BGEM3FlagModel(MODEL_NAME, use_fp16=False)
+        _model = SentenceTransformer(MODEL_NAME)
     return _model
 
 
@@ -48,18 +48,7 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 80):
 
 def embed_texts(texts):
     model = get_model()
-    out = model.encode(texts, batch_size=8, max_length=1024)
-    if isinstance(out, dict):
-        if "dense_vecs" in out:
-            vecs = out["dense_vecs"]
-        elif "dense" in out:
-            vecs = out["dense"]
-        elif "embeddings" in out:
-            vecs = out["embeddings"]
-        else:
-            raise ValueError("encode 输出中未找到向量字段")
-    else:
-        vecs = out
+    vecs = model.encode(texts, batch_size=8, show_progress_bar=True, normalize_embeddings=False)
     vecs = np.asarray(vecs, dtype="float32")
     if vecs.ndim != 2:
         raise ValueError(f"向量维度异常: {vecs.shape}")

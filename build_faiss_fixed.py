@@ -28,9 +28,9 @@ except Exception as e:
     raise RuntimeError("请先安装 faiss-cpu：pip install faiss-cpu") from e
 
 try:
-    from FlagEmbedding import BGEM3FlagModel  # type: ignore
+    from sentence_transformers import SentenceTransformer  # type: ignore
 except Exception as e:
-    raise RuntimeError("请先安装 FlagEmbedding：pip install FlagEmbedding") from e
+    raise RuntimeError("请先安装 sentence-transformers：pip install sentence-transformers") from e
 
 
 # ====== 路径约定（不依赖其他文件）======
@@ -170,23 +170,8 @@ def chunk_text(text: str) -> List[str]:
     return merge_paragraphs_to_chunks(paras, CHUNK_SIZE, CHUNK_OVERLAP)
 
 
-def embed_texts(model: BGEM3FlagModel, texts: List[str]) -> np.ndarray:
-    # BGEM3FlagModel.encode 返回 dict，dense_vecs 是 numpy.ndarray
-    out = model.encode(texts, batch_size=8, max_length=8192)
-    vecs = None
-    if isinstance(out, dict):
-        if out.get("dense_vecs") is not None:
-            vecs = out.get("dense_vecs")
-        elif out.get("dense") is not None:
-            vecs = out.get("dense")
-        elif out.get("embeddings") is not None:
-            vecs = out.get("embeddings")
-    elif isinstance(out, (list, tuple, np.ndarray)):
-        vecs = out
-
-    if vecs is None:
-        raise ValueError("模型 encode 输出不包含 dense 向量（dense_vecs/dense/embeddings）。")
-
+def embed_texts(model: SentenceTransformer, texts: List[str]) -> np.ndarray:
+    vecs = model.encode(texts, batch_size=8, show_progress_bar=True, normalize_embeddings=False)
     vecs = np.asarray(vecs, dtype="float32")
     if vecs.ndim != 2:
         raise ValueError(f"向量形状异常：{vecs.shape}")
@@ -258,7 +243,7 @@ def build_for_product(product_id: str):
         return
 
     print(f"[INFO] 加载模型：{MODEL_NAME}（首次会下载）")
-    model = BGEM3FlagModel(MODEL_NAME, use_fp16=True)
+    model = SentenceTransformer(MODEL_NAME)
 
     print(f"[INFO] Embedding {len(records)} chunks ...")
     vecs = embed_texts(model, [r["text"] for r in records])
