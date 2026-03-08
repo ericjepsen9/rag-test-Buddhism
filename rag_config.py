@@ -1,6 +1,6 @@
 # rag_config.py
-# 稳定版配置（对齐 rag_answer.py / build_faiss.py）
-# 目标：新增产品尽量只改 knowledge/<product_id> 下的 main/faq/alias + 这里的 PRODUCTS
+# 稳定版配置（佛教知识问答 RAG 系统）
+# 目标：新增知识领域只需在 knowledge/<topic_id> 下添加 main/faq/alias 文件并更新 PRODUCTS
 
 from __future__ import annotations
 from pathlib import Path
@@ -8,21 +8,11 @@ from pathlib import Path
 # ========= 基础路径 =========
 BASE_DIR = Path(__file__).resolve().parent
 
-# knowledge：放“源文件”（每个产品一套 main/faq/alias）
-# 结构示例：
-#   knowledge/feiluoao/main.txt
-#   knowledge/feiluoao/faq.txt
-#   knowledge/feiluoao/alias.txt
 KNOWLEDGE_DIR = BASE_DIR / "knowledge"
-
-# stores：放“索引产物”（每个产品一套 docs.jsonl + index.faiss）
-# 结构示例：
-#   stores/feiluoao/docs.jsonl
-#   stores/feiluoao/index.faiss
 STORE_DIR = BASE_DIR / "stores"
 
-# 默认产品（用户不写品牌时的兜底）
-DEFAULT_PRODUCT = "feiluoao"
+# 默认知识领域
+DEFAULT_PRODUCT = "buddhism"
 
 # ========= 向量模型 =========
 MODEL_NAME = "BAAI/bge-m3"
@@ -38,11 +28,14 @@ SCORE_THRESHOLD_DEFAULT = 0.35
 
 # ========= 问题类型配置 =========
 QUESTION_TYPE_CONFIG = {
-    "contact": {"k": 6, "threshold": 0.20},
-    "anti_fake": {"k": 8, "threshold": 0.20},
-    "contraindication": {"k": 8, "threshold": 0.25},
-    "aftercare": {"k": 8, "threshold": 0.25},
-    "operation": {"k": 10, "threshold": 0.25},
+    "doctrine": {"k": 8, "threshold": 0.25},
+    "history": {"k": 8, "threshold": 0.25},
+    "practice": {"k": 8, "threshold": 0.25},
+    "scripture": {"k": 8, "threshold": 0.25},
+    "sect": {"k": 8, "threshold": 0.25},
+    "concept": {"k": 8, "threshold": 0.25},
+    "ritual": {"k": 6, "threshold": 0.25},
+    "basic": {"k": 6, "threshold": 0.30},
     "summarize": {"k": 10, "threshold": 0.30},
     "define": {"k": 6, "threshold": 0.30},
     "complex": {"k": 10, "threshold": 0.30},
@@ -53,51 +46,48 @@ QUESTION_TYPE_CONFIG = {
 ANSWER_MODE_CONFIG = {
     "brief": {
         "max_items_default": 8,
-        "anti_fake_max_lines": 30,   # brief 也要答清楚，防伪不建议太短
-        "operation_max_lines": 20,
-        "contraindication_max_lines": 12,
-        "aftercare_max_lines": 14,
+        "doctrine_max_lines": 20,
+        "practice_max_lines": 20,
+        "scripture_max_lines": 14,
+        "history_max_lines": 14,
+        "sect_max_lines": 14,
+        "concept_max_lines": 14,
+        "ritual_max_lines": 12,
     },
     "full": {
         "max_items_default": 14,
-        "anti_fake_max_lines": 80,
-        "operation_max_lines": 40,
-        "contraindication_max_lines": 24,
-        "aftercare_max_lines": 30,
+        "doctrine_max_lines": 40,
+        "practice_max_lines": 40,
+        "scripture_max_lines": 30,
+        "history_max_lines": 30,
+        "sect_max_lines": 30,
+        "concept_max_lines": 30,
+        "ritual_max_lines": 24,
     },
 }
 
-# ========= 产品配置 =========
-# 只要你给每个产品准备 knowledge/<product_id>/{main,faq,alias}.txt
-# 并执行 python build_faiss.py --product <product_id> 即可建索引
+# ========= 知识领域配置 =========
 PRODUCTS = {
-    "feiluoao": {
-        "display_name": "赛罗菲提升（CELLOFILL / 菲罗奥）",
+    "buddhism": {
+        "display_name": "佛教知识（Buddhism）",
         "aliases": [
-            "菲罗奥", "非罗奥", "菲洛奥",
-            "赛罗菲", "赛罗菲提升",
-            "CELLOFILL", "FILLOUP",
+            "佛教", "佛法", "佛学", "Buddhism",
+            "释迦牟尼", "佛陀",
         ],
         "strong_keywords": [
-            "HiddenTag", "防伪", "正品认证",
-            "PCL", "提升", "微针", "水光", "中胚层",
+            "四圣谛", "八正道", "涅槃", "轮回", "因果",
+            "菩萨", "禅修", "念佛", "般若", "空性",
+            "戒定慧", "三宝", "五戒", "六度",
         ],
-    },
-    "sailuofei_vface": {
-        "display_name": "赛洛菲V脸溶脂",
-        "aliases": [
-            "赛洛菲V脸溶脂", "赛洛菲v脸溶脂", "赛洛菲溶脂", "V脸溶脂",
-        ],
-        "strong_keywords": ["溶脂", "V脸", "面部轮廓", "脂肪", "瘦脸"],
     },
 }
 
-# 易混淆词（命中这些词但无法判定产品时提示用户说明）
-AMBIGUOUS_TOKENS = ["赛罗菲", "赛洛菲"]
+# 易混淆词
+AMBIGUOUS_TOKENS = []
 
 UNCLEAR_PRODUCT_PROMPT = (
-    "你提到的产品名称可能有歧义（例如“赛罗菲/赛洛菲”可能指不同产品）。\n"
-    "请补充完整产品名后再问，例如：\n"
-    "- 赛罗菲提升（CELLOFILL / 菲罗奥）\n"
-    "- 赛洛菲V脸溶脂\n"
+    "请明确您想了解的佛教领域或主题，例如：\n"
+    "- 佛教基础教义（四圣谛、八正道等）\n"
+    "- 修行方法（禅修、念佛等）\n"
+    "- 佛教经典（心经、金刚经等）\n"
 )

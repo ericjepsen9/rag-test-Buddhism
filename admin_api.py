@@ -18,11 +18,11 @@ BUILD_SCRIPT = BASE_DIR / "build_faiss.py"
 ADMIN_PAGE = BASE_DIR / "admin_page.html"
 PYTHON_EXE = sys.executable
 
-app = FastAPI(title="RAG Admin API", version="1.0.0")
+app = FastAPI(title="Buddhist Knowledge RAG Admin API", version="1.0.0")
 
 
 class RebuildRequest(BaseModel):
-    product: str = Field(..., description="product id，例如 feiluoao")
+    product: str = Field(..., description="knowledge id，例如 buddhism")
     timeout_sec: int = Field(180, ge=10, le=1800)
 
 

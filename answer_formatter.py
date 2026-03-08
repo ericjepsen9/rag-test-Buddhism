@@ -9,13 +9,14 @@ def format_structured_answer(
     add_risk_note: bool = False,
 ) -> str:
     title_map = {
-        "basic": "基础资料",
-        "operation": "操作说明",
-        "aftercare": "术后护理",
-        "risk": "风险/异常反应",
-        "combo": "联合方案",
-        "anti_fake": "防伪鉴别",
-        "contraindication": "禁忌人群",
+        "basic": "佛教基础",
+        "doctrine": "教义解说",
+        "practice": "修行方法",
+        "scripture": "经典介绍",
+        "sect": "宗派介绍",
+        "concept": "核心概念",
+        "history": "佛教历史",
+        "ritual": "节日与礼仪",
     }
     title = title_map.get(route, "回答")
     out = [f"{title}（资料提取）：", "结论："]
@@ -30,9 +31,9 @@ def format_structured_answer(
             stype = ev.get("meta", {}).get("source_type", "unknown")
             out.append(f"- 来源文件：{source_file}｜段落：{chunk}｜类型：{stype}")
 
-    out.append("注意事项：")
+    out.append("提示：")
     out.append(f"- {REFERENCE_NOTE}")
     if add_risk_note:
-        out.append("需医生评估项：")
+        out.append("修行建议：")
         out.append(f"- {RISK_NOTE}")
     return "\n".join(out).strip()

@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from rag_runtime_config import PRODUCT_ALIASES, PROJECT_ALIASES, TIME_TERMS, SYMPTOM_TERMS
+from rag_runtime_config import PRODUCT_ALIASES, PROJECT_ALIASES, BUDDHIST_TERMS, CONCEPT_TERMS
 from search_utils import detect_terms, uniq, split_multi_question
 
 
@@ -8,16 +8,16 @@ def rewrite_query(question: str) -> Dict[str, Any]:
     products = detect_terms(q, PRODUCT_ALIASES)
     projects = detect_terms(q, PROJECT_ALIASES)
 
-    times = [x for x in TIME_TERMS if x in q]
-    symptoms = [x for x in SYMPTOM_TERMS if x in q]
+    buddhist = [x for x in BUDDHIST_TERMS if x in q]
+    concepts = [x for x in CONCEPT_TERMS if x in q]
 
     expanded_terms = []
     for pid in products:
         expanded_terms.extend(PRODUCT_ALIASES.get(pid, [])[:4])
     for pj in projects:
         expanded_terms.extend(PROJECT_ALIASES.get(pj, [])[:3])
-    expanded_terms.extend(times)
-    expanded_terms.extend(symptoms)
+    expanded_terms.extend(buddhist)
+    expanded_terms.extend(concepts)
 
     sub_questions = split_multi_question(q)
     expanded_query = " ".join(uniq([q] + expanded_terms))
@@ -27,7 +27,7 @@ def rewrite_query(question: str) -> Dict[str, Any]:
         "expanded": expanded_query,
         "products": products,
         "projects": projects,
-        "times": uniq(times),
-        "symptoms": uniq(symptoms),
+        "buddhist_terms": uniq(buddhist),
+        "concepts": uniq(concepts),
         "sub_questions": sub_questions,
     }

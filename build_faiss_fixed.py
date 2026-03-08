@@ -1,7 +1,7 @@
 # build_faiss.py
 # 用法：
 #   python build_faiss.py --list
-#   python build_faiss.py --product feiluoao
+#   python build_faiss.py --product buddhism
 #
 # 作用：
 # - 从 knowledge/<product_id>/{main,faq,alias}.txt 读取文本
@@ -222,7 +222,7 @@ def build_for_product(product_id: str):
     pdir = KNOWLEDGE_DIR / product_id
     if not pdir.exists():
         print(f"[ERROR] knowledge 目录不存在：{pdir}")
-        print("请先创建目录结构，例如 knowledge/feiluoao/main.txt")
+        print("请先创建目录结构，例如 knowledge/buddhism/main.txt")
         return
 
     parts = [("main", pdir / "main.txt"), ("faq", pdir / "faq.txt"), ("alias", pdir / "alias.txt")]
@@ -289,7 +289,7 @@ def list_products():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--product", type=str, default="", help="产品ID，例如 feiluoao")
+    parser.add_argument("--product", type=str, default="", help="知识领域ID，例如 buddhism")
     parser.add_argument("--list", action="store_true", help="列出 knowledge 下的产品目录")
     args = parser.parse_args()
 

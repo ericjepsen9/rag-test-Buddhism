@@ -14,7 +14,7 @@ RAG_SCRIPT = BASE_DIR / "rag_answer.py"
 ANSWER_FILE = BASE_DIR / "answer.txt"
 PYTHON_EXE = sys.executable
 
-app = FastAPI(title="Medical Aesthetics RAG API", version="1.0.0")
+app = FastAPI(title="Buddhist Knowledge RAG API", version="1.0.0")
 
 
 class AskRequest(BaseModel):
