@@ -165,10 +165,20 @@ def build_evidence(hits: List[Dict]) -> List[Dict]:
 
 
 def filter_by_score(hits: List[Dict], threshold: float = None) -> List[Dict]:
-    """过滤低于分数阈值的检索结果"""
+    """过滤低于分数阈值的检索结果。
+    使用分通道阈值：任一通道超过阈值即保留，避免 keyword-only hits 被加权后误杀。
+    """
     if threshold is None:
         threshold = SCORE_THRESHOLD
-    return [h for h in hits if h.get("hybrid_score", h.get("score", 0.0)) >= threshold]
+    result = []
+    for h in hits:
+        hybrid = h.get("hybrid_score", 0.0)
+        vec_score = float(h.get("score", 0.0))
+        kw_score = float(h.get("keyword_score", 0.0))
+        # 任一通道的原始分超过阈值，或加权混合分超过阈值，均保留
+        if hybrid >= threshold or vec_score >= threshold or kw_score >= threshold:
+            result.append(h)
+    return result
 
 
 def _text_overlap_ratio(a: str, b: str) -> float:
@@ -458,7 +468,11 @@ def openai_rag_generate(question: str, context: str, route: str) -> str:
             temperature=0.5,
             max_tokens=1500,
         )
-        answer = (resp.choices[0].message.content or "").strip()
+        choice = resp.choices[0]
+        answer = (choice.message.content or "").strip()
+        # 检测 LLM 输出被截断
+        if answer and getattr(choice, "finish_reason", None) == "length":
+            answer += "\n\n（注：回答因长度限制被截断，如需完整内容请缩小问题范围。）"
         return answer if answer else ""
     except Exception as e:
         if DEBUG:
@@ -468,6 +482,10 @@ def openai_rag_generate(question: str, context: str, route: str) -> str:
 
 def answer_question(question: str, mode: str) -> str:
     """主入口：回答问题，返回字符串"""
+    if not (question or "").strip():
+        return "请输入您想了解的佛教问题。"
+    # 输入长度限制：截断过长输入，避免下游爆炸
+    question = question.strip()[:500]
     rewrite = rewrite_query(question)
     outputs = []
     seen = set()

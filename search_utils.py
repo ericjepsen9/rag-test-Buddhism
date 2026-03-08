@@ -895,14 +895,19 @@ def split_mixed_body(body: str) -> List[Dict]:
             current_lines.append(line)
             continue
 
-        # 检测子内容类型转换
+        # 检测子内容类型转换（支持【标记】和 标记： 两种格式）
         new_type = None
-        if re.match(r'^(?:颂词|颂曰|偈云)[:：]?', stripped):
+        if re.match(r'^(?:【?颂词】?|颂曰|偈云)[:：]?$', stripped) or \
+           re.match(r'^(?:颂词|颂曰|偈云)[:：]', stripped):
             new_type = "verse"
-        elif re.match(r'^(?:讲解|释|解释|注)[:：]', stripped):
+        elif re.match(r'^(?:【?讲解】?|【?注释】?)[:：]?$', stripped) or \
+             re.match(r'^(?:讲解|释|解释|注)[:：]', stripped):
             new_type = "commentary"
-        elif re.match(r'^(?:公案|故事|比喻)[:：]', stripped):
+        elif re.match(r'^(?:【?公案】?|【?故事】?|【?比喻】?)[:：]?$', stripped) or \
+             re.match(r'^(?:公案|故事|比喻)[:：]', stripped):
             new_type = "story"
+        elif re.match(r'^【?引用】?[:：]?$', stripped):
+            new_type = "commentary"  # 引用视为注释类，与前文保持一体
         elif _QA_QUESTION_RE.match(stripped):
             new_type = "qa"
 
@@ -1091,6 +1096,8 @@ _BUDDHIST_VOCAB = {
     "礼赞句", "立誓句", "善逝", "法身", "佛子",
     "科判", "品", "偈颂", "颂词", "注释",
 }
+# 预排序：长词优先，避免每次 tokenize_chinese 调用时重排
+_BUDDHIST_VOCAB_SORTED = sorted(_BUDDHIST_VOCAB, key=len, reverse=True)
 
 
 def tokenize_chinese(text: str) -> List[str]:
@@ -1102,7 +1109,7 @@ def tokenize_chinese(text: str) -> List[str]:
     seen = set()
     # 1. 匹配词典中的术语（长词优先，消除已覆盖的字符）
     remaining = text.lower()
-    for term in sorted(_BUDDHIST_VOCAB, key=len, reverse=True):
+    for term in _BUDDHIST_VOCAB_SORTED:
         if term in remaining:
             if term not in seen:
                 tokens.append(term)
@@ -1343,9 +1350,11 @@ def match_faq(question: str, faq_text: str, faq_keyword_map: Dict[str, str],
 
     # 按长度降序匹配（长的优先，避免短子串误匹配）
     matched_topic = None
+    q_lower = q.lower()
     for keyword, topic in sorted(expanded_map.items(), key=lambda x: len(x[0]), reverse=True):
-        # 同时检查原始问题和归一化后的问题
-        if keyword in q or keyword in q_norm:
+        # 大小写不敏感匹配，同时检查原始问题和归一化后的问题
+        kw_lower = keyword.lower()
+        if kw_lower in q_lower or kw_lower in q_norm:
             matched_topic = topic
             break
 
