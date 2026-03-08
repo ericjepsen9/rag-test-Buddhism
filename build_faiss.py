@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import argparse
@@ -373,13 +374,21 @@ def collect_product_records(product: str):
             print(f"[INFO] {product}/{display_name}: 检测到「{type_names.get(ctype, ctype)}」结构")
             chunks_data = chunk_smart(text, CHUNK_SIZE, CHUNK_OVERLAP)
 
+        # 过滤低质量 chunk：太短（<30字）或纯标记/元数据
+        before_filter = len(chunks_data)
+        chunks_data = [
+            cd for cd in chunks_data
+            if len(re.sub(r"[\s【】\[\]()（）《》「」\-—·：:、，。？！]", "", cd.get("text", ""))) >= 20
+        ]
+        if len(chunks_data) < before_filter:
+            print(f"[FILTER] {product}/{display_name}: 过滤 {before_filter - len(chunks_data)} 个低质量 chunk")
         print(f"[OK] {product}/{display_name}: {len(chunks_data)} chunks")
         for i, cd in enumerate(chunks_data, 1):
             meta = {
                 "product_id": product,
                 "source_file": display_name,
                 "source_type": stype,
-                "chunk_id": i,
+                "chunk_id": f"{display_name}#{i}",
             }
             # 保存结构元数据（科判/品/内容类型）
             if "kepan_breadcrumb" in cd:

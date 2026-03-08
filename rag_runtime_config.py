@@ -149,7 +149,7 @@ VECTOR_TOP_K = 12
 KEYWORD_TOP_K = 12
 HYBRID_VECTOR_WEIGHT = 0.65
 HYBRID_KEYWORD_WEIGHT = 0.35
-SCORE_THRESHOLD = 0.35  # 低于此分数的检索结果不进入 LLM 上下文
+SCORE_THRESHOLD = 0.25  # 低于此分数的检索结果不进入 LLM 上下文（0.35→0.25 修复单通道高分被过滤）
 
 # ===== 测试 =====
 REGRESSION_CASES_FILE = BASE_DIR / "regression_cases.json"

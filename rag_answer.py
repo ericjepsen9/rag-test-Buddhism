@@ -144,6 +144,54 @@ def filter_by_score(hits: List[Dict], threshold: float = None) -> List[Dict]:
     return [h for h in hits if h.get("hybrid_score", h.get("score", 0.0)) >= threshold]
 
 
+def _text_overlap_ratio(a: str, b: str) -> float:
+    """计算两段文本的字符重叠率（基于较短文本）"""
+    if not a or not b:
+        return 0.0
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    # 使用滑窗 n-gram 近似计算重叠
+    n = 4
+    if len(shorter) < n:
+        return 1.0 if shorter in longer else 0.0
+    ngrams_short = set(shorter[i:i+n] for i in range(len(shorter) - n + 1))
+    ngrams_long = set(longer[i:i+n] for i in range(len(longer) - n + 1))
+    if not ngrams_short:
+        return 0.0
+    return len(ngrams_short & ngrams_long) / len(ngrams_short)
+
+
+def _deduplicate_hits(hits: List[Dict], overlap_threshold: float = 0.7,
+                      max_per_source: int = 3) -> List[Dict]:
+    """语义去重 + 来源多样性控制
+    - 移除与已选 chunk 重叠度 > overlap_threshold 的 chunk
+    - 限制同一来源文件最多 max_per_source 个 chunk
+    """
+    if not hits:
+        return []
+    selected = []
+    source_counts: Dict[str, int] = {}
+    for h in hits:
+        text = h.get("text", "").strip()
+        if not text:
+            continue
+        # 来源多样性控制
+        source = h.get("meta", {}).get("source_file", "_unknown")
+        if source_counts.get(source, 0) >= max_per_source:
+            continue
+        # 语义去重：与已选的每个 chunk 比较重叠率
+        is_dup = False
+        for sel in selected:
+            sel_text = sel.get("text", "")
+            if _text_overlap_ratio(text, sel_text) > overlap_threshold:
+                is_dup = True
+                break
+        if is_dup:
+            continue
+        selected.append(h)
+        source_counts[source] = source_counts.get(source, 0) + 1
+    return selected
+
+
 def extract_chunks_as_context(hits: List[Dict], max_chunks: int = 6) -> str:
     """从检索结果中提取 chunk 文本 + 来源元数据作为 LLM 上下文"""
     if not hits:
@@ -266,6 +314,8 @@ def answer_one(question: str, mode: str) -> str:
 
     # 过滤低分结果，减少噪音和幻觉风险
     hits = filter_by_score(hits)
+    # 语义去重 + 来源多样性控制
+    hits = _deduplicate_hits(hits)
 
     if not hits:
         fallback = [
@@ -316,15 +366,20 @@ def openai_rag_generate(question: str, context: str, route: str) -> str:
         client = OpenAI(api_key=key)
 
         system_prompt = (
-            "你是一个佛教知识问答助手。请严格基于以下【参考资料】回答用户的问题。\n"
-            "规则：\n"
-            "1. 只使用参考资料中的内容回答，不要编造或添加资料中没有的信息\n"
-            "2. 如果参考资料不足以完整回答问题，明确说「根据现有资料无法回答这一部分」\n"
-            "3. 回答要条理清晰、准确专业\n"
-            "4. 适当引用经典原文（如果参考资料中有的话）\n"
-            "5. 每个关键论点后用 [来源N] 标注出处，N 对应参考资料的编号\n"
-            "6. 如果不同来源有矛盾，指出差异而非只取一方\n"
-            "7. 回答末尾加上：「以上内容基于佛教经典与传统教义整理，仅供学习参考。」\n"
+            "你是一个佛教知识问答助手。请基于【参考资料】回答用户的问题。\n\n"
+            "## 回答规则\n"
+            "1. **以参考资料为主**：优先使用参考资料中的内容。如果你具备的佛学常识可以补充说明，"
+            "可简要添加，但必须标注「（补充说明）」以区分\n"
+            "2. **部分可答则答**：如果资料只能回答问题的一部分，先回答能回答的部分，"
+            "然后注明「关于XX部分，现有资料未涉及」\n"
+            "3. 回答要条理清晰，使用分点或分段组织\n"
+            "4. 如参考资料中有经典原文，引用时用「」括起\n\n"
+            "## 来源标注\n"
+            "- 参考资料标记为 [来源1：...]、[来源2：...] 等\n"
+            "- 在回答中引用具体内容后，用 [来源N] 标注，N 为对应编号\n"
+            "- 如果多个来源说法不同，分别列出并标注各自来源\n\n"
+            "## 格式\n"
+            "- 回答末尾加上：「以上内容基于佛教经典与传统教义整理，仅供学习参考。」\n"
         )
 
         user_prompt = (
