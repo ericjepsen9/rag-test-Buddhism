@@ -304,9 +304,9 @@ def embed_texts(texts):
 def _infer_source_type(fname: str) -> str:
     """根据文件名推断 source_type"""
     name_lower = fname.lower().replace(".txt", "")
-    if name_lower in ("faq", "faq_", "常见问题"):
+    if name_lower in ("faq", "faq_", "常见问题") or name_lower.startswith("faq"):
         return "faq"
-    if name_lower in ("alias", "aliases", "别名"):
+    if name_lower in ("alias", "aliases", "别名") or name_lower.startswith("alias"):
         return "alias"
     return "main"
 

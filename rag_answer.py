@@ -329,8 +329,17 @@ def answer_one(question: str, mode: str) -> str:
     route = detect_route(question)
     rewrite = rewrite_query(question)
 
-    # 1. 尝试 FAQ 精确匹配（带别名扩展）
+    # 1. 尝试 FAQ 精确匹配（带别名扩展，包含子目录 FAQ）
     faq_text = read_knowledge_file(product, "faq.txt")
+    # 合并子目录中的 FAQ 文件（如 入行论/faq_入行论.txt）
+    pdir = KNOWLEDGE_DIR / product
+    if pdir.exists():
+        for fp in sorted(pdir.rglob("faq*.txt")):
+            if fp.name == "faq.txt":
+                continue
+            sub_faq = fp.read_text(encoding="utf-8", errors="replace")
+            if sub_faq.strip():
+                faq_text = faq_text + "\n" + sub_faq
     alias_text = read_knowledge_file(product, "alias.txt")
     faq_answer = match_faq(question, faq_text, FAQ_KEYWORD_MAP, alias_text)
     if faq_answer:
@@ -375,25 +384,9 @@ def answer_one(question: str, mode: str) -> str:
             if echo_ratio > 0.85:
                 llm_answer = ""  # 走 fallback
     if llm_answer and len(llm_answer.strip()) >= 15:
-        # LLM 答案也附上依据来源，保持格式一致
+        # LLM 答案统一走 format_structured_answer，保持格式一致
         evidence = build_evidence(hits)
-        if evidence:
-            source_lines = []
-            for ev in evidence:
-                m = ev.get("meta", {})
-                parts = []
-                if m.get("source_file"):
-                    parts.append(m["source_file"])
-                if m.get("kepan_breadcrumb"):
-                    parts.append(m["kepan_breadcrumb"])
-                elif m.get("section_title"):
-                    parts.append(m["section_title"])
-                if parts:
-                    source_lines.append("｜".join(parts))
-            if source_lines:
-                sources_text = "\n".join(f"- {s}" for s in dict.fromkeys(source_lines))
-                return f"{llm_answer}\n\n**依据来源：**\n{sources_text}"
-        return llm_answer
+        return format_structured_answer(route, [llm_answer.strip()], evidence, add_risk_note=(route == "practice"))
 
     # 4. 无 LLM 时：向量检索结果直接作为答案段落（保留完整段落）
     # 二次质量检查：过滤过短的段落（有效内容 <15 字的跳过）

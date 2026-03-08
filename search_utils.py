@@ -1225,14 +1225,20 @@ def keyword_search(query: str, docs: List[Dict], top_k: int = 8) -> List[Dict]:
     return scored[:top_k]
 
 
+def _hit_key(h: Dict, fallback: str) -> str:
+    """提取 hit 的去重 key：优先用 meta.chunk_id，回退到文本前 200 字"""
+    meta = h.get("meta", {})
+    return meta.get("chunk_id") or h.get("chunk_id") or h.get("text", "")[:200] or fallback
+
+
 def merge_hybrid(vector_hits: List[Dict], keyword_hits: List[Dict], vw: float, kw: float, top_k: int) -> List[Dict]:
     merged = {}
     for i, h in enumerate(vector_hits):
-        key = h.get("chunk_id") or h.get("id") or h.get("text", "") or f"_v{i}"
+        key = _hit_key(h, f"_v{i}")
         merged[key] = dict(h)
         merged[key]["hybrid_score"] = float(h.get("score", 0.0)) * vw
     for i, h in enumerate(keyword_hits):
-        key = h.get("chunk_id") or h.get("id") or h.get("text", "") or f"_k{i}"
+        key = _hit_key(h, f"_k{i}")
         if key not in merged:
             merged[key] = dict(h)
             merged[key]["score"] = 0.0
