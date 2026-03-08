@@ -293,7 +293,7 @@ def chunk_smart(text: str, chunk_size: int = 600, overlap: int = 80):
 
 def embed_texts(texts):
     model = get_model()
-    vecs = model.encode(texts, batch_size=8, show_progress_bar=True, normalize_embeddings=False)
+    vecs = model.encode(texts, batch_size=32, show_progress_bar=True, normalize_embeddings=False)
     vecs = np.asarray(vecs, dtype="float32")
     if vecs.ndim != 2:
         raise ValueError(f"向量维度异常: {vecs.shape}")
@@ -360,7 +360,9 @@ def collect_product_records(product: str):
         text = fpath.read_text(encoding="utf-8")
 
         if stype == "alias":
-            chunks_data = [{"text": text}]
+            # 别名文件不需要索引（仅用于 FAQ 匹配），跳过
+            print(f"[SKIP] {product}/{display_name}: 别名文件不索引")
+            continue
         else:
             # 统一使用智能分块
             ctype = detect_content_type(text)
