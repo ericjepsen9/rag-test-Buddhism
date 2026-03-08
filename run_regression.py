@@ -10,12 +10,21 @@ ok = 0
 total = len(CASES)
 for case in CASES:
     q = case["q"]
-    proc = subprocess.run([sys.executable, str(BASE_DIR/"rag_answer.py"), q, "brief"], cwd=str(BASE_DIR), capture_output=True, text=True, encoding="utf-8", errors="replace")
-    ans = (BASE_DIR / "answer.txt").read_text(encoding="utf-8-sig")
+    proc = subprocess.run(
+        [sys.executable, str(BASE_DIR / "rag_answer.py"), q, "brief"],
+        cwd=str(BASE_DIR),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    ans = (proc.stdout or "").strip()
     passed = any(x in ans for x in case.get("expect_any", []))
     print(f"[{'PASS' if passed else 'FAIL'}] {q}")
     if not passed:
-        print(ans[:300])
+        print(f"  stdout: {ans[:300]}")
+        if proc.stderr:
+            print(f"  stderr: {proc.stderr[:200]}")
     ok += 1 if passed else 0
 
-print(f"Passed {ok}/{total}")
+print(f"\nPassed {ok}/{total}")
