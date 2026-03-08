@@ -22,6 +22,7 @@ from search_utils import (
     split_by_steps, split_by_headings,
     split_by_qa, split_by_gongan, split_by_commentary,
     split_by_verse_collection, split_by_letter,
+    split_mixed_body, merge_sub_segments,
 )
 
 MODEL_NAME = "BAAI/bge-m3"
@@ -55,10 +56,18 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 80):
 
 def _sub_chunk_semantic(body: str, max_size: int, overlap: int) -> List[str]:
     """
-    将一段正文按语义边界切分为子块。
-    优先在段落/颂词/引用边界处分割，避免把颂词和注释拆开。
-    如果单个语义段落超长，才回退到滑动窗口。
+    将一段正文按内容感知边界切分为子块。
+
+    优先使用混合内容分段（识别颂词/讲解/公案/问答边界），
+    保证：颂词+讲解不拆开、问+答不拆开、公案完整。
+    回退到语义段落分段，最后回退到滑动窗口。
     """
+    # 1. 尝试混合内容感知分段
+    segments = split_mixed_body(body)
+    if len(segments) > 1:
+        return merge_sub_segments(segments, max_size)
+
+    # 2. 回退到语义段落分段
     paragraphs = split_semantic_paragraphs(body)
     if not paragraphs:
         return chunk_text(body, max_size, overlap)
@@ -70,7 +79,6 @@ def _sub_chunk_semantic(body: str, max_size: int, overlap: int) -> List[str]:
     for para in paragraphs:
         para_len = len(para)
         if para_len > max_size:
-            # 这个段落本身超长，先把积攒的内容产出，再对超长段落滑动切分
             if current_parts:
                 chunks.append("\n\n".join(current_parts))
                 current_parts = []
@@ -79,10 +87,8 @@ def _sub_chunk_semantic(body: str, max_size: int, overlap: int) -> List[str]:
                 chunks.append(sc)
             continue
 
-        # 加上这段后是否超限
         new_len = current_len + para_len + (2 if current_parts else 0)
         if new_len > max_size and current_parts:
-            # 产出当前积攒的内容
             chunks.append("\n\n".join(current_parts))
             current_parts = []
             current_len = 0

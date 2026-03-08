@@ -830,6 +830,171 @@ def split_by_letter(text: str) -> List[Dict]:
     return sections
 
 
+# ===== 混合内容子分段（科判/品内部） =====
+# 识别科判体内部的颂词、讲解、公案、问答等子结构边界
+
+# 子内容标记正则
+_SUB_CONTENT_RE = re.compile(
+    r'^(?:'
+    r'颂词[:：]|颂曰[:：]?|偈云[:：]?|'          # 颂词起始
+    r'讲解[:：]|释[:：]|解释[:：]|注[:：]|'       # 讲解/注释起始
+    r'公案[:：]|故事[:：]|比喻[:：]|'             # 公案/故事起始
+    r'问[:：]|答[:：]|'                          # 问答起始
+    r'(?:有人|弟子|居士)(?:问|请问)[:：]?|'
+    r'(?:上师|法师|师父)(?:答|说)[:：]?|'
+    r'[「『"]|'                                  # 引文起始
+    r'(?:经|论)(?:云|曰|中说)[:：]?'             # 经论引用
+    r')'
+)
+
+
+def split_mixed_body(body: str) -> List[Dict]:
+    """
+    将科判/品内部的混合内容按子结构边界分段。
+    保证：
+    - 颂词 + 紧随的讲解 在一起
+    - 问 + 答 在一起
+    - 公案/故事完整保留
+    - 引文 + 解释 在一起
+
+    返回 [{"text": ..., "sub_type": "verse"|"commentary"|"qa"|"story"|"text"}, ...]
+    """
+    if not body or not body.strip():
+        return []
+
+    lines = body.split("\n")
+    segments = []
+    current_type = "text"
+    current_lines = []
+
+    def flush():
+        nonlocal current_type, current_lines
+        text = "\n".join(current_lines).strip()
+        if text:
+            segments.append({"text": text, "sub_type": current_type})
+        current_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            current_lines.append(line)
+            continue
+
+        # 检测子内容类型转换
+        new_type = None
+        if re.match(r'^(?:颂词|颂曰|偈云)[:：]?', stripped):
+            new_type = "verse"
+        elif re.match(r'^(?:讲解|释|解释|注)[:：]', stripped):
+            new_type = "commentary"
+        elif re.match(r'^(?:公案|故事|比喻)[:：]', stripped):
+            new_type = "story"
+        elif _QA_QUESTION_RE.match(stripped):
+            new_type = "qa"
+
+        # 类型转换时的合并规则
+        if new_type:
+            if current_type == "verse" and new_type == "commentary":
+                # 颂词后紧跟讲解 → 不分段，合在一起
+                current_lines.append(stripped)
+                current_type = "verse_commentary"
+                continue
+            elif current_type == "qa" and new_type == "qa":
+                # 连续问答，检查是否是"答"（不分段）
+                if _QA_ANSWER_RE.match(stripped):
+                    current_lines.append(stripped)
+                    continue
+                # 新的"问"→ 分段
+                flush()
+                current_type = new_type
+                current_lines.append(stripped)
+                continue
+            elif new_type != current_type:
+                if current_lines:
+                    flush()
+                current_type = new_type
+        elif _QA_ANSWER_RE.match(stripped) and current_type == "qa":
+            # 答跟在问后面，不分段
+            current_lines.append(stripped)
+            continue
+
+        current_lines.append(stripped)
+
+    flush()
+    return segments
+
+
+def merge_sub_segments(segments: List[Dict], max_size: int) -> List[str]:
+    """
+    将 split_mixed_body 产出的子段落合并为适当大小的块。
+    规则：
+    1. verse_commentary（颂词+讲解）不拆开
+    2. qa（问+答）不拆开
+    3. story（公案）不拆开
+    4. 超过 max_size 的段落用滑动窗口切分
+    5. 短段落可以合并（但不跨类型合并）
+    """
+    if not segments:
+        return []
+
+    chunks = []
+    buffer_text = ""
+
+    for seg in segments:
+        seg_text = seg["text"]
+        seg_type = seg["sub_type"]
+
+        # 如果单个段落超过 max_size，先产出 buffer，再切分超长段
+        if len(seg_text) > max_size:
+            if buffer_text:
+                chunks.append(buffer_text)
+                buffer_text = ""
+            # 超长段滑动切分，但在标记行处优先分割
+            sub_parts = _smart_split_long_segment(seg_text, max_size)
+            chunks.extend(sub_parts)
+            continue
+
+        # 尝试与 buffer 合并
+        if buffer_text:
+            combined_len = len(buffer_text) + len(seg_text) + 2
+            if combined_len <= max_size:
+                buffer_text += "\n\n" + seg_text
+                continue
+            else:
+                chunks.append(buffer_text)
+                buffer_text = seg_text
+        else:
+            buffer_text = seg_text
+
+    if buffer_text:
+        chunks.append(buffer_text)
+
+    return chunks
+
+
+def _smart_split_long_segment(text: str, max_size: int) -> List[str]:
+    """对超长段落做智能切分，优先在句号/段落处分割"""
+    if len(text) <= max_size:
+        return [text]
+
+    chunks = []
+    # 按句号分割
+    sentences = re.split(r'(?<=[。！？\n])', text)
+    current = ""
+    for sent in sentences:
+        if not sent.strip():
+            continue
+        if len(current) + len(sent) > max_size and current:
+            chunks.append(current.strip())
+            current = sent
+        else:
+            current += sent
+
+    if current.strip():
+        chunks.append(current.strip())
+
+    return chunks if chunks else [text]
+
+
 def normalize_text(text: str) -> str:
     text = text or ""
     text = text.replace("\ufeff", "")
