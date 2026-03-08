@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Optional, Literal, Dict, Any, List
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from media_router import find_media
@@ -12,9 +14,17 @@ from media_router import find_media
 BASE_DIR = Path(__file__).resolve().parent
 RAG_SCRIPT = BASE_DIR / "rag_answer.py"
 ANSWER_FILE = BASE_DIR / "answer.txt"
+INDEX_PAGE = BASE_DIR / "index.html"
 PYTHON_EXE = sys.executable
 
 app = FastAPI(title="Buddhist Knowledge RAG API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class AskRequest(BaseModel):
@@ -47,6 +57,11 @@ def read_text(path: Path) -> str:
         except Exception:
             pass
     return ""
+
+
+@app.get("/")
+def root():
+    return FileResponse(str(INDEX_PAGE))
 
 
 @app.get("/health")
