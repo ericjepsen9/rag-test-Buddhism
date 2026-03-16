@@ -6,10 +6,14 @@ BASE_DIR = Path(__file__).resolve().parent
 # ===== 基础路径 =====
 KNOWLEDGE_DIR = BASE_DIR / "knowledge"
 STORE_ROOT = BASE_DIR / "stores"
+OUT_PATH = BASE_DIR / "answer.txt"
 
 # ===== OpenAI 开关 =====
 USE_OPENAI = False
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+
+# ===== 向量模型 =====
+MODEL_NAME = "BAAI/bge-m3"
 
 # ===== 分块参数 =====
 CHUNK_SIZE = 600
@@ -23,6 +27,79 @@ DEFAULT_TOP_K = 8
 # ===== 回答模板 =====
 REFERENCE_NOTE = "以上内容基于佛教经典与传统教义整理，仅供学习参考。"
 RISK_NOTE = "深入修行建议亲近善知识，依止有经验的法师指导。"
+
+# ===== 知识领域配置（对应原始 rag_config.py 的 PRODUCTS）=====
+# 每个知识领域一个 ID，knowledge/<id> 下放 main/faq/alias 文件
+PRODUCTS = {
+    "buddhism": {
+        "display_name": "佛教知识（Buddhism）",
+        "aliases": [
+            "佛教", "佛法", "佛学", "Buddhism",
+            "释迦牟尼", "佛陀",
+        ],
+        "strong_keywords": [
+            "四圣谛", "八正道", "涅槃", "轮回", "因果",
+            "菩萨", "禅修", "念佛", "般若", "空性",
+            "戒定慧", "三宝", "五戒", "六度",
+        ],
+    },
+}
+
+# 默认知识领域
+DEFAULT_PRODUCT = "buddhism"
+
+# 易混淆词（命中时提示用户明确）
+AMBIGUOUS_TOKENS = []
+
+UNCLEAR_PRODUCT_PROMPT = (
+    "请明确您想了解的佛教领域或主题，例如：\n"
+    "- 佛教基础教义（四圣谛、八正道等）\n"
+    "- 修行方法（禅修、念佛等）\n"
+    "- 佛教经典（心经、金刚经等）\n"
+)
+
+# ===== 问题类型配置（对应原始 rag_config.py 的 QUESTION_TYPE_CONFIG）=====
+# 每个路由可独立设置检索 top_k 和分数阈值
+QUESTION_TYPE_CONFIG = {
+    "doctrine":  {"k": 8, "threshold": 0.25},
+    "practice":  {"k": 8, "threshold": 0.25},
+    "scripture": {"k": 8, "threshold": 0.25},
+    "sect":      {"k": 8, "threshold": 0.25},
+    "concept":   {"k": 8, "threshold": 0.25},
+    "history":   {"k": 8, "threshold": 0.25},
+    "ritual":    {"k": 6, "threshold": 0.25},
+    "basic":     {"k": 6, "threshold": 0.30},
+}
+
+# 默认分数阈值（路由未配置时使用）
+SCORE_THRESHOLD = 0.25
+
+# ===== brief/full 模式配置（对应原始 rag_config.py 的 ANSWER_MODE_CONFIG）=====
+# 控制每个路由在 brief/full 模式下的最大输出条目数
+ANSWER_MODE_CONFIG = {
+    "brief": {
+        "max_items_default": 8,
+        "doctrine": 20,
+        "practice": 20,
+        "scripture": 14,
+        "sect": 14,
+        "concept": 14,
+        "history": 14,
+        "ritual": 12,
+        "basic": 12,
+    },
+    "full": {
+        "max_items_default": 14,
+        "doctrine": 40,
+        "practice": 40,
+        "scripture": 30,
+        "sect": 30,
+        "concept": 30,
+        "history": 30,
+        "ritual": 24,
+        "basic": 20,
+    },
+}
 
 # ===== 问题路由 =====
 QUESTION_ROUTES = {
@@ -163,7 +240,6 @@ VECTOR_TOP_K = 12
 KEYWORD_TOP_K = 12
 HYBRID_VECTOR_WEIGHT = 0.65
 HYBRID_KEYWORD_WEIGHT = 0.35
-SCORE_THRESHOLD = 0.25  # 低于此分数的检索结果不进入 LLM 上下文（0.35→0.25 修复单通道高分被过滤）
 
 # ===== 测试 =====
 REGRESSION_CASES_FILE = BASE_DIR / "regression_cases.json"

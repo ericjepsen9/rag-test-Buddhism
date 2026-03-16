@@ -51,12 +51,11 @@ def list_products() -> Dict[str, List[Dict[str, Any]]]:
         for p in sorted(KNOWLEDGE_DIR.iterdir()):
             if not p.is_dir():
                 continue
-            products.append(
-                {
-                    "product": p.name,
-                    "files": sorted([x.name for x in p.iterdir() if x.is_file()]),
-                }
-            )
+            all_files = []
+            for f in sorted(p.rglob("*")):
+                if f.is_file():
+                    all_files.append(str(f.relative_to(p)))
+            products.append({"product": p.name, "files": all_files})
     return {"products": products}
 
 
@@ -83,7 +82,7 @@ def rebuild(req: RebuildRequest) -> Dict[str, Any]:
             shell=False,
         )
         success = proc.returncode == 0
-        # 重建成功后清理内存缓存，下次查询自动加载新索引
+        # 重建成功后清理内存缓存
         if success:
             try:
                 from rag_answer import _store_cache, _store_mtime

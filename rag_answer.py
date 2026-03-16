@@ -14,11 +14,12 @@ except Exception:
 import numpy as np
 
 from rag_runtime_config import (
-    KNOWLEDGE_DIR, STORE_ROOT, DEFAULT_MODE, DEFAULT_TOP_K,
+    KNOWLEDGE_DIR, STORE_ROOT, OUT_PATH, DEFAULT_MODE, DEFAULT_TOP_K,
     USE_OPENAI, OPENAI_MODEL, DEBUG, QUESTION_ROUTES, SECTION_RULES,
     PRODUCT_ALIASES, PROJECT_ALIASES, VECTOR_TOP_K, KEYWORD_TOP_K,
     HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, FAQ_KEYWORD_MAP,
-    SCORE_THRESHOLD
+    SCORE_THRESHOLD, QUESTION_TYPE_CONFIG, ANSWER_MODE_CONFIG,
+    DEFAULT_PRODUCT,
 )
 from search_utils import (
     normalize_text, normalize_lines, uniq, is_faq_line, section_block,
@@ -26,6 +27,7 @@ from search_utils import (
 )
 from query_rewrite import rewrite_query
 from answer_formatter import format_structured_answer
+from rag_logger import log_qa, log_error
 
 _model = None
 _faiss = None
@@ -49,6 +51,11 @@ def get_model():
     return _model
 
 
+def save_answer(text: str):
+    """保存答案到 answer.txt（与原始 RAG 架构一致）"""
+    OUT_PATH.write_text((text or "").strip() + "\n", encoding="utf-8-sig")
+
+
 def embed_query(text: str) -> np.ndarray:
     model = get_model()
     vec = model.encode([text], normalize_embeddings=False)
@@ -66,7 +73,6 @@ def load_store(product: str):
         _store_cache[product] = (None, [])
         _store_mtime.pop(product, None)
         return _store_cache[product]
-    # 检查文件是否更新（重建索引后自动重新加载）
     current_mtime = (index_path.stat().st_mtime, docs_path.stat().st_mtime)
     if product in _store_cache and _store_mtime.get(product) == current_mtime:
         return _store_cache[product]
@@ -79,7 +85,6 @@ def load_store(product: str):
             line = line.strip()
             if line:
                 doc = json.loads(line)
-                # 确保每个 doc 都有 chunk_id（兼容旧索引）
                 meta = doc.get("meta", {})
                 if not meta.get("chunk_id"):
                     meta["chunk_id"] = f"_doc{i}"
@@ -96,23 +101,18 @@ def vector_search(product: str, query: str, top_k: int) -> List[Dict]:
     if index is None or not docs:
         return []
     qv = embed_query(query)
-    # 维度校验：embedding 维度必须与索引一致
     if qv.shape[1] != index.d:
         if DEBUG:
             print(f"[WARN] 向量维度不匹配：查询={qv.shape[1]}, 索引={index.d}")
         return []
     scores, ids = index.search(qv, min(top_k, len(docs)))
     hits = []
-    invalid_count = 0
     for i, idx in enumerate(ids[0]):
         if idx < 0 or idx >= len(docs):
-            invalid_count += 1
             continue
         d = dict(docs[idx])
         d["score"] = float(scores[0][i])
         hits.append(d)
-    if invalid_count > 0 and DEBUG:
-        print(f"[WARN] 向量搜索跳过 {invalid_count} 个无效索引（索引可能与文档不同步）")
     return hits
 
 
@@ -120,23 +120,17 @@ def read_knowledge_file(product: str, fname: str) -> str:
     p = KNOWLEDGE_DIR / product / fname
     if not p.exists():
         return ""
-    # 编码容错：优先 UTF-8，回退 GBK，最后 latin-1（不会失败）
-    for enc in ("utf-8", "gb2312", "latin-1"):
-        try:
-            return p.read_text(encoding=enc)
-        except (UnicodeDecodeError, ValueError):
-            continue
-    return ""
+    return p.read_text(encoding="utf-8", errors="replace")
 
 
 def detect_product(question: str) -> str:
     found = detect_terms(question, PRODUCT_ALIASES)
     if found:
         return found[0]
-    if (KNOWLEDGE_DIR / "buddhism").exists():
-        return "buddhism"
+    if (KNOWLEDGE_DIR / DEFAULT_PRODUCT).exists():
+        return DEFAULT_PRODUCT
     dirs = [x.name for x in KNOWLEDGE_DIR.iterdir() if x.is_dir()] if KNOWLEDGE_DIR.exists() else []
-    return dirs[0] if dirs else "buddhism"
+    return dirs[0] if dirs else DEFAULT_PRODUCT
 
 
 def detect_route(question: str) -> str:
@@ -152,19 +146,25 @@ def detect_route(question: str) -> str:
     return max(route_scores.items(), key=lambda x: x[1])[0]
 
 
+def _get_route_config(route: str) -> Dict:
+    """获取路由级别的检索配置（k 和 threshold），使用 QUESTION_TYPE_CONFIG"""
+    return QUESTION_TYPE_CONFIG.get(route, {"k": DEFAULT_TOP_K, "threshold": SCORE_THRESHOLD})
+
+
+def _get_mode_limit(route: str, mode: str) -> int:
+    """获取路由在指定模式下的最大输出条目数，使用 ANSWER_MODE_CONFIG"""
+    mode_cfg = ANSWER_MODE_CONFIG.get(mode, ANSWER_MODE_CONFIG["brief"])
+    return mode_cfg.get(route, mode_cfg.get("max_items_default", 8))
+
+
 def _suggest_related_topics(question: str, route: str) -> List[str]:
     """根据问题和路由，推荐知识库中已有的相近主题"""
-    from rag_runtime_config import QUESTION_ROUTES, FAQ_KEYWORD_MAP
-    # 从问题中提取关键字符做模糊匹配
     q = question.strip()
     suggestions = []
-    # 优先在同路由下找相关关键词
     route_kws = QUESTION_ROUTES.get(route, [])
     for kw in route_kws:
-        # 有任意 2 字重叠即推荐
         if any(ch in q for ch in kw if ch not in "的是了在"):
             suggestions.append(kw)
-    # 从其他路由补充
     if len(suggestions) < 3:
         for r, kws in QUESTION_ROUTES.items():
             if r == route:
@@ -176,12 +176,10 @@ def _suggest_related_topics(question: str, route: str) -> List[str]:
                         break
             if len(suggestions) >= 5:
                 break
-    # 从 FAQ 关键词补充
     if len(suggestions) < 3:
         for kw in FAQ_KEYWORD_MAP:
             if any(ch in q for ch in kw if ch not in "的是了在"):
                 suggestions.append(kw)
-    # 去重并限制数量
     seen = set()
     unique = []
     for s in suggestions:
@@ -210,7 +208,6 @@ def build_evidence(hits: List[Dict]) -> List[Dict]:
     for h in hits[:6]:
         meta = h.get("meta", {})
         entry = {"meta": meta}
-        # 如果有科判面包屑，加入 evidence 以便格式化时引用
         if meta.get("kepan_breadcrumb"):
             entry["kepan_breadcrumb"] = meta["kepan_breadcrumb"]
         ev.append(entry)
@@ -228,7 +225,6 @@ def filter_by_score(hits: List[Dict], threshold: float = None) -> List[Dict]:
         hybrid = h.get("hybrid_score", 0.0)
         vec_score = float(h.get("score", 0.0))
         kw_score = float(h.get("keyword_score", 0.0))
-        # 任一通道的原始分超过阈值，或加权混合分超过阈值，均保留
         if hybrid >= threshold or vec_score >= threshold or kw_score >= threshold:
             result.append(h)
     return result
@@ -239,7 +235,6 @@ def _text_overlap_ratio(a: str, b: str) -> float:
     if not a or not b:
         return 0.0
     shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
-    # 使用滑窗 n-gram 近似计算重叠
     n = 4
     if len(shorter) < n:
         return 1.0 if shorter in longer else 0.0
@@ -252,11 +247,7 @@ def _text_overlap_ratio(a: str, b: str) -> float:
 
 def _deduplicate_hits(hits: List[Dict], base_overlap_threshold: float = 0.7,
                       max_per_source: int = 3) -> List[Dict]:
-    """语义去重 + 来源多样性控制
-    - 移除与已选 chunk 重叠度超过阈值的 chunk
-    - 阈值自适应：短 chunk（<200字）提高到 0.85，避免因共同短语误杀
-    - 限制同一来源文件最多 max_per_source 个 chunk
-    """
+    """语义去重 + 来源多样性控制"""
     if not hits:
         return []
     selected = []
@@ -265,16 +256,13 @@ def _deduplicate_hits(hits: List[Dict], base_overlap_threshold: float = 0.7,
         text = h.get("text", "").strip()
         if not text:
             continue
-        # 来源多样性控制
         source = h.get("meta", {}).get("source_file", "_unknown")
         if source_counts.get(source, 0) >= max_per_source:
             continue
-        # 语义去重：短文本用更高阈值避免误杀
         is_dup = False
         for sel in selected:
             sel_text = sel.get("text", "")
             min_len = min(len(text), len(sel_text))
-            # 短 chunk 阈值提高（200字以下用 0.85），长 chunk 用基础阈值
             threshold = base_overlap_threshold + 0.15 * max(0, 1 - min_len / 200)
             if _text_overlap_ratio(text, sel_text) > threshold:
                 is_dup = True
@@ -297,7 +285,6 @@ def extract_chunks_as_context(hits: List[Dict], max_chunks: int = 6) -> str:
         if not text or text in seen:
             continue
         seen.add(text)
-        # 构建来源标签
         meta = h.get("meta", {})
         source = meta.get("source_file", "")
         kepan = meta.get("kepan_breadcrumb", "")
@@ -318,7 +305,7 @@ def extract_chunks_as_context(hits: List[Dict], max_chunks: int = 6) -> str:
 
 
 def extract_from_hits(hits: List[Dict], route: str, mode: str) -> List[str]:
-    """从向量检索结果中提取答案段落（保留完整段落，不再按行碎片化）"""
+    """从向量检索结果中提取答案段落"""
     if not hits:
         return []
     paragraphs = []
@@ -327,12 +314,10 @@ def extract_from_hits(hits: List[Dict], route: str, mode: str) -> List[str]:
         text = h.get("text", "").strip()
         if not text:
             continue
-        # 保留完整段落而非拆成单行
         key = re.sub(r"\s+", " ", text)[:200]
         if key in seen:
             continue
         seen.add(key)
-        # 清理 FAQ 标记行但保留其他内容
         cleaned_lines = []
         for ln in normalize_lines(text):
             clean = ln.lstrip("-").strip()
@@ -341,7 +326,7 @@ def extract_from_hits(hits: List[Dict], route: str, mode: str) -> List[str]:
             cleaned_lines.append(clean)
         if cleaned_lines:
             paragraphs.append("\n".join(cleaned_lines))
-    limit = 6 if mode == "brief" else 12
+    limit = _get_mode_limit(route, mode)
     return paragraphs[:limit]
 
 
@@ -361,7 +346,6 @@ def parse_bullets_from_section(main_text: str, faq_text: str, route: str, mode: 
         clean = ln.lstrip("-").strip()
         if not clean:
             continue
-        # 最小有效字符检查：去除标点后至少 8 字
         eff_len = len(re.sub(r"[\s\u3000，。、！？；：""''（）【】《》\-—·]", "", clean))
         if eff_len < 8:
             continue
@@ -372,29 +356,18 @@ def parse_bullets_from_section(main_text: str, faq_text: str, route: str, mode: 
             items.append(clean)
 
     items = uniq(items)
-
-    limits = {
-        "doctrine": (20, 40),
-        "practice": (20, 40),
-        "scripture": (14, 30),
-        "sect": (14, 30),
-        "concept": (14, 30),
-        "history": (14, 30),
-        "ritual": (12, 24),
-    }
-    brief_limit, full_limit = limits.get(route, (12, 20))
-    limit = brief_limit if mode == "brief" else full_limit
+    limit = _get_mode_limit(route, mode)
     return items[:limit]
 
 
 def answer_one(question: str, mode: str) -> str:
     product = detect_product(question)
     route = detect_route(question)
+    route_cfg = _get_route_config(route)
     rewrite = rewrite_query(question)
 
     # 1. 尝试 FAQ 精确匹配（带别名扩展，包含子目录 FAQ）
     faq_text = read_knowledge_file(product, "faq.txt")
-    # 合并子目录中的 FAQ 文件（如 入行论/faq_入行论.txt）
     pdir = KNOWLEDGE_DIR / product
     if pdir.exists():
         for fp in sorted(pdir.rglob("faq*.txt")):
@@ -413,24 +386,23 @@ def answer_one(question: str, mode: str) -> str:
         }}]
         return format_structured_answer(route, [faq_answer], faq_evidence, add_risk_note=False)
 
-    # 2. 向量 + 关键词混合检索
-    # 向量搜索用原始问题（保持语义纯净），关键词搜索用扩展查询（覆盖别名/同义词）
-    vector_hits = vector_search(product, question, VECTOR_TOP_K)
+    # 2. 向量 + 关键词混合检索（使用路由配置的 top_k）
+    route_k = route_cfg.get("k", DEFAULT_TOP_K)
+    vector_hits = vector_search(product, question, max(route_k, VECTOR_TOP_K))
     _, docs = load_store(product)
-    keyword_hits = keyword_search(rewrite["expanded"], docs, KEYWORD_TOP_K) if docs else []
-    hits = merge_hybrid(vector_hits, keyword_hits, HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, DEFAULT_TOP_K) if (vector_hits or keyword_hits) else []
+    keyword_hits = keyword_search(rewrite["expanded"], docs, max(route_k, KEYWORD_TOP_K)) if docs else []
+    hits = merge_hybrid(vector_hits, keyword_hits, HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, route_k) if (vector_hits or keyword_hits) else []
 
-    # 过滤低分结果，减少噪音和幻觉风险
-    hits = filter_by_score(hits)
-    # 语义去重 + 来源多样性控制
+    # 过滤低分结果（使用路由配置的 threshold）
+    route_threshold = route_cfg.get("threshold", SCORE_THRESHOLD)
+    hits = filter_by_score(hits, route_threshold)
     hits = _deduplicate_hits(hits)
 
-    # 置信度检测：所有结果分都低时，标记为低置信度
+    # 置信度检测
     low_confidence = False
     if hits:
         best_vec = max((float(h.get("score", 0.0)) for h in hits), default=0.0)
         best_kw = max((float(h.get("keyword_score", 0.0)) for h in hits), default=0.0)
-        # 向量分 < 0.45 且关键词分 < 0.3 → 知识库大概率不包含相关内容
         if best_vec < 0.45 and best_kw < 0.3:
             low_confidence = True
 
@@ -440,23 +412,18 @@ def answer_one(question: str, mode: str) -> str:
     # 3. 优先使用 LLM 基于检索上下文生成答案（真正的 RAG）
     context = extract_chunks_as_context(hits, max_chunks=6)
     llm_answer = openai_rag_generate(question, context, route, low_confidence=low_confidence)
-    # 验证 LLM 答案：至少 15 字 + 不是单纯复述问题
     if llm_answer and len(llm_answer.strip()) >= 15:
-        # 回声检测：答案长度与问题接近且高度重叠时才判为复述
-        # 短问题（<10字）跳过检测，因为合理答案必然包含问题关键词
         q_stripped = question.strip()
         a_stripped = llm_answer.strip()
         if len(q_stripped) >= 10 and len(a_stripped) < len(q_stripped) * 3:
             echo_ratio = _text_overlap_ratio(q_stripped, a_stripped[:len(q_stripped) * 3])
             if echo_ratio > 0.85:
-                llm_answer = ""  # 走 fallback
+                llm_answer = ""
     if llm_answer and len(llm_answer.strip()) >= 15:
-        # LLM 答案统一走 format_structured_answer，保持格式一致
         evidence = build_evidence(hits)
         return format_structured_answer(route, [llm_answer.strip()], evidence, add_risk_note=(route == "practice"))
 
-    # 4. 无 LLM 时：向量检索结果直接作为答案段落（保留完整段落）
-    # 二次质量检查：过滤过短的段落（有效内容 <15 字的跳过）
+    # 4. 无 LLM 时：向量检索结果直接作为答案段落
     body_lines = extract_from_hits(hits, route, mode)
     body_lines = [
         p for p in body_lines
@@ -464,7 +431,6 @@ def answer_one(question: str, mode: str) -> str:
     ]
 
     if not body_lines:
-        # 兜底：章节提取
         main_text = read_knowledge_file(product, "main.txt")
         body_lines = parse_bullets_from_section(main_text, faq_text, route, mode)
 
@@ -506,7 +472,6 @@ def openai_rag_generate(question: str, context: str, route: str, low_confidence:
             "## 格式\n"
             "- 回答末尾加上：「以上内容基于佛教经典与传统教义整理，仅供学习参考。」\n"
         )
-        # 低置信度时强化"不要编造"指令
         if low_confidence:
             system_prompt += (
                 "\n## 重要提醒\n"
@@ -532,11 +497,11 @@ def openai_rag_generate(question: str, context: str, route: str, low_confidence:
         )
         choice = resp.choices[0]
         answer = (choice.message.content or "").strip()
-        # 检测 LLM 输出被截断
         if answer and getattr(choice, "finish_reason", None) == "length":
             answer += "\n\n（注：回答因长度限制被截断，如需完整内容请缩小问题范围。）"
         return answer if answer else ""
     except Exception as e:
+        log_error("openai_rag_generate", repr(e))
         if DEBUG:
             print(f"[DEBUG] OpenAI RAG generation failed: {e}")
         return ""
@@ -546,18 +511,20 @@ def answer_question(question: str, mode: str) -> str:
     """主入口：回答问题，返回字符串"""
     if not (question or "").strip():
         return "请输入您想了解的佛教问题。"
-    # 输入长度限制：截断过长输入，避免下游爆炸
     question = question.strip()[:500]
     rewrite = rewrite_query(question)
     outputs = []
     seen = set()
     for subq in rewrite["sub_questions"][:4]:
-        # 用问题文本去重，避免重复调用 LLM 回答同义子问题
         subq_key = subq.strip()
         if subq_key in seen:
             continue
         seen.add(subq_key)
-        ans = answer_one(subq, mode)
+        try:
+            ans = answer_one(subq, mode)
+        except Exception as e:
+            log_error("answer_one", repr(e), meta={"question": subq})
+            ans = ""
         if ans and ans.strip():
             outputs.append(ans)
     return "\n\n".join(outputs)
@@ -575,6 +542,7 @@ def main():
         mode = sys.argv[2].strip()
 
     ans = answer_question(question, mode)
+    save_answer(ans)
     print(ans)
 
 
@@ -582,4 +550,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        print("ERROR: " + repr(e))
+        err_msg = "ERROR: " + repr(e)
+        save_answer(err_msg)
+        print(err_msg)
