@@ -1,7 +1,50 @@
+import hashlib
 import math
 import re
 import sys
-from typing import List, Dict, Tuple, Optional
+import threading
+import unicodedata
+from functools import lru_cache
+from typing import Any, List, Dict, Tuple, Optional
+
+from rag_runtime_config import (
+    BM25_K1, BM25_B, SIGMOID_SCALE, CACHE_MAX_PRODUCTS, ROUTE_BOOST, JIEBA_ENABLED,
+)
+
+# jieba 分词延迟加载
+_jieba = None
+_jieba_initialized = False
+_jieba_lock = threading.Lock()
+
+
+def _get_jieba():
+    """延迟加载 jieba 并添加佛教领域自定义词典"""
+    global _jieba, _jieba_initialized
+    if _jieba_initialized:
+        return _jieba
+    with _jieba_lock:
+        if _jieba_initialized:
+            return _jieba
+        if not JIEBA_ENABLED:
+            _jieba_initialized = True
+            return None
+        try:
+            import jieba as _jieba_mod
+            _CUSTOM_WORDS = list(_BUDDHIST_VOCAB)
+            for w in _CUSTOM_WORDS:
+                _jieba_mod.add_word(w)
+            _jieba = _jieba_mod
+        except ImportError:
+            print("[WARN] jieba 未安装，回退到 bigram 分词")
+            _jieba = None
+        _jieba_initialized = True
+        return _jieba
+
+# 预编译常用正则
+_RE_WHITESPACE = re.compile(r"\s+")
+_RE_TERM_SPLIT = re.compile(r"[\s,，;；、？?！!。]+")
+_RE_CJK_WORD = re.compile(r"^[\u4e00-\u9fff]+$")
+_SEPARATOR_CHARS = frozenset("=-_ ")
 
 
 # ===== 科判（层级大纲标记）解析 =====
@@ -1018,7 +1061,9 @@ def _smart_split_long_segment(text: str, max_size: int) -> List[str]:
 def normalize_text(text: str) -> str:
     text = text or ""
     text = text.replace("\ufeff", "")
-    return text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = unicodedata.normalize("NFC", text)
+    return text
 
 
 def normalize_lines(text: str) -> List[str]:
@@ -1132,9 +1177,74 @@ def tokenize_chinese(text: str) -> List[str]:
     return tokens
 
 
-# BM25 参数
-_BM25_K1 = 1.2   # 词频饱和参数
-_BM25_B = 0.75   # 文档长度归一化参数
+# ===== Sigmoid 归一化 =====
+
+def _sigmoid_norm(raw_score: float) -> float:
+    """BM25 分数归一化：sigmoid(score/scale)"""
+    z = round(raw_score / SIGMOID_SCALE, 2)
+    return _sigmoid_cached(max(-20.0, min(20.0, z)))
+
+
+@lru_cache(maxsize=512)
+def _sigmoid_cached(z: float) -> float:
+    return 1.0 / (1.0 + math.exp(-z))
+
+
+# ===== 佛教术语同义词映射 =====
+_SYNONYM_MAP = {
+    # 教义别名
+    "苦集灭道": "四圣谛", "四谛": "四圣谛",
+    "缘起法": "缘起", "十二缘起": "十二因缘",
+    "三无漏学": "戒定慧", "三学": "戒定慧",
+    "六波罗蜜": "六度", "六波罗蜜多": "六度",
+    # 概念别名
+    "空": "空性", "真空": "空性",
+    "轮转": "轮回", "生死轮回": "轮回",
+    "业报": "因果", "因果报应": "因果",
+    "菩提道次第": "道次第",
+    "自他交换": "自他相换",
+    # 修行别名
+    "坐禅": "禅修", "打坐": "禅修", "静坐": "禅修",
+    "持名": "念佛", "持名念佛": "念佛",
+    "诵经": "读经",
+    # 宗派别名
+    "密教": "密宗", "金刚乘": "密宗",
+    "小乘": "上座部", "声闻乘": "上座部",
+    "南传佛教": "上座部",
+    # 经典别名
+    "般若波罗蜜多心经": "心经",
+    "金刚般若波罗蜜经": "金刚经",
+    "妙法莲华经": "法华经",
+    "大方广佛华严经": "华严经",
+    "入菩萨行论": "入行论",
+    # 人物别名
+    "释迦牟尼佛": "佛陀", "世尊": "佛陀",
+    "六祖": "慧能", "惠能": "慧能",
+}
+
+# 反向映射：同义词扩展
+_SYNONYM_EXPAND = {}
+for _k, _v in _SYNONYM_MAP.items():
+    _SYNONYM_EXPAND.setdefault(_v, set()).add(_k)
+    _SYNONYM_EXPAND.setdefault(_k, set()).add(_v)
+
+
+def expand_synonyms(query: str) -> str:
+    """在查询中追加同义词，提升 BM25 召回率。"""
+    extra = set()
+    q_lower = query.lower()
+    for term, synonyms in _SYNONYM_EXPAND.items():
+        if term in q_lower:
+            for syn in synonyms:
+                if syn not in q_lower:
+                    extra.add(syn)
+    if extra:
+        expanded = query + " " + " ".join(sorted(extra))
+        return expanded[:2000]
+    return query
+
+
+# ===== BM25 参数（从配置导入）=====
 
 
 def _count_term(term: str, text: str) -> int:
@@ -1150,110 +1260,230 @@ def _count_term(term: str, text: str) -> int:
     return count
 
 
-def keyword_score_bm25(query: str, text: str, avg_dl: float, n_docs: int,
-                       doc_freq: Dict[str, int]) -> float:
-    """BM25 评分：考虑词频、文档长度和逆文档频率"""
-    q_tokens = tokenize_chinese(query.lower())
-    if not q_tokens:
-        return 0.0
-    # 去重 tokens 以避免重叠 n-gram 导致的重复计分
-    q_tokens = list(dict.fromkeys(q_tokens))
+def keyword_score_bm25(query_or_terms, text: str, avg_dl: float, n_docs: int,
+                       doc_freq: Dict[str, int],
+                       k1: float = BM25_K1, b: float = BM25_B) -> float:
+    """BM25 评分：考虑词频、文档长度和逆文档频率。
+    query_or_terms: 预提取的查询词列表，或查询字符串（自动提取）。"""
+    if isinstance(query_or_terms, str):
+        q_tokens = list(dict.fromkeys(tokenize_chinese(query_or_terms.lower())))
+    else:
+        q_tokens = query_or_terms
     t_lower = (text or "").lower()
     dl = len(t_lower)
-    if dl == 0 or avg_dl == 0:
+    if not q_tokens or dl == 0 or avg_dl == 0:
         return 0.0
 
     score = 0.0
+    effective_n = max(n_docs, 100)
     for term in q_tokens:
         tf = _count_term(term, t_lower)
         if tf == 0:
             continue
         df = doc_freq.get(term, 0)
-        # IDF: log((N - df + 0.5) / (df + 0.5) + 1)
-        idf = math.log((n_docs - df + 0.5) / (df + 0.5) + 1.0)
-        # 稀有佛教术语加权：出现在不到 10% 文档中的词典术语额外提升
+        idf = math.log((effective_n - df + 0.5) / (df + 0.5) + 1.0)
+        # 稀有佛教术语加权
         if term in _BUDDHIST_VOCAB and df < n_docs * 0.1:
             idf *= 1.3
-        # BM25 TF 归一化
-        tf_norm = (tf * (_BM25_K1 + 1)) / (tf + _BM25_K1 * (1 - _BM25_B + _BM25_B * dl / avg_dl))
+        tf_norm = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dl / max(avg_dl, 1)))
         score += idf * tf_norm
 
     return score
 
 
-def keyword_search(query: str, docs: List[Dict], top_k: int = 8) -> List[Dict]:
-    """BM25 关键词搜索（内存优化：不复制全量 doc_texts）"""
+# ===== 语料缓存与倒排索引 =====
+_CACHE_MAX_SIZE = CACHE_MAX_PRODUCTS
+_bm25_cache: Dict[Any, Tuple[List[str], int, float]] = {}
+_df_cache: Dict[Any, Dict[str, int]] = {}
+_inverted_index_cache: Dict[Any, Dict[str, List[int]]] = {}
+
+
+def _cache_put(cache: dict, key: Any, value: Any, max_size: int = 0) -> None:
+    limit = max_size if max_size > 0 else _CACHE_MAX_SIZE
+    if key in cache:
+        cache[key] = value
+        return
+    while len(cache) >= limit:
+        try:
+            oldest = next(iter(cache))
+            cache.pop(oldest, None)
+        except (StopIteration, RuntimeError):
+            break
+    cache[key] = value
+
+
+def _corpus_cache_key(docs: List[Dict]) -> Tuple:
+    n = len(docs)
+    if n == 0:
+        return (0,)
+    first = (docs[0].get("text") or "")[:64]
+    last = (docs[-1].get("text") or "")[:64]
+    mid_idx = n // 2
+    mid = (docs[mid_idx].get("text") or "")[:32] if n > 2 else ""
+    digest = hashlib.md5(f"{first}|{mid}|{last}".encode()).hexdigest()[:12]
+    return (n, digest)
+
+
+def _get_bm25_corpus(docs: List[Dict]) -> Tuple[List[str], int, float, Tuple]:
+    key = _corpus_cache_key(docs)
+    cached = _bm25_cache.get(key)
+    if cached:
+        return cached[0], cached[1], cached[2], key
+    texts = [(d.get("text") or "").lower() for d in docs]
+    n_docs = len(texts)
+    avg_dl = sum(len(t) for t in texts) / max(n_docs, 1)
+    _cache_put(_bm25_cache, key, (texts, n_docs, avg_dl))
+    return texts, n_docs, avg_dl, key
+
+
+def _batch_doc_freqs(terms: List[str], texts: List[str], corpus_key: Any) -> Dict[str, int]:
+    cached = _df_cache.get(corpus_key)
+    if cached is None:
+        cached = {}
+        _cache_put(_df_cache, corpus_key, cached)
+    uncached = [t for t in terms if t not in cached]
+    if uncached:
+        counts = {t: 0 for t in uncached}
+        for doc_text in texts:
+            for t in uncached:
+                if t in doc_text:
+                    counts[t] += 1
+        cached.update(counts)
+    return {t: cached.get(t, 0) for t in terms}
+
+
+def _get_inverted_index(texts: List[str], corpus_key: Any) -> Dict[str, List[int]]:
+    cached = _inverted_index_cache.get(corpus_key)
+    if cached is not None:
+        return cached
+    inv: Dict[str, List[int]] = {}
+    for i, text in enumerate(texts):
+        for j in range(len(text) - 1):
+            bg = text[j:j+2]
+            if bg not in inv:
+                inv[bg] = [i]
+            elif inv[bg][-1] != i:
+                inv[bg].append(i)
+    _cache_put(_inverted_index_cache, corpus_key, inv)
+    return inv
+
+
+def _get_candidate_docs(terms: List[str], inv_index: Dict[str, List[int]],
+                         n_docs: int) -> List[int]:
+    candidate_set: set = set()
+    for term in terms:
+        if len(term) >= 2:
+            bg = term[:2]
+            doc_ids = inv_index.get(bg)
+            if doc_ids is not None:
+                candidate_set.update(doc_ids)
+        elif len(term) == 1:
+            for bg_key, doc_ids in inv_index.items():
+                if term in bg_key:
+                    candidate_set.update(doc_ids)
+    return sorted(candidate_set)
+
+
+def keyword_search(query: str, docs: List[Dict], top_k: int = 8,
+                    skip_synonym_expand: bool = False) -> List[Dict]:
+    """BM25 关键词搜索（带语料缓存、倒排索引加速、sigmoid 归一化）"""
     if not docs:
         return []
 
+    if not skip_synonym_expand:
+        query = expand_synonyms(query)
     q_tokens = list(dict.fromkeys(tokenize_chinese(query.lower())))
     if not q_tokens:
         return []
 
-    # 预计算：文档频率和平均文档长度（单次遍历，不存储 doc_texts）
-    n_docs = len(docs)
-    total_len = 0
-    doc_freq: Dict[str, int] = {}
-    for d in docs:
-        t = (d.get("text", "") or "").lower()
-        total_len += len(t)
-        seen_terms = set()
-        for term in q_tokens:
-            if term in t and term not in seen_terms:
-                doc_freq[term] = doc_freq.get(term, 0) + 1
-                seen_terms.add(term)
-    avg_dl = total_len / max(n_docs, 1)
+    texts, n_docs, avg_dl, corpus_key = _get_bm25_corpus(docs)
+    doc_freqs = _batch_doc_freqs(q_tokens, texts, corpus_key)
+
+    # 倒排索引加速
+    inv_index = _get_inverted_index(texts, corpus_key)
+    candidates = _get_candidate_docs(q_tokens, inv_index, n_docs)
 
     scored = []
-    for d in docs:
-        doc_text = (d.get("text", "") or "").lower()
-        score = keyword_score_bm25(query, doc_text, avg_dl, n_docs, doc_freq)
-        if score <= 0:
+    for i in candidates:
+        s = keyword_score_bm25(q_tokens, texts[i], avg_dl, n_docs, doc_freqs)
+        if s <= 0:
             continue
-        x = dict(d)
-        x["keyword_score"] = score
-        scored.append(x)
+        scored.append({**docs[i], "keyword_score": s})
 
     scored.sort(key=lambda x: x.get("keyword_score", 0.0), reverse=True)
 
-    # 归一化到 0-1 范围（用 75th percentile 避免单个异常值膨胀）
-    if scored:
-        all_scores = [x.get("keyword_score", 0.0) for x in scored]
-        # 75th percentile 作为基准（≥3 个结果时），否则用 max
-        if len(all_scores) >= 3:
-            idx_75 = max(0, int(len(all_scores) * 0.25))  # sorted descending
-            norm_base = all_scores[idx_75]
-        else:
-            norm_base = all_scores[0]
-        if norm_base > 0:
-            for x in scored:
-                x["keyword_score"] = min(1.0, x["keyword_score"] / norm_base)
+    # sigmoid 归一化
+    for x in scored:
+        x["keyword_score"] = _sigmoid_norm(x["keyword_score"])
 
     return scored[:top_k]
 
 
-def _hit_key(h: Dict, fallback: str) -> str:
-    """提取 hit 的去重 key：优先用 meta.chunk_id，回退到文本前 200 字"""
+def _hit_key(h: Dict) -> str:
+    """生成检索结果的唯一键"""
     meta = h.get("meta", {})
-    return meta.get("chunk_id") or h.get("chunk_id") or h.get("text", "")[:200] or fallback
+    src = meta.get("source_file", "")
+    cid = meta.get("chunk_id", "")
+    if src and cid:
+        return f"{src}#{cid}"
+    return h.get("text", "")[:200]
 
 
-def merge_hybrid(vector_hits: List[Dict], keyword_hits: List[Dict], vw: float, kw: float, top_k: int) -> List[Dict]:
+def merge_hybrid(vector_hits: List[Dict], keyword_hits: List[Dict], vw: float, kw: float, top_k: int,
+                  route: str = "") -> List[Dict]:
     merged = {}
-    for i, h in enumerate(vector_hits):
-        key = _hit_key(h, f"_v{i}")
-        merged[key] = dict(h)
-        merged[key]["hybrid_score"] = float(h.get("score", 0.0)) * vw
-    for i, h in enumerate(keyword_hits):
-        key = _hit_key(h, f"_k{i}")
+    for h in vector_hits:
+        key = _hit_key(h)
+        vs = min(1.0, max(0.0, float(h.get("score", 0.0))))
+        new_score = vs * vw
+        if key in merged:
+            if new_score > merged[key].get("hybrid_score", 0.0):
+                merged[key] = {**h, "hybrid_score": new_score}
+        else:
+            merged[key] = {**h, "hybrid_score": new_score}
+    for h in keyword_hits:
+        key = _hit_key(h)
         if key not in merged:
-            merged[key] = dict(h)
-            merged[key]["score"] = 0.0
-            merged[key]["hybrid_score"] = 0.0
-        merged[key]["hybrid_score"] += float(h.get("keyword_score", 0.0)) * kw
+            merged[key] = {**h, "score": 0.0, "hybrid_score": 0.0}
+        kw_contribution = float(h.get("keyword_score", 0.0)) * kw
+        current_kw = merged[key].get("_kw_contribution", 0.0)
+        if kw_contribution > current_kw:
+            merged[key]["hybrid_score"] += kw_contribution - current_kw
+            merged[key]["_kw_contribution"] = kw_contribution
+
+    # 路由感知加分
+    if route:
+        _apply_route_boost(merged, route)
+
     out = list(merged.values())
+    for h in out:
+        h.pop("_kw_contribution", None)
     out.sort(key=lambda x: x.get("hybrid_score", 0.0), reverse=True)
     return out[:top_k]
+
+
+# 佛教路由→章节标题关键词
+_ROUTE_SECTION_MARKERS = {
+    "doctrine":  ["教义", "四圣谛", "八正道", "十二因缘", "三法印", "缘起"],
+    "practice":  ["修行方法", "禅修", "念佛", "持咒", "止观", "正念"],
+    "scripture": ["经典", "心经", "金刚经", "法华经", "般若", "三藏"],
+    "sect":      ["宗派", "禅宗", "净土宗", "天台宗", "华严宗", "藏传"],
+    "concept":   ["概念", "空性", "涅槃", "轮回", "因果", "菩提心", "五蕴"],
+    "history":   ["历史", "传入中国", "白马寺", "玄奘", "达摩", "慧能"],
+    "ritual":    ["仪轨", "礼仪", "法会", "皈依", "上香", "供灯"],
+    "basic":     ["基础", "入门", "概述", "释迦牟尼", "佛陀"],
+}
+_ROUTE_BOOST_VALUE = ROUTE_BOOST
+
+
+def _apply_route_boost(merged: Dict[str, Dict], route: str) -> None:
+    markers = _ROUTE_SECTION_MARKERS.get(route, [])
+    if not markers:
+        return
+    for h in merged.values():
+        text = (h.get("text") or "")[:800]
+        if any(m in text for m in markers):
+            h["hybrid_score"] += _ROUTE_BOOST_VALUE
 
 
 def _ngram_overlap(a: str, b: str, n: int = 3) -> float:
@@ -1385,3 +1615,89 @@ def match_faq(question: str, faq_text: str, faq_keyword_map: Dict[str, str],
     # 配置-数据不一致：关键词匹配到 topic 但 FAQ 中无对应条目
     print(f"[WARN] FAQ 关键词映射到「{matched_topic}」但 faq.txt 中未找到对应【Q】条目", file=sys.stderr)
     return ""
+
+
+# ===== Reranker：使用 BGE-M3 compute_score 对候选文档重排序 =====
+
+_rerank_cache: Dict[str, List[Tuple[str, float]]] = {}
+_RERANK_CACHE_MAX = 512
+
+
+def _rerank_cache_key(query: str, hits: List[Dict]) -> str:
+    hit_keys = "|".join(_hit_key(h) for h in hits)
+    return hashlib.md5(f"{query}||{hit_keys}".encode()).hexdigest()
+
+
+def rerank_hits(query: str, hits: List[Dict], model, top_k: int) -> List[Dict]:
+    """使用 BGE-M3 的 compute_score 对混合检索结果重排序。"""
+    if not hits or not model:
+        return hits[:top_k]
+
+    hits = [dict(h) for h in hits]
+
+    cache_key = _rerank_cache_key(query, hits)
+    cached = _rerank_cache.get(cache_key)
+    if cached is not None:
+        score_map = dict(cached)
+        for h in hits:
+            hk = _hit_key(h)
+            if hk in score_map:
+                h["rerank_score"] = score_map[hk]
+                h["hybrid_score_before_rerank"] = h.get("hybrid_score", 0.0)
+                h["hybrid_score"] = score_map[hk]
+        hits.sort(key=lambda x: x.get("hybrid_score", 0.0), reverse=True)
+        return hits[:top_k]
+
+    sentence_pairs = [[query, (h.get("text") or "")[:512]] for h in hits]
+    try:
+        scores = model.compute_score(sentence_pairs)
+    except Exception as e:
+        print(f"[WARN] rerank 失败，回退原排序: {e}")
+        return hits[:top_k]
+
+    if isinstance(scores, dict):
+        final_scores = (
+            scores.get("colbert+sparse+dense")
+            or scores.get("score")
+            or scores.get("dense")
+        )
+        if final_scores is None:
+            col = scores.get("colbert", [0.0] * len(hits))
+            spa = scores.get("sparse", [0.0] * len(hits))
+            den = scores.get("dense", [0.0] * len(hits))
+            final_scores = [0.4 * c + 0.2 * s + 0.4 * d
+                           for c, s, d in zip(col, spa, den)]
+    elif isinstance(scores, (list, tuple)):
+        final_scores = scores
+    else:
+        return hits[:top_k]
+
+    if final_scores:
+        max_s = max(final_scores) if final_scores else 1.0
+        min_s = min(final_scores) if final_scores else 0.0
+        rng = max_s - min_s if max_s > min_s else 1.0
+        cache_entries = []
+        for i, h in enumerate(hits):
+            raw = final_scores[i] if i < len(final_scores) else 0.0
+            normalized = (raw - min_s) / rng
+            h["rerank_score"] = normalized
+            h["hybrid_score_before_rerank"] = h.get("hybrid_score", 0.0)
+            h["hybrid_score"] = normalized
+            cache_entries.append((_hit_key(h), normalized))
+        _cache_put(_rerank_cache, cache_key, cache_entries, max_size=_RERANK_CACHE_MAX)
+
+    hits.sort(key=lambda x: x.get("hybrid_score", 0.0), reverse=True)
+    return hits[:top_k]
+
+
+# ===== 动态阈值 =====
+
+def compute_dynamic_threshold(hits: List[Dict], route_threshold: float,
+                               ratio: float = 0.40, floor_ratio: float = 0.70) -> float:
+    """根据 top-1 分数动态计算阈值"""
+    if not hits:
+        return route_threshold
+    top1 = max(h.get("hybrid_score", 0.0) for h in hits)
+    dynamic = top1 * ratio
+    floor = route_threshold * floor_ratio
+    return max(floor, min(dynamic, route_threshold))

@@ -1,7 +1,37 @@
+"""
+Buddhist RAG answer pipeline.
+
+Merged architecture from the reference medical-aesthetics implementation,
+adapted for Buddhist domain knowledge.  Key features carried over:
+- Thread safety with threading.Lock (store cache, model loading)
+- ThreadPoolExecutor for parallel vector + keyword search
+- Embedding cache (dict-based LRU)
+- FAQ fast path (bigram overlap matching from search hits)
+- _build_context helper function
+- Multi-provider LLM support via llm_client module
+- llm_generate_answer with conversation history support
+- _fallback_from_hits for low-confidence scenarios
+- Knowledge gap logging
+- Chitchat and special intent detection (Buddhist equivalents)
+- Enhanced detect_route with disambiguation and weighted scoring
+
+Buddhist-specific features preserved:
+- CrossEncoder rerank integration
+- Buddhist dedup logic
+- Buddhist context building with kepan breadcrumbs
+- Buddhist topic suggestions
+- All Buddhist route names
+- Buddhist QUESTION_ROUTES, SECTION_RULES from rag_runtime_config
+- answer_formatter.format_structured_answer usage
+- relation_engine.enrich_answer usage
+- media_router.find_media usage
+"""
+
 import os
 import sys
 import json
 import re
+import threading
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 
@@ -12,33 +42,111 @@ except Exception:
     pass
 
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
 
 from rag_runtime_config import (
     KNOWLEDGE_DIR, STORE_ROOT, OUT_PATH, DEFAULT_MODE, DEFAULT_TOP_K,
-    USE_OPENAI, OPENAI_MODEL, DEBUG, QUESTION_ROUTES, SECTION_RULES,
+    USE_OPENAI, OPENAI_MODEL, OPENAI_API_BASE, DEBUG, QUESTION_ROUTES, SECTION_RULES,
     PRODUCT_ALIASES, PROJECT_ALIASES, VECTOR_TOP_K, KEYWORD_TOP_K,
     HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, FAQ_KEYWORD_MAP,
     SCORE_THRESHOLD, QUESTION_TYPE_CONFIG, ANSWER_MODE_CONFIG,
     DEFAULT_PRODUCT, USE_RERANK, RERANK_MODEL, RERANK_TOP_K,
     RERANK_SCORE_THRESHOLD,
+    MAX_SUB_QUESTIONS, MAX_EVIDENCE_CHUNKS,
+    EMBED_MODEL_NAME, EMBED_USE_FP16, EMBED_BATCH_SIZE_QUERY, EMBED_MAX_LENGTH_QUERY,
+    EMBED_BATCH_SIZE_BUILD, EMBED_MAX_LENGTH_BUILD,
+    LLM_TEMPERATURE, LLM_MAX_TOKENS_BRIEF, LLM_MAX_TOKENS_FULL, ROUTE_LLM_TEMPERATURE,
+    RELATIONS_FILE,
+    PRICE_REPLY, COMPARISON_REPLY, LOCATION_REPLY,
+    FAQ_FAST_PATH_THRESHOLDS, FAQ_FAST_PATH_DEFAULT,
+    RERANK_ENABLED, RERANK_TOP_N,
+    DYNAMIC_THRESHOLD_ENABLED, DYNAMIC_THRESHOLD_RATIO, DYNAMIC_THRESHOLD_FLOOR_RATIO,
 )
 from search_utils import (
     normalize_text, normalize_lines, uniq, is_faq_line, section_block,
-    keyword_search, merge_hybrid, detect_terms, match_faq
+    keyword_search, merge_hybrid, detect_terms, match_faq,
+    rerank_hits as bgem3_rerank_hits, compute_dynamic_threshold, expand_synonyms,
 )
 from query_rewrite import rewrite_query
 from answer_formatter import format_structured_answer
+from relation_engine import enrich_answer as relation_enrich
+from media_router import find_media as media_find
 from rag_logger import log_qa, log_error
 
+# ---------------------------------------------------------------------------
+# Pre-computed lowercase keyword map for detect_route (avoid per-call .lower())
+# ---------------------------------------------------------------------------
+_QUESTION_ROUTES_LOWER: Dict[str, List[str]] = {
+    route: [kw.lower() for kw in keywords]
+    for route, keywords in QUESTION_ROUTES.items()
+}
+
+# ---------------------------------------------------------------------------
+# Module-level singletons and caches
+# ---------------------------------------------------------------------------
 _model = None
 _faiss = None
-_store_cache = {}  # 缓存已加载的 index + docs
-_store_mtime = {}  # 缓存文件修改时间，用于自动失效
-_reranker = None   # cross-encoder reranker 模型缓存
+_store_cache: Dict[str, tuple] = {}   # {product: (index, docs, mtime)}
+_store_lock = threading.Lock()
+_store_product_locks: Dict[str, threading.Lock] = {}
+_store_product_locks_guard = threading.Lock()
+_reranker = None  # cross-encoder reranker model cache
 
+# Module-level thread pool for parallel search
+_search_pool = ThreadPoolExecutor(max_workers=6)
+
+# Thread-local storage for last route/product
+_thread_local = threading.local()
+
+# ---------------------------------------------------------------------------
+# Buddhist domain signal rules for detect_route disambiguation
+# ---------------------------------------------------------------------------
+_ROUTE_ORDER = [
+    "scripture", "doctrine", "practice", "sect", "concept",
+    "history", "ritual", "basic",
+]
+_ROUTE_ORDER_IDX = {r: i for i, r in enumerate(_ROUTE_ORDER)}
+
+# Buddhist disambiguation signals
+_DOCTRINE_SIGNALS = ("四圣谛", "八正道", "十二因缘", "缘起", "空性", "中观",
+                     "唯识", "如来藏", "般若", "涅槃", "三法印", "四法印")
+_PRACTICE_SIGNALS = ("禅修", "打坐", "冥想", "念佛", "持咒", "观想", "止观",
+                     "正念", "精进", "戒律", "布施", "持戒", "忍辱")
+_SCRIPTURE_SIGNALS = ("经", "论", "律", "心经", "金刚经", "法华经", "楞严经",
+                      "华严经", "阿含经", "维摩经", "入行论", "菩提道次第")
+_SECT_SIGNALS = ("宗派", "禅宗", "净土宗", "天台宗", "华严宗", "密宗",
+                 "藏传", "南传", "上座部", "大乘", "小乘", "传承")
+_CONCEPT_SIGNALS = ("概念", "含义", "是什么", "什么意思", "定义", "解释",
+                    "菩提心", "佛性", "法身", "般若", "三宝", "五蕴")
+_HISTORY_SIGNALS = ("历史", "朝代", "传入", "发展", "祖师", "高僧",
+                    "达摩", "玄奘", "鸠摩罗什", "佛教史")
+_RITUAL_SIGNALS = ("仪轨", "法会", "供养", "礼拜", "早课", "晚课",
+                   "回向", "发愿", "忏悔", "法事", "放生")
+
+# Chitchat regex patterns
+_RE_CHAT_GREETING = re.compile(r"^(你好|嗨|hi|hello|hey|您好|在吗|在不在)$", re.IGNORECASE)
+_RE_CHAT_THANKS = re.compile(r"^(谢谢|感谢|多谢|辛苦了|谢啦|thx|thanks)$", re.IGNORECASE)
+_RE_CHAT_BYE = re.compile(r"^(再见|拜拜|bye|回头见|下次再聊)$", re.IGNORECASE)
+
+# _fallback_from_hits pre-compiled patterns
+_RE_FALLBACK_SPLIT = re.compile(r"[\s,，;；、？?！!。【】]+")
+_RE_CJK_SINGLE = re.compile(r"[\u4e00-\u9fff]")
+_RE_CN_SECTION_TITLE = re.compile(r"^[一二三四五六七八九十]+、")
+_SEPARATOR_CHARS = frozenset("=-_ —")
+
+# Special intent keywords (Buddhist equivalents)
+_PRICE_KWS = ("多少钱", "价格", "费用", "收费")
+_COMPARE_KWS = ("区别", "对比", "哪个好", "差别", "比较")
+_LOCATION_KWS = ("哪里可以", "哪家寺院", "附近", "哪里有", "去哪",
+                  "哪个城市", "推荐寺院", "哪里学佛")
+
+
+# ===================================================================
+# CrossEncoder rerank (Buddhist feature)
+# ===================================================================
 
 def get_reranker():
-    """懒加载 cross-encoder reranker 模型"""
+    """Lazy-load cross-encoder reranker model."""
     global _reranker
     if _reranker is None:
         if not USE_RERANK:
@@ -46,12 +154,12 @@ def get_reranker():
         try:
             from sentence_transformers import CrossEncoder
             if DEBUG:
-                print(f"[INFO] 加载 reranker 模型：{RERANK_MODEL}")
+                print(f"[INFO] Loading reranker model: {RERANK_MODEL}")
             _reranker = CrossEncoder(RERANK_MODEL, max_length=1024)
         except Exception as e:
             log_error("reranker_load", repr(e))
             if DEBUG:
-                print(f"[WARN] Reranker 加载失败，回退到无 rerank 模式: {e}")
+                print(f"[WARN] Reranker load failed, falling back: {e}")
             return None
     return _reranker
 
@@ -59,21 +167,10 @@ def get_reranker():
 def rerank_hits(query: str, hits: List[Dict], top_k: int = None,
                 score_threshold: float = None) -> List[Dict]:
     """
-    使用 cross-encoder 对检索结果做精排。
-
-    Cross-encoder 与 bi-encoder 的区别：
-    - Bi-encoder（向量搜索）：分别编码 query 和 doc，速度快但精度有限
-    - Cross-encoder（rerank）：同时编码 query+doc，精度更高但速度慢
-
-    因此流程是：bi-encoder 粗召回 → cross-encoder 精排 → 取 top-K
-
-    Args:
-        query: 用户问题
-        hits: hybrid search + filter + dedup 后的候选结果
-        top_k: 精排后保留的最大数量
-        score_threshold: 精排分数低于此值的丢弃
-    Returns:
-        重排序后的 hits 列表
+    Cross-encoder rerank of retrieval results.
+    Bi-encoder (vector search): encodes query and doc separately, fast but less precise.
+    Cross-encoder (rerank): encodes query+doc together, more precise but slower.
+    Pipeline: bi-encoder coarse recall -> cross-encoder rerank -> top-K
     """
     if not hits:
         return hits
@@ -84,11 +181,9 @@ def rerank_hits(query: str, hits: List[Dict], top_k: int = None,
 
     reranker = get_reranker()
     if reranker is None:
-        # reranker 不可用时，保持原始排序，截断到 top_k
         return hits[:top_k]
 
     try:
-        # 构建 query-doc 对
         pairs = []
         for h in hits:
             text = h.get("text", "").strip()
@@ -96,86 +191,184 @@ def rerank_hits(query: str, hits: List[Dict], top_k: int = None,
                 text = "(empty)"
             pairs.append((query, text))
 
-        # cross-encoder 打分
         scores = reranker.predict(pairs, show_progress_bar=False)
 
-        # 将 rerank 分数写入 hit
         for h, score in zip(hits, scores):
             h["rerank_score"] = float(score)
 
-        # 按 rerank 分数降序排列
         hits_sorted = sorted(hits, key=lambda x: x.get("rerank_score", 0.0), reverse=True)
-
-        # 过滤低分 + 截断
         result = [h for h in hits_sorted if h.get("rerank_score", 0.0) >= score_threshold]
         return result[:top_k]
     except Exception as e:
         log_error("rerank_hits", repr(e))
         if DEBUG:
-            print(f"[WARN] Rerank 执行失败，回退到原始排序: {e}")
+            print(f"[WARN] Rerank failed, falling back to original order: {e}")
         return hits[:top_k]
+
+
+# ===================================================================
+# Model / FAISS loading (thread-safe)
+# ===================================================================
+
+_faiss_lock = threading.Lock()
 
 
 def get_faiss():
     global _faiss
     if _faiss is None:
-        import faiss as _faiss_mod
-        _faiss = _faiss_mod
+        with _faiss_lock:
+            if _faiss is None:
+                import faiss as _faiss_mod
+                _faiss = _faiss_mod
     return _faiss
+
+
+_model_lock = threading.Lock()
 
 
 def get_model():
     global _model
     if _model is None:
-        from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer("BAAI/bge-m3")
+        with _model_lock:
+            if _model is None:
+                from sentence_transformers import SentenceTransformer
+                _model = SentenceTransformer("BAAI/bge-m3")
     return _model
 
 
+# ===================================================================
+# Output helpers
+# ===================================================================
+
+def _get_out_path() -> Path:
+    """Support RAG_ANSWER_FILE env var for output path (avoid concurrent overwrite)."""
+    env_path = os.environ.get("RAG_ANSWER_FILE", "").strip()
+    if env_path:
+        return Path(env_path)
+    return OUT_PATH
+
+
 def save_answer(text: str):
-    """保存答案到 answer.txt（与原始 RAG 架构一致）"""
-    OUT_PATH.write_text((text or "").strip() + "\n", encoding="utf-8-sig")
+    _get_out_path().write_text((text or "").strip() + "\n", encoding="utf-8-sig")
+
+
+# ===================================================================
+# Embedding cache
+# ===================================================================
+
+_embed_cache: Dict[str, np.ndarray] = {}
+_EMBED_CACHE_MAX = 1024
 
 
 def embed_query(text: str) -> np.ndarray:
+    cached = _embed_cache.get(text)
+    if cached is not None:
+        return cached.copy()
+
     model = get_model()
     vec = model.encode([text], normalize_embeddings=False)
     vec = np.asarray(vec, dtype="float32")
     get_faiss().normalize_L2(vec)
+
+    # Write to cache (evict oldest when full)
+    if len(_embed_cache) >= _EMBED_CACHE_MAX:
+        try:
+            oldest = next(iter(_embed_cache))
+            _embed_cache.pop(oldest, None)
+        except StopIteration:
+            pass
+    _embed_cache[text] = vec.copy()
     return vec
 
 
+# ===================================================================
+# Store loading (thread-safe with per-product locks)
+# ===================================================================
+
+def _evict_cache(cache: dict, max_size: int) -> None:
+    """Generic cache eviction: remove oldest entries when over limit."""
+    while len(cache) >= max_size:
+        try:
+            oldest = next(iter(cache))
+            cache.pop(oldest, None)
+        except (StopIteration, RuntimeError):
+            break
+
+
+def invalidate_store_cache(product: str) -> None:
+    """Thread-safe store cache invalidation."""
+    with _store_lock:
+        _store_cache.pop(product, None)
+
+
 def load_store(product: str):
-    """加载向量索引和文档，带基于 mtime 的缓存失效"""
+    """Load vector index and docs with thread-safe mtime-based caching."""
     store_dir = STORE_ROOT / product
     index_path = store_dir / "index.faiss"
     docs_path = store_dir / "docs.jsonl"
-    if not index_path.exists() or not docs_path.exists():
-        _store_cache[product] = (None, [])
-        _store_mtime.pop(product, None)
-        return _store_cache[product]
-    current_mtime = (index_path.stat().st_mtime, docs_path.stat().st_mtime)
-    if product in _store_cache and _store_mtime.get(product) == current_mtime:
-        return _store_cache[product]
-    if product in _store_cache and DEBUG:
-        print(f"[DEBUG] 重新加载 {product} 索引（文件已更新）")
-    index = get_faiss().read_index(str(index_path))
-    docs = []
-    with docs_path.open("r", encoding="utf-8") as f:
-        for i, line in enumerate(f):
-            line = line.strip()
-            if line:
-                doc = json.loads(line)
-                meta = doc.get("meta", {})
-                if not meta.get("chunk_id"):
-                    meta["chunk_id"] = f"_doc{i}"
-                    doc["meta"] = meta
-                docs.append(doc)
-    result = (index, docs)
-    _store_cache[product] = result
-    _store_mtime[product] = current_mtime
-    return result
+    if not docs_path.exists():
+        return None, []
 
+    mtime = docs_path.stat().st_mtime
+    with _store_lock:
+        cached = _store_cache.get(product)
+        if cached and cached[2] == mtime:
+            return cached[0], cached[1]
+
+    # Per-product lock to prevent concurrent loading of same product
+    with _store_product_locks_guard:
+        if product not in _store_product_locks:
+            _store_product_locks[product] = threading.Lock()
+        product_lock = _store_product_locks[product]
+
+    with product_lock:
+        # Double-check after acquiring lock
+        with _store_lock:
+            cached = _store_cache.get(product)
+            if cached and cached[2] == mtime:
+                return cached[0], cached[1]
+
+        # Load documents
+        skipped = 0
+        docs = []
+        with docs_path.open("r", encoding="utf-8") as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    doc = json.loads(line)
+                    meta = doc.get("meta", {})
+                    if not meta.get("chunk_id"):
+                        meta["chunk_id"] = f"_doc{line_num}"
+                        doc["meta"] = meta
+                    docs.append(doc)
+                except json.JSONDecodeError:
+                    skipped += 1
+                    continue
+        if skipped > 0:
+            log_error("load_store", f"Skipped {skipped} corrupted lines",
+                      meta={"product": product, "docs_path": str(docs_path)})
+
+        # Load FAISS index
+        index = None
+        if index_path.exists():
+            try:
+                index = get_faiss().read_index(str(index_path))
+            except Exception as e:
+                log_error("load_store", f"Index load failed: {e}",
+                          meta={"product": product, "index_path": str(index_path)})
+                index = None
+
+        # Write to cache
+        with _store_lock:
+            _store_cache[product] = (index, docs, mtime)
+    return index, docs
+
+
+# ===================================================================
+# Search functions
+# ===================================================================
 
 def vector_search(product: str, query: str, top_k: int) -> List[Dict]:
     index, docs = load_store(product)
@@ -184,7 +377,7 @@ def vector_search(product: str, query: str, top_k: int) -> List[Dict]:
     qv = embed_query(query)
     if qv.shape[1] != index.d:
         if DEBUG:
-            print(f"[WARN] 向量维度不匹配：查询={qv.shape[1]}, 索引={index.d}")
+            print(f"[WARN] Dimension mismatch: query={qv.shape[1]}, index={index.d}")
         return []
     scores, ids = index.search(qv, min(top_k, len(docs)))
     hits = []
@@ -197,12 +390,28 @@ def vector_search(product: str, query: str, top_k: int) -> List[Dict]:
     return hits
 
 
+_knowledge_file_cache: Dict[str, tuple] = {}
+_KNOWLEDGE_CACHE_MAX = 128
+
+
 def read_knowledge_file(product: str, fname: str) -> str:
     p = KNOWLEDGE_DIR / product / fname
     if not p.exists():
         return ""
-    return p.read_text(encoding="utf-8", errors="replace")
+    key = str(p)
+    mtime = p.stat().st_mtime
+    cached = _knowledge_file_cache.get(key)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    content = p.read_text(encoding="utf-8", errors="replace")
+    _evict_cache(_knowledge_file_cache, _KNOWLEDGE_CACHE_MAX)
+    _knowledge_file_cache[key] = (mtime, content)
+    return content
 
+
+# ===================================================================
+# Product / route detection
+# ===================================================================
 
 def detect_product(question: str) -> str:
     found = detect_terms(question, PRODUCT_ALIASES)
@@ -214,32 +423,110 @@ def detect_product(question: str) -> str:
     return dirs[0] if dirs else DEFAULT_PRODUCT
 
 
-def detect_route(question: str) -> str:
-    """多类评分路由：按匹配关键词的总字符长度评分，长词匹配权重更高"""
-    q = (question or "").lower()
-    route_scores = {}
-    for route_name, keywords in QUESTION_ROUTES.items():
-        score = sum(len(kw) for kw in keywords if kw.lower() in q)
-        if score > 0:
-            route_scores[route_name] = score
-    if not route_scores:
-        return "basic"
-    return max(route_scores.items(), key=lambda x: x[1])[0]
+def _detect_special_intent(q: str) -> str:
+    """Detect special intents without knowledge coverage: price, comparison, location."""
+    if any(k in q for k in _PRICE_KWS):
+        return "price"
+    if any(k in q for k in _COMPARE_KWS):
+        return "comparison"
+    if any(k in q for k in _LOCATION_KWS):
+        return "location"
+    return ""
 
+
+def detect_route(question: str) -> str:
+    """Enhanced multi-class route scoring with Buddhist disambiguation signals."""
+    q = (question or "").lower()
+
+    # Collect matched keywords per route (using pre-computed lowercase)
+    matched = {}
+    for route in _ROUTE_ORDER:
+        hits = [kw for kw in _QUESTION_ROUTES_LOWER.get(route, []) if kw in q]
+        if hits:
+            matched[route] = hits
+
+    if not matched:
+        return "basic"
+
+    # Weighted scoring: longer keyword matches score higher
+    scores = {}
+    for route, hits in matched.items():
+        score = sum(max(1.0, len(kw) / 2) for kw in hits)
+        scores[route] = score
+
+    # Buddhist disambiguation boost rules
+    if "doctrine" in scores and any(s in q for s in _DOCTRINE_SIGNALS):
+        scores["doctrine"] += 5.0
+
+    if "practice" in scores and any(s in q for s in _PRACTICE_SIGNALS):
+        scores["practice"] += 5.0
+
+    if "scripture" in scores and any(s in q for s in _SCRIPTURE_SIGNALS):
+        scores["scripture"] += 5.0
+
+    if "sect" in scores and any(s in q for s in _SECT_SIGNALS):
+        scores["sect"] += 5.0
+
+    if "concept" in scores and any(s in q for s in _CONCEPT_SIGNALS):
+        scores["concept"] += 5.0
+
+    if "history" in scores and any(s in q for s in _HISTORY_SIGNALS):
+        scores["history"] += 5.0
+
+    if "ritual" in scores and any(s in q for s in _RITUAL_SIGNALS):
+        scores["ritual"] += 5.0
+
+    # doctrine vs concept disambiguation
+    if "doctrine" in scores and "concept" in scores:
+        # If asking about a specific concept definition, prefer concept route
+        if any(s in q for s in ("是什么", "什么意思", "含义", "定义")):
+            scores["concept"] += 4.0
+        # If asking about doctrinal system/logic, prefer doctrine route
+        if any(s in q for s in ("体系", "关系", "修证", "次第")):
+            scores["doctrine"] += 4.0
+
+    # practice vs ritual disambiguation
+    if "practice" in scores and "ritual" in scores:
+        if any(s in q for s in ("怎么修", "如何修", "修行方法")):
+            scores["practice"] += 4.0
+        if any(s in q for s in ("仪轨", "法会", "仪式", "流程")):
+            scores["ritual"] += 4.0
+
+    # scripture vs doctrine: specific text reference -> scripture
+    if "scripture" in scores and "doctrine" in scores:
+        if any(s in q for s in ("经", "论", "律", "第几品", "哪一品", "原文")):
+            scores["scripture"] += 4.0
+
+    # Multi-entity mention -> sect comparison
+    mentioned_projects = detect_terms(q, PROJECT_ALIASES)
+    if "sect" in scores and len(mentioned_projects) >= 2:
+        scores["sect"] += 6.0
+
+    if not scores:
+        return "basic"
+    best = max(scores.keys(), key=lambda r: (scores[r], -_ROUTE_ORDER_IDX.get(r, 99)))
+    return best
+
+
+# ===================================================================
+# Route config helpers
+# ===================================================================
 
 def _get_route_config(route: str) -> Dict:
-    """获取路由级别的检索配置（k 和 threshold），使用 QUESTION_TYPE_CONFIG"""
     return QUESTION_TYPE_CONFIG.get(route, {"k": DEFAULT_TOP_K, "threshold": SCORE_THRESHOLD})
 
 
 def _get_mode_limit(route: str, mode: str) -> int:
-    """获取路由在指定模式下的最大输出条目数，使用 ANSWER_MODE_CONFIG"""
-    mode_cfg = ANSWER_MODE_CONFIG.get(mode, ANSWER_MODE_CONFIG["brief"])
+    mode_cfg = ANSWER_MODE_CONFIG.get(mode, ANSWER_MODE_CONFIG.get("brief", {}))
     return mode_cfg.get(route, mode_cfg.get("max_items_default", 8))
 
 
+# ===================================================================
+# Buddhist topic suggestions
+# ===================================================================
+
 def _suggest_related_topics(question: str, route: str) -> List[str]:
-    """根据问题和路由，推荐知识库中已有的相近主题"""
+    """Suggest related topics from the knowledge base."""
     q = question.strip()
     suggestions = []
     route_kws = QUESTION_ROUTES.get(route, [])
@@ -272,33 +559,49 @@ def _suggest_related_topics(question: str, route: str) -> List[str]:
     return unique
 
 
-def _build_not_found_response(question: str, route: str, rewrite: dict) -> str:
-    """构建未命中时的友好回复，附带相关主题建议"""
-    suggestions = _suggest_related_topics(question, route)
-    fallback = ["当前知识库未找到与该问题直接相关的内容。"]
-    if suggestions:
-        fallback.append("您可以尝试以下相关主题：" + "、".join(suggestions))
-    else:
-        fallback.append("建议尝试更具体的佛教术语进行提问，如：四圣谛、八正道、菩提心、入行论等。")
-    fallback.append("如需深入了解，建议查阅相关佛教经典或咨询法师。")
-    return format_structured_answer(route, fallback, [], add_risk_note=False)
+# ===================================================================
+# Evidence building (with kepan breadcrumbs)
+# ===================================================================
+
+def _truncate_to_sentence(text: str, max_chars: int = 450) -> str:
+    if len(text) <= max_chars:
+        return text
+    truncated = text[:max_chars]
+    for sep in ["。", "；", "！", "？", "）", ". ", "! ", "? ", "\n"]:
+        pos = truncated.rfind(sep)
+        if pos > max_chars // 2:
+            return truncated[:pos + len(sep)].strip()
+    return truncated.strip()
 
 
 def build_evidence(hits: List[Dict]) -> List[Dict]:
+    """Build evidence list with kepan breadcrumbs, deduplicated."""
+    seen = set()
     ev = []
-    for h in hits[:6]:
+    for i, h in enumerate(hits):
         meta = h.get("meta", {})
+        sf = meta.get("source_file", "")
+        cid = meta.get("chunk_id", "")
+        key = (sf, cid) if sf or cid else ("_idx_", str(i))
+        if key in seen:
+            continue
+        seen.add(key)
         entry = {"meta": meta}
         if meta.get("kepan_breadcrumb"):
             entry["kepan_breadcrumb"] = meta["kepan_breadcrumb"]
+        entry["text"] = _truncate_to_sentence((h.get("text") or "").strip())
         ev.append(entry)
+        if len(ev) >= MAX_EVIDENCE_CHUNKS:
+            break
     return ev
 
 
+# ===================================================================
+# Score filtering and Buddhist dedup
+# ===================================================================
+
 def filter_by_score(hits: List[Dict], threshold: float = None) -> List[Dict]:
-    """过滤低于分数阈值的检索结果。
-    使用分通道阈值：任一通道超过阈值即保留，避免 keyword-only hits 被加权后误杀。
-    """
+    """Filter hits below threshold. Multi-channel: keep if any channel exceeds."""
     if threshold is None:
         threshold = SCORE_THRESHOLD
     result = []
@@ -312,7 +615,6 @@ def filter_by_score(hits: List[Dict], threshold: float = None) -> List[Dict]:
 
 
 def _text_overlap_ratio(a: str, b: str) -> float:
-    """计算两段文本的字符重叠率（基于较短文本）"""
     if not a or not b:
         return 0.0
     shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
@@ -328,7 +630,7 @@ def _text_overlap_ratio(a: str, b: str) -> float:
 
 def _deduplicate_hits(hits: List[Dict], base_overlap_threshold: float = 0.7,
                       max_per_source: int = 3) -> List[Dict]:
-    """语义去重 + 来源多样性控制"""
+    """Buddhist semantic dedup + source diversity control."""
     if not hits:
         return []
     selected = []
@@ -355,8 +657,42 @@ def _deduplicate_hits(hits: List[Dict], base_overlap_threshold: float = 0.7,
     return selected
 
 
+# ===================================================================
+# Context building (reference architecture)
+# ===================================================================
+
+def _build_context(hits: List[Dict], max_chars: int = 5000) -> str:
+    """Build LLM context string from hits, truncating at chunk boundaries.
+    First 3 snippets include full metadata header; subsequent ones only get index."""
+    parts = []
+    total = 0
+    for i, h in enumerate(hits, 1):
+        text = (h.get("text") or "").strip()
+        if not text:
+            continue
+        if i <= 3:
+            meta = h.get("meta") or {}
+            source = meta.get("source_file", "unknown")
+            chunk_id = meta.get("chunk_id", "?")
+            kepan = meta.get("kepan_breadcrumb", "")
+            score = h.get("hybrid_score") or h.get("score", 0.0)
+            header_parts = [f"[片段{i} | {source}#{chunk_id} | 相关度:{score:.2f}"]
+            if kepan:
+                header_parts.append(f" | 科判:{kepan}")
+            header = "".join(header_parts) + "]"
+        else:
+            header = f"[片段{i}]"
+        part = f"{header}\n{text}"
+        sep_len = 2 if parts else 0
+        if parts and total + sep_len + len(part) > max_chars:
+            break
+        parts.append(part)
+        total += sep_len + len(part)
+    return "\n\n".join(parts)
+
+
 def extract_chunks_as_context(hits: List[Dict], max_chunks: int = 6) -> str:
-    """从检索结果中提取 chunk 文本 + 来源元数据作为 LLM 上下文"""
+    """Extract chunk text + metadata as LLM context (Buddhist kepan breadcrumbs)."""
     if not hits:
         return ""
     chunks = []
@@ -385,8 +721,109 @@ def extract_chunks_as_context(hits: List[Dict], max_chunks: int = 6) -> str:
     return "\n\n---\n\n".join(chunks)
 
 
+# ===================================================================
+# FAQ fast path (bigram overlap from reference architecture)
+# ===================================================================
+
+def _normalize_for_bigram(text: str) -> str:
+    """Normalize text for bigram matching: lowercase, strip whitespace."""
+    return text.lower().replace(" ", "")
+
+
+def _extract_faq_from_hits(hits: List[Dict], question: str,
+                            _q_bigrams: set = None) -> List[str]:
+    """Extract highly relevant FAQ answers from search hits via bigram overlap."""
+    if _q_bigrams is not None:
+        q_bigrams = _q_bigrams
+    else:
+        q_norm = _normalize_for_bigram(question)
+        if len(q_norm) < 2:
+            return []
+        q_bigrams = set(q_norm[i:i+2] for i in range(len(q_norm) - 1))
+    min_overlap = 2 if len(question) < 15 else 3
+
+    faq_candidates = []
+    for h in hits:
+        meta = h.get("meta", {})
+        if meta.get("source_type") != "faq":
+            continue
+        text = (h.get("text") or "").strip()
+        if "【Q】" not in text or "【A】" not in text:
+            continue
+        q_part = text.split("【A】")[0].replace("【Q】", "")
+        faq_norm = _normalize_for_bigram(q_part)
+        faq_bigrams = set(faq_norm[i:i+2] for i in range(len(faq_norm) - 1))
+        if not faq_bigrams:
+            continue
+        overlap = len(q_bigrams & faq_bigrams)
+        ratio = overlap / max(len(q_bigrams), 1)
+        if overlap >= min_overlap and ratio >= 0.3:
+            _, _, a_part = text.partition("【A】")
+            a_part = a_part.strip()
+            if a_part:
+                faq_candidates.append((ratio, a_part))
+    faq_candidates.sort(key=lambda x: x[0], reverse=True)
+    return [a_part for _, a_part in faq_candidates[:2]]
+
+
+def _try_faq_fast_path(hits: List[Dict], question: str, route: str,
+                       rewrite: dict, log_meta: dict,
+                       _q_bigrams: set = None) -> str:
+    """FAQ exact match fast path: when top-1 hit is a high-confidence FAQ entry."""
+    if not hits:
+        return ""
+
+    top_hit = hits[0]
+    meta = top_hit.get("meta", {})
+    if meta.get("source_type") != "faq":
+        return ""
+
+    thresholds = FAQ_FAST_PATH_THRESHOLDS.get(route, FAQ_FAST_PATH_DEFAULT)
+    score = top_hit.get("hybrid_score") or top_hit.get("score", 0.0)
+    if score < thresholds["score"]:
+        return ""
+
+    text = (top_hit.get("text") or "").strip()
+    if "【Q】" not in text or "【A】" not in text:
+        return ""
+
+    q_part = text.split("【A】")[0].replace("【Q】", "")
+    _, _, a_part = text.partition("【A】")
+    a_part = a_part.strip()
+    if not a_part:
+        return ""
+
+    if _q_bigrams is not None:
+        q_bigrams = _q_bigrams
+    else:
+        q_norm = _normalize_for_bigram(question)
+        q_bigrams = set(q_norm[i:i+2] for i in range(len(q_norm) - 1))
+    faq_norm = _normalize_for_bigram(q_part)
+    faq_bigrams = set(faq_norm[i:i+2] for i in range(len(faq_norm) - 1))
+    if len(q_bigrams) < 3 or len(faq_bigrams) < 3:
+        return ""
+    overlap = len(q_bigrams & faq_bigrams)
+    ratio = overlap / max(len(q_bigrams), 1)
+    if overlap < 3 or ratio < thresholds["ratio"]:
+        return ""
+
+    body_lines = [a_part]
+    evidence = build_evidence(hits[:1])
+    add_risk = route in ("practice", "ritual")
+    answer = format_structured_answer(route, body_lines, evidence, add_risk_note=add_risk)
+
+    log_qa(question, answer, rewritten_query=rewrite.get("expanded", ""),
+           matched_sources=evidence, hit=True,
+           meta={**log_meta, "method": "faq_fast_path", "faq_score": score,
+                 "faq_overlap_ratio": round(ratio, 3)})
+    return answer
+
+
+# ===================================================================
+# Bullet extraction from sections
+# ===================================================================
+
 def extract_from_hits(hits: List[Dict], route: str, mode: str) -> List[str]:
-    """从向量检索结果中提取答案段落"""
     if not hits:
         return []
     paragraphs = []
@@ -441,13 +878,387 @@ def parse_bullets_from_section(main_text: str, faq_text: str, route: str, mode: 
     return items[:limit]
 
 
-def answer_one(question: str, mode: str) -> str:
-    product = detect_product(question)
-    route = detect_route(question)
-    route_cfg = _get_route_config(route)
-    rewrite = rewrite_query(question)
+# ===================================================================
+# _fallback_from_hits (reference architecture feature)
+# ===================================================================
 
-    # 1. 尝试 FAQ 精确匹配（带别名扩展，包含子目录 FAQ）
+def _fallback_from_hits(hits: List[Dict], max_lines: int = 8,
+                        query: str = "") -> List[str]:
+    """When rule extraction fails, extract text from search hits as fallback.
+    Prioritize lines containing query keywords, sorted by match count."""
+    query_terms = [t for t in _RE_FALLBACK_SPLIT.split(query.lower())
+                   if t and (len(t) >= 2 or _RE_CJK_SINGLE.fullmatch(t))]
+    scored_lines = []
+    seen_lines = set()
+    for h in hits:
+        text = (h.get("text") or "").strip()
+        if not text:
+            continue
+        for ln in text.split("\n"):
+            ln = ln.strip()
+            if not ln or len(ln) <= 6:
+                continue
+            if _RE_CN_SECTION_TITLE.match(ln) or not (set(ln) - _SEPARATOR_CHARS):
+                continue
+            ln_key = " ".join(ln.split())
+            if ln_key in seen_lines:
+                continue
+            seen_lines.add(ln_key)
+            ln_lower = ln.lower()
+            match_count = sum(1 for t in query_terms if t in ln_lower) if query_terms else 0
+            scored_lines.append((match_count, ln))
+    scored_lines.sort(key=lambda x: x[0], reverse=True)
+    return [ln for _, ln in scored_lines[:max_lines]]
+
+
+# ===================================================================
+# Knowledge gap logging
+# ===================================================================
+
+_GAP_LOG = Path(__file__).resolve().parent / "logs" / "knowledge_gap.jsonl"
+
+
+def _log_knowledge_gap(question: str, route: str, rewrite: dict,
+                       hits: list, log_meta: dict) -> None:
+    """Log queries not covered by knowledge base for gap analysis."""
+    try:
+        from rag_logger import _append_jsonl, _ensure_dir
+        top_score = max((h.get("hybrid_score") or h.get("score", 0.0) for h in hits), default=0.0)
+        top_text = (hits[0].get("text", "")[:100] if hits else "")
+        payload = {
+            "question": question,
+            "expanded_query": rewrite.get("expanded", ""),
+            "route": route,
+            "hit_count": len(hits),
+            "top_score": round(top_score, 3),
+            "top_snippet": top_text,
+            "product": log_meta.get("product", ""),
+        }
+        _ensure_dir()
+        _append_jsonl(_GAP_LOG, payload)
+    except Exception:
+        pass
+
+
+# ===================================================================
+# Chitchat detection
+# ===================================================================
+
+_CHITCHAT_REPLIES = {
+    "greeting": "阿弥陀佛！我是佛教知识问答助手，请问有什么佛法上的问题可以帮您？",
+    "thanks":   "不客气！随喜您对佛法的探究，如有其他问题随时请教。",
+    "bye":      "再见！愿您吉祥如意，六时吉祥。",
+    "ack":      "好的，如有其他佛法问题请继续提问。",
+}
+
+
+def _chitchat_reply(raw: str) -> str:
+    s = raw.strip().rstrip("！!。.~啊呀哇？?")
+    if _RE_CHAT_GREETING.match(s):
+        return _CHITCHAT_REPLIES["greeting"]
+    if _RE_CHAT_THANKS.match(s):
+        return _CHITCHAT_REPLIES["thanks"]
+    if _RE_CHAT_BYE.match(s):
+        return _CHITCHAT_REPLIES["bye"]
+    return _CHITCHAT_REPLIES["ack"]
+
+
+# ===================================================================
+# LLM client (multi-provider via llm_client)
+# ===================================================================
+
+_openai_client = None
+_openai_client_checked = False
+
+
+def _get_chat_model() -> str:
+    """Get chat LLM model name (prefer llm_client, fallback to global OPENAI_MODEL)."""
+    try:
+        from llm_client import get_model as _get_multi_model, is_enabled as _is_enabled
+        if _is_enabled("chat"):
+            m = _get_multi_model("chat")
+            if m:
+                return m
+    except ImportError:
+        pass
+    return OPENAI_MODEL
+
+
+def _get_openai_client():
+    """Get chat LLM client (prefer llm_client multi-provider, fallback to legacy singleton)."""
+    global _openai_client, _openai_client_checked
+    try:
+        from llm_client import get_client as _get_multi_client, is_enabled as _is_enabled
+        if _is_enabled("chat"):
+            client = _get_multi_client("chat")
+            if client is not None:
+                return client
+    except ImportError:
+        pass
+    # Legacy fallback
+    if _openai_client_checked:
+        return _openai_client
+    if not USE_OPENAI:
+        _openai_client_checked = True
+        return None
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not key:
+        _openai_client_checked = True
+        return None
+    try:
+        from openai import OpenAI
+        client_kwargs = {"api_key": key}
+        if OPENAI_API_BASE:
+            client_kwargs["base_url"] = OPENAI_API_BASE
+        _openai_client = OpenAI(**client_kwargs)
+    except Exception:
+        _openai_client = None
+    _openai_client_checked = True
+    return _openai_client
+
+
+# ===================================================================
+# LLM generate answer (with conversation history support)
+# ===================================================================
+
+def llm_generate_answer(question: str, context: str, route: str, mode: str,
+                        history_summary: str = "",
+                        history_pairs: list = None,
+                        low_confidence: bool = False) -> str:
+    """RAG: use retrieved context with LLM to generate answer.
+    Supports conversation history for multi-turn dialogue."""
+    client = _get_openai_client()
+    if client is None:
+        return ""
+    if not context.strip():
+        return ""
+
+    length_hint = "控制在300-500字，重点突出、层次清晰" if mode == "brief" else "详细全面，可适当展开，800字以内"
+    route_hints = {
+        "basic": "介绍佛教基本知识。",
+        "doctrine": "详细解释教义体系、逻辑关系和修证次第。",
+        "practice": "说明具体修行方法、次第和注意事项，提醒依止善知识。",
+        "scripture": "引用经典原文并解释其含义、背景和意义。",
+        "sect": "介绍宗派的历史渊源、核心教义和修行特色。",
+        "concept": "详细解释佛教概念的含义、出处和在修行中的意义。",
+        "history": "说明佛教历史事件、人物和发展脉络。",
+        "ritual": "说明仪轨的具体步骤、意义和注意事项。",
+    }
+
+    history_block = ""
+    if history_pairs:
+        pairs_text = "\n".join(
+            f"   用户：{p.get('user', '')}\n   助手：{p.get('assistant', '')}"
+            for p in history_pairs
+        )
+        history_block = (
+            "7. 以下是之前的对话记录，请结合上下文理解用户当前问题的真实意图，\n"
+            "   不要重复回答用户已经问过的内容，聚焦当前问题：\n"
+            f"{pairs_text}\n"
+        )
+    elif history_summary:
+        history_block = (
+            "7. 用户之前的对话脉络如下，请结合对话上下文理解用户当前问题的真实意图，\n"
+            "   不要重复回答用户已经问过的内容，聚焦当前问题：\n"
+            f"   对话脉络：「{history_summary}」\n"
+        )
+
+    system_prompt = (
+        "你是一个佛教知识问答助手。请基于【参考资料】回答用户的问题。\n\n"
+        "## 回答规则\n"
+        "1. **以参考资料为主**：优先使用参考资料中的内容。如果你具备的佛学常识可以补充说明，"
+        "可简要添加，但必须标注「（补充说明）」以区分\n"
+        "2. **部分可答则答**：如果资料只能回答问题的一部分，先回答能回答的部分，"
+        "然后注明「关于XX部分，现有资料未涉及」\n"
+        "3. **资料不相关时坦诚说明**：如果参考资料与用户问题明显不相关或无法回答该问题，"
+        "请直接说明「现有资料库未收录该主题的相关内容」，不要强行从不相关资料中拼凑答案\n"
+        "4. 回答要条理清晰，使用分点或分段组织\n"
+        "5. 如参考资料中有经典原文，引用时用「」括起\n\n"
+        "## 来源标注\n"
+        "- 参考资料标记为 [来源1：...]、[来源2：...] 等\n"
+        "- 在回答中引用具体内容后，用 [来源N] 标注，N 为对应编号\n"
+        "- 如果多个来源说法不同，分别列出并标注各自来源\n\n"
+        "## 格式\n"
+        f"- 回答长度：{length_hint}\n"
+        f"- 重点方向：{route_hints.get(route, '根据问题自然组织回答内容。')}\n"
+        "- 回答末尾加上：「以上内容基于佛教经典与传统教义整理，仅供学习参考。」\n"
+        f"{history_block}"
+    )
+    if low_confidence:
+        system_prompt += (
+            "\n## 重要提醒\n"
+            "本次检索的参考资料与用户问题的相关度较低。请你仔细判断资料是否真正回答了问题。"
+            "如果资料内容与问题无关，请回答：「该问题超出了当前知识库的覆盖范围，"
+            "建议查阅相关佛教经典或咨询法师获取更准确的解答。」\n"
+        )
+
+    user_prompt = (
+        f"【参考资料】\n{context}\n\n"
+        f"【用户问题】\n{question}\n\n"
+        "请基于以上参考资料回答问题。"
+    )
+
+    try:
+        resp = client.chat.completions.create(
+            model=_get_chat_model(),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=ROUTE_LLM_TEMPERATURE.get(route, LLM_TEMPERATURE),
+            max_tokens=LLM_MAX_TOKENS_BRIEF if mode == "brief" else LLM_MAX_TOKENS_FULL,
+        )
+        if not resp.choices:
+            return ""
+        choice = resp.choices[0]
+        msg = choice.message
+        answer = (msg.content or "").strip() if msg else ""
+        if answer and getattr(choice, "finish_reason", None) == "length":
+            answer += "\n\n（注：回答因长度限制被截断，如需完整内容请缩小问题范围。）"
+        return answer if answer else ""
+    except Exception as e:
+        log_error("llm_generate_answer", repr(e),
+                  meta={"route": route, "question": question[:100]})
+        if DEBUG:
+            print(f"[DEBUG] LLM generation failed: {e}")
+        return ""
+
+
+# Legacy compat: openai_rag_generate -> llm_generate_answer wrapper
+def openai_rag_generate(question: str, context: str, route: str,
+                        low_confidence: bool = False) -> str:
+    return llm_generate_answer(question, context, route, "brief",
+                               low_confidence=low_confidence)
+
+
+# ===================================================================
+# LLM fallback / static fallback
+# ===================================================================
+
+_KNOWLEDGE_TOPICS = (
+    "佛教教义（四圣谛、八正道、十二因缘、缘起性空等）、"
+    "修行方法（禅修、念佛、持咒、止观等）、"
+    "佛教经典（心经、金刚经、法华经、入行论等）、"
+    "宗派传承（禅宗、净土宗、天台宗、藏传佛教等）、"
+    "佛教概念（菩提心、佛性、般若、涅槃等）、"
+    "佛教历史与仪轨"
+)
+
+
+def _llm_fallback_answer(question: str, route: str, hits: list) -> str:
+    """When search fails, use LLM for intelligent guidance (not fabrication)."""
+    client = _get_openai_client()
+    if client is None:
+        return ""
+
+    partial_context = ""
+    if hits:
+        snippets = [h.get("text", "")[:200] for h in hits[:3] if h.get("text")]
+        if snippets:
+            partial_context = (
+                "\n以下是检索到的部分相关片段（相关度较低，仅供参考）：\n"
+                + "\n---\n".join(snippets)
+            )
+
+    system_prompt = (
+        "你是一位佛教知识问答助手。用户问了一个知识库中尚未完全覆盖的问题。\n"
+        "你的任务是：\n"
+        "1. 坦诚但友好地告知该话题目前知识库覆盖不足，不要编造任何事实\n"
+        "2. 如果提供了部分相关片段，可以简要提及相关信息（注明仅供参考）\n"
+        "3. 根据用户问题，推荐1-2个知识库能详细回答的相关话题\n"
+        "4. 语气自然亲切\n"
+        f"\n当前知识库覆盖的主题包括：\n{_KNOWLEDGE_TOPICS}\n"
+    )
+
+    user_prompt = f"用户问题：{question}{partial_context}"
+
+    try:
+        resp = client.chat.completions.create(
+            model=_get_chat_model(),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.4,
+            max_tokens=800,
+        )
+        if not resp.choices:
+            return ""
+        text = (resp.choices[0].message.content or "").strip()
+        return text
+    except Exception as e:
+        log_error("llm_fallback_answer", f"LLM fallback failed: {e}",
+                  meta={"route": route, "question": question[:100]})
+        return ""
+
+
+def _static_fallback(hits: list) -> list:
+    """Static fallback when no LLM is available."""
+    if hits:
+        return [
+            "知识库中可能存在相关信息，但置信度不足以生成准确结论。",
+            "建议换一种表述重新提问，或查阅相关佛教经典。",
+        ]
+    return [
+        "该问题目前知识库尚未覆盖。",
+        "您可以尝试问我以下方面的问题：佛教教义、修行方法、"
+        "佛教经典、宗派传承、佛教概念、仪轨等。",
+        "如需深入了解，建议查阅相关佛教经典或咨询法师。",
+    ]
+
+
+def _build_not_found_response(question: str, route: str, rewrite: dict) -> str:
+    """Build friendly response when nothing found, with topic suggestions."""
+    suggestions = _suggest_related_topics(question, route)
+    fallback = ["当前知识库未找到与该问题直接相关的内容。"]
+    if suggestions:
+        fallback.append("您可以尝试以下相关主题：" + "、".join(suggestions))
+    else:
+        fallback.append("建议尝试更具体的佛教术语进行提问，如：四圣谛、八正道、菩提心、入行论等。")
+    fallback.append("如需深入了解，建议查阅相关佛教经典或咨询法师。")
+    return format_structured_answer(route, fallback, [], add_risk_note=False)
+
+
+# ===================================================================
+# Thread-local route/product accessor
+# ===================================================================
+
+def get_last_route_product():
+    """Return the most recent (route, product_id) from the current thread."""
+    return (getattr(_thread_local, "route", ""),
+            getattr(_thread_local, "product", ""))
+
+
+# ===================================================================
+# answer_one: main single-question pipeline
+# ===================================================================
+
+_NO_MATCH_REPLY = "抱歉，暂时无法回答该问题。请尝试询问佛教教义、修行方法、佛教经典等相关问题。"
+_OFFTOPIC_REPLY = "抱歉，该问题不在我的服务范围内。我是佛教知识问答助手，可以为您解答佛教教义、修行方法、经典解读、宗派传承等相关问题。"
+_SPECIAL_INTENT_REPLIES = {
+    "price": PRICE_REPLY,
+    "comparison": COMPARISON_REPLY,
+    "location": LOCATION_REPLY,
+}
+
+
+def answer_one(question: str, mode: str, rewrite: dict = None,
+               route_override: str = "") -> str:
+    product = detect_product(question)
+    route = route_override or detect_route(question)
+    _thread_local.route = route
+    _thread_local.product = product
+    if rewrite is None:
+        rewrite = rewrite_query(question)
+
+    _log_meta = {"product": product, "route": route, "mode": mode}
+
+    # Route config
+    route_cfg = _get_route_config(route)
+    route_top_k = route_cfg.get("k", DEFAULT_TOP_K)
+    route_threshold = route_cfg.get("threshold", SCORE_THRESHOLD)
+
+    # 1. Try FAQ exact match (with alias expansion, including sub-directory FAQs)
     faq_text = read_knowledge_file(product, "faq.txt")
     pdir = KNOWLEDGE_DIR / product
     if pdir.exists():
@@ -465,155 +1276,300 @@ def answer_one(question: str, mode: str) -> str:
             "source_type": "faq",
             "chunk_id": "faq_match",
         }}]
-        return format_structured_answer(route, [faq_answer], faq_evidence, add_risk_note=False)
+        answer = format_structured_answer(route, [faq_answer], faq_evidence, add_risk_note=False)
+        log_qa(question, answer, rewritten_query=rewrite.get("expanded", ""),
+               matched_sources=faq_evidence, hit=True,
+               meta={**_log_meta, "method": "faq_exact"})
+        return answer
 
-    # 2. 向量 + 关键词混合检索（使用路由配置的 top_k）
-    route_k = route_cfg.get("k", DEFAULT_TOP_K)
-    vector_hits = vector_search(product, question, max(route_k, VECTOR_TOP_K))
-    _, docs = load_store(product)
-    keyword_hits = keyword_search(rewrite["expanded"], docs, max(route_k, KEYWORD_TOP_K)) if docs else []
-    hits = merge_hybrid(vector_hits, keyword_hits, HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, route_k) if (vector_hits or keyword_hits) else []
+    # 2. Parallel vector + keyword hybrid search (ThreadPoolExecutor)
+    search_q = rewrite.get("search_query", rewrite.get("original", question))
 
-    # 过滤低分结果（使用路由配置的 threshold）
-    route_threshold = route_cfg.get("threshold", SCORE_THRESHOLD)
+    def _do_vector(store_name):
+        return vector_search(store_name, search_q, max(route_top_k, VECTOR_TOP_K))
+
+    def _do_keyword(store_name):
+        _, d = load_store(store_name)
+        return keyword_search(rewrite["expanded"], d, max(route_top_k, KEYWORD_TOP_K)) if d else []
+
+    futures = {}
+    futures["v_prod"] = _search_pool.submit(_do_vector, product)
+    futures["k_prod"] = _search_pool.submit(_do_keyword, product)
+
+    vector_hits, keyword_hits = [], []
+    for key, fut in futures.items():
+        try:
+            result = fut.result(timeout=30)
+        except Exception as e:
+            log_error("answer_one", f"Search timeout/error: {key}: {e}",
+                      meta={"product": product, "route": route})
+            result = []
+        if key.startswith("v_"):
+            vector_hits.extend(result)
+        else:
+            keyword_hits.extend(result)
+
+    # Route-aware merge weights
+    vw = route_cfg.get("vw", HYBRID_VECTOR_WEIGHT)
+    kw = route_cfg.get("kw", HYBRID_KEYWORD_WEIGHT)
+    hits = merge_hybrid(vector_hits, keyword_hits, vw, kw, route_top_k) if (vector_hits or keyword_hits) else []
+
+    # Score filtering
     hits = filter_by_score(hits, route_threshold)
     hits = _deduplicate_hits(hits)
 
-    # 3. Rerank：cross-encoder 精排（粗召回后用更精确的模型重排序）
+    # 3. CrossEncoder rerank (Buddhist feature)
     if USE_RERANK and hits:
         hits = rerank_hits(question, hits, top_k=RERANK_TOP_K)
 
-    # 置信度检测
+    # Precompute question bigrams for FAQ fast path
+    _q_norm = _normalize_for_bigram(question)
+    _q_bigrams = set(_q_norm[i:i+2] for i in range(len(_q_norm) - 1)) if len(_q_norm) >= 2 else set()
+
+    # Strategy 0: FAQ fast path from search hits
+    if hits:
+        faq_fast = _try_faq_fast_path(hits, question, route, rewrite, _log_meta,
+                                       _q_bigrams=_q_bigrams)
+        if faq_fast:
+            return faq_fast
+
+    # Confidence detection
     low_confidence = False
     if hits:
-        best_vec = max((float(h.get("score", 0.0)) for h in hits), default=0.0)
-        best_kw = max((float(h.get("keyword_score", 0.0)) for h in hits), default=0.0)
-        if best_vec < 0.45 and best_kw < 0.3:
+        best_score = max((h.get("hybrid_score") or h.get("score", 0.0) for h in hits), default=0.0)
+        if best_score < 0.35:
             low_confidence = True
 
     if not hits:
+        # LLM smart fallback
+        if USE_OPENAI:
+            llm_fb = _llm_fallback_answer(question, route, hits)
+            if llm_fb:
+                _log_knowledge_gap(question, route, rewrite, hits, _log_meta)
+                log_qa(question, llm_fb, rewritten_query=rewrite.get("expanded", ""),
+                       matched_sources=[], hit=False,
+                       meta={**_log_meta, "method": "llm_fallback"})
+                return llm_fb
         return _build_not_found_response(question, route, rewrite)
 
-    # 4. 优先使用 LLM 基于检索上下文生成答案（真正的 RAG）
-    context = extract_chunks_as_context(hits, max_chunks=6)
-    llm_answer = openai_rag_generate(question, context, route, low_confidence=low_confidence)
-    if llm_answer and len(llm_answer.strip()) >= 15:
-        q_stripped = question.strip()
-        a_stripped = llm_answer.strip()
-        if len(q_stripped) >= 10 and len(a_stripped) < len(q_stripped) * 3:
-            echo_ratio = _text_overlap_ratio(q_stripped, a_stripped[:len(q_stripped) * 3])
-            if echo_ratio > 0.85:
-                llm_answer = ""
-    if llm_answer and len(llm_answer.strip()) >= 15:
-        evidence = build_evidence(hits)
-        return format_structured_answer(route, [llm_answer.strip()], evidence, add_risk_note=(route == "practice"))
+    # Strategy 1: LLM RAG (primary) with context from hits
+    if USE_OPENAI:
+        context = _build_context(hits)
+        if context:
+            history_summary = rewrite.get("history_summary", "")
+            history_pairs = rewrite.get("history_pairs", [])
+            llm_answer = llm_generate_answer(
+                question, context, route, mode,
+                history_summary=history_summary,
+                history_pairs=history_pairs,
+                low_confidence=low_confidence,
+            )
+            # Validate: not too short, not echo of question
+            if llm_answer and len(llm_answer.strip()) >= 15:
+                q_stripped = question.strip()
+                a_stripped = llm_answer.strip()
+                echo_ok = True
+                if len(q_stripped) >= 10 and len(a_stripped) < len(q_stripped) * 3:
+                    echo_ratio = _text_overlap_ratio(q_stripped, a_stripped[:len(q_stripped) * 3])
+                    if echo_ratio > 0.85:
+                        echo_ok = False
+                if echo_ok:
+                    # Enrich with relation_engine and media_router (Buddhist features)
+                    relation_lines = relation_enrich(route, product, question)
+                    if relation_lines:
+                        llm_answer += "\n\n【关联信息】\n" + "\n".join(relation_lines[:6])
+                    media_items = media_find(question, product_id=product, route=route)
+                    if media_items:
+                        media_refs = ["【相关资料】"]
+                        for mi in media_items[:3]:
+                            title = mi.get("title", "")
+                            url = mi.get("url", "")
+                            if title:
+                                media_refs.append(f"- {title}" + (f"：{url}" if url else ""))
+                        if len(media_refs) > 1:
+                            llm_answer += "\n\n" + "\n".join(media_refs)
 
-    # 5. 无 LLM 时：向量检索结果直接作为答案段落
+                    evidence = build_evidence(hits)
+                    log_qa(question, llm_answer, rewritten_query=rewrite.get("expanded", ""),
+                           matched_sources=evidence, hit=True,
+                           meta={**_log_meta, "method": "llm_rag"})
+                    return format_structured_answer(route, [llm_answer.strip()], evidence,
+                                                    add_risk_note=(route == "practice"))
+
+    # Strategy 2: Rule extraction fallback
     body_lines = extract_from_hits(hits, route, mode)
     body_lines = [
         p for p in body_lines
         if len(re.sub(r"[\s\u3000，。、！？；：""''（）【】《》]", "", p)) >= 15
     ]
 
+    # FAQ supplement from hits
+    if hits and len(body_lines) < 6:
+        faq_supplement = _extract_faq_from_hits(hits, question, _q_bigrams=_q_bigrams)
+        if faq_supplement:
+            if body_lines:
+                body_lines = faq_supplement + [""] + body_lines
+            else:
+                body_lines = faq_supplement
+
+    # Relation engine enrichment (Buddhist feature)
+    relation_lines = relation_enrich(route, product, question)
+    if relation_lines:
+        body_lines = body_lines + ["", "【关联信息】"] + relation_lines[:6]
+
     if not body_lines:
         main_text = read_knowledge_file(product, "main.txt")
         body_lines = parse_bullets_from_section(main_text, faq_text, route, mode)
 
     if not body_lines:
-        return _build_not_found_response(question, route, rewrite)
+        # Fallback from hits
+        fallback_lines = _fallback_from_hits(hits, query=question)
+        if fallback_lines:
+            body_lines = fallback_lines
+        else:
+            # LLM smart fallback
+            if USE_OPENAI:
+                llm_fb = _llm_fallback_answer(question, route, hits)
+                if llm_fb:
+                    _log_knowledge_gap(question, route, rewrite, hits, _log_meta)
+                    log_qa(question, llm_fb, rewritten_query=rewrite.get("expanded", ""),
+                           matched_sources=build_evidence(hits), hit=False,
+                           meta={**_log_meta, "method": "llm_fallback"})
+                    return llm_fb
+            # Static fallback
+            _log_knowledge_gap(question, route, rewrite, hits, _log_meta)
+            evidence = build_evidence(hits)
+            text = format_structured_answer(route, _static_fallback(hits), evidence,
+                                            add_risk_note=(route == "practice"))
+            log_qa(question, text, rewritten_query=rewrite.get("expanded", ""),
+                   matched_sources=evidence, hit=False,
+                   meta={**_log_meta, "method": "low_confidence" if hits else "no_hit"})
+            return text
 
-    text = format_structured_answer(route, body_lines, build_evidence(hits), add_risk_note=(route == "practice"))
+    # Media enrichment (Buddhist feature)
+    media_items = media_find(question, product_id=product, route=route)
+    if media_items:
+        media_refs = ["【相关资料】"]
+        for mi in media_items[:3]:
+            title = mi.get("title", "")
+            url = mi.get("url", "")
+            if title:
+                media_refs.append(f"- {title}" + (f"：{url}" if url else ""))
+        if len(media_refs) > 1:
+            body_lines = body_lines + [""] + media_refs
+
+    evidence = build_evidence(hits)
+    text = format_structured_answer(route, body_lines, evidence,
+                                    add_risk_note=(route == "practice"))
+    log_qa(question, text, rewritten_query=rewrite.get("expanded", ""),
+           matched_sources=evidence, hit=True,
+           meta={**_log_meta, "method": "rule_extract"})
     return text
 
 
-def openai_rag_generate(question: str, context: str, route: str, low_confidence: bool = False) -> str:
-    """真正的 RAG：将检索到的知识库内容作为上下文，让 LLM 生成准确答案"""
-    if not USE_OPENAI:
-        return ""
-    key = os.environ.get("OPENAI_API_KEY", "").strip()
-    if not key:
-        return ""
-    if not context.strip():
-        return ""
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=key)
+# ===================================================================
+# answer_question: main entry point
+# ===================================================================
 
-        system_prompt = (
-            "你是一个佛教知识问答助手。请基于【参考资料】回答用户的问题。\n\n"
-            "## 回答规则\n"
-            "1. **以参考资料为主**：优先使用参考资料中的内容。如果你具备的佛学常识可以补充说明，"
-            "可简要添加，但必须标注「（补充说明）」以区分\n"
-            "2. **部分可答则答**：如果资料只能回答问题的一部分，先回答能回答的部分，"
-            "然后注明「关于XX部分，现有资料未涉及」\n"
-            "3. **资料不相关时坦诚说明**：如果参考资料与用户问题明显不相关或无法回答该问题，"
-            "请直接说明「现有资料库未收录该主题的相关内容」，不要强行从不相关资料中拼凑答案\n"
-            "4. 回答要条理清晰，使用分点或分段组织\n"
-            "5. 如参考资料中有经典原文，引用时用「」括起\n\n"
-            "## 来源标注\n"
-            "- 参考资料标记为 [来源1：...]、[来源2：...] 等\n"
-            "- 在回答中引用具体内容后，用 [来源N] 标注，N 为对应编号\n"
-            "- 如果多个来源说法不同，分别列出并标注各自来源\n\n"
-            "## 格式\n"
-            "- 回答末尾加上：「以上内容基于佛教经典与传统教义整理，仅供学习参考。」\n"
-        )
-        if low_confidence:
-            system_prompt += (
-                "\n## 重要提醒\n"
-                "本次检索的参考资料与用户问题的相关度较低。请你仔细判断资料是否真正回答了问题。"
-                "如果资料内容与问题无关，请回答：「该问题超出了当前知识库的覆盖范围，"
-                "建议查阅相关佛教经典或咨询法师获取更准确的解答。」\n"
-            )
+def _detect_route_with_history(question: str, rewrite: dict) -> str:
+    """Route detection with history inheritance for follow-up questions."""
+    route = detect_route(question)
+    if route != "basic":
+        return route
 
-        user_prompt = (
-            f"【参考资料】\n{context}\n\n"
-            f"【用户问题】\n{question}\n\n"
-            "请基于以上参考资料回答问题。"
-        )
+    raw_input = rewrite.get("raw_input", "")
+    should_inherit = (
+        rewrite.get("context_resolved")
+        or (raw_input and len(raw_input.strip()) <= 10)
+    )
 
-        resp = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.5,
-            max_tokens=1500,
-        )
-        choice = resp.choices[0]
-        answer = (choice.message.content or "").strip()
-        if answer and getattr(choice, "finish_reason", None) == "length":
-            answer += "\n\n（注：回答因长度限制被截断，如需完整内容请缩小问题范围。）"
-        return answer if answer else ""
-    except Exception as e:
-        log_error("openai_rag_generate", repr(e))
-        if DEBUG:
-            print(f"[DEBUG] OpenAI RAG generation failed: {e}")
-        return ""
+    if should_inherit:
+        routed_q = rewrite.get("last_routed_q") or rewrite.get("last_user_q", "")
+        if routed_q:
+            history_route = detect_route(routed_q)
+            if history_route != "basic":
+                return history_route
+
+    return route
 
 
-def answer_question(question: str, mode: str) -> str:
-    """主入口：回答问题，返回字符串"""
-    if not (question or "").strip():
+def answer_question(question: str, mode: str, history: list = None,
+                    rewrite: dict = None) -> str:
+    """Main entry point: answer a question, return string."""
+    q = (question or "").strip()
+    if not q:
         return "请输入您想了解的佛教问题。"
-    question = question.strip()[:500]
-    rewrite = rewrite_query(question)
-    outputs = []
-    seen = set()
-    for subq in rewrite["sub_questions"][:4]:
-        subq_key = subq.strip()
-        if subq_key in seen:
-            continue
-        seen.add(subq_key)
-        try:
-            ans = answer_one(subq, mode)
-        except Exception as e:
-            log_error("answer_one", repr(e), meta={"question": subq})
-            ans = ""
-        if ans and ans.strip():
-            outputs.append(ans)
-    return "\n\n".join(outputs)
+    q = q[:500]
 
+    if rewrite is None:
+        rewrite = rewrite_query(q, history=history) if history else rewrite_query(q)
+
+    # Chitchat fast path
+    if rewrite.get("is_chitchat"):
+        reply = _chitchat_reply(rewrite.get("raw_input", q))
+        log_qa(q, reply, rewritten_query="", matched_sources=[], hit=False,
+               meta={"method": "chitchat"})
+        return reply
+
+    # Off-topic fast path
+    if rewrite.get("is_offtopic"):
+        log_qa(q, _OFFTOPIC_REPLY, rewritten_query="", matched_sources=[], hit=False,
+               meta={"method": "offtopic"})
+        return _OFFTOPIC_REPLY
+
+    # Special intent fast path (Buddhist equivalents)
+    special = _detect_special_intent(q)
+    if special:
+        reply = _SPECIAL_INTENT_REPLIES.get(special, "")
+        if reply:
+            log_qa(q, reply, rewritten_query="", matched_sources=[], hit=False,
+                   meta={"method": "special_intent", "intent": special})
+            return reply
+
+    sub_questions = rewrite.get("sub_questions", [q])[:MAX_SUB_QUESTIONS]
+
+    # Precompute rewrites and routes for sub-questions
+    sub_tasks = []
+    seen_routes = set()
+    for subq in sub_questions:
+        sub_rewrite = rewrite if subq == rewrite.get("original", q) else rewrite_query(subq)
+        route = _detect_route_with_history(subq, sub_rewrite)
+        if route in seen_routes:
+            continue
+        seen_routes.add(route)
+        sub_tasks.append((subq, sub_rewrite, route))
+
+    # Parallel execution for multiple sub-questions
+    outputs = []
+    if len(sub_tasks) > 1:
+        futures = []
+        for subq, sub_rewrite, route in sub_tasks:
+            fut = _search_pool.submit(answer_one, subq, mode, sub_rewrite, route)
+            futures.append(fut)
+        for fut in futures:
+            try:
+                ans = fut.result(timeout=60)
+                if ans and ans.strip():
+                    outputs.append(ans)
+            except Exception as e:
+                log_error("answer_question", f"Sub-question parallel error: {e}",
+                          meta={"question": q[:100]})
+    else:
+        for subq, sub_rewrite, route in sub_tasks:
+            try:
+                ans = answer_one(subq, mode, rewrite=sub_rewrite, route_override=route)
+            except Exception as e:
+                log_error("answer_one", repr(e), meta={"question": subq})
+                ans = ""
+            if ans and ans.strip():
+                outputs.append(ans)
+
+    return "\n\n".join(outputs) if outputs else _NO_MATCH_REPLY
+
+
+# ===================================================================
+# CLI entry point
+# ===================================================================
 
 def main():
     if len(sys.argv) < 2:
@@ -628,7 +1584,8 @@ def main():
 
     ans = answer_question(question, mode)
     save_answer(ans)
-    print(ans)
+    print("\n===== Answer saved =====")
+    print(f"Saved to: {_get_out_path()}")
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import sys
 import json
 import argparse
 from pathlib import Path
+from typing import List, Dict
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 try:
@@ -11,11 +12,12 @@ try:
 except Exception:
     pass
 
-import numpy as np
-import faiss
-from sentence_transformers import SentenceTransformer
-
-from rag_runtime_config import KNOWLEDGE_DIR, STORE_ROOT, CHUNK_SIZE, CHUNK_OVERLAP
+from rag_runtime_config import (
+    KNOWLEDGE_DIR, STORE_ROOT,
+    EMBED_MODEL_NAME, EMBED_USE_FP16, EMBED_BATCH_SIZE_BUILD, EMBED_MAX_LENGTH_BUILD,
+    CHUNK_SIZE as _DEFAULT_CHUNK_SIZE, CHUNK_OVERLAP as _DEFAULT_CHUNK_OVERLAP,
+    FAISS_INDEX_TYPE, FAISS_HNSW_M, FAISS_HNSW_EF_CONSTRUCTION, FAISS_HNSW_EF_SEARCH,
+)
 from search_utils import (
     normalize_text, has_kepan_structure, split_by_kepan,
     has_pin_structure, split_by_pin, split_semantic_paragraphs,
@@ -26,17 +28,90 @@ from search_utils import (
     split_mixed_body, merge_sub_segments,
 )
 
-MODEL_NAME = "BAAI/bge-m3"
-_model = None
+MODEL_NAME = EMBED_MODEL_NAME
+CHUNK_SIZE = int(os.environ.get("RAG_CHUNK_SIZE", str(_DEFAULT_CHUNK_SIZE)))
+CHUNK_OVERLAP = int(os.environ.get("RAG_CHUNK_OVERLAP", str(_DEFAULT_CHUNK_OVERLAP)))
+MIN_CHUNK_CHARS = 30
 
+_model = None
+_np = None
+_faiss = None
+
+
+# ====== 懒加载 numpy / faiss ======
+
+def _get_np():
+    global _np
+    if _np is None:
+        import numpy as _np_mod
+        _np = _np_mod
+    return _np
+
+
+def _get_faiss():
+    global _faiss
+    if _faiss is None:
+        import faiss as _faiss_mod
+        _faiss = _faiss_mod
+    return _faiss
+
+
+# ====== 模型加载 ======
 
 def get_model():
     global _model
     if _model is None:
-        print(f"[INFO] 加载模型：{MODEL_NAME}")
-        _model = SentenceTransformer(MODEL_NAME)
+        try:
+            from FlagEmbedding import BGEM3FlagModel
+            print(f"[INFO] 加载模型（BGEM3FlagModel）：{MODEL_NAME}")
+            _model = BGEM3FlagModel(MODEL_NAME, use_fp16=EMBED_USE_FP16)
+        except ImportError:
+            from sentence_transformers import SentenceTransformer
+            print(f"[INFO] FlagEmbedding 不可用，回退 SentenceTransformer：{MODEL_NAME}")
+            _model = SentenceTransformer(MODEL_NAME)
     return _model
 
+
+# ====== 多编码读取 ======
+
+def read_text_auto(p: Path) -> str:
+    """多编码读取：依次尝试 utf-8-sig、gbk，最后 errors='replace'"""
+    if not p.exists():
+        return ""
+    for enc in ("utf-8-sig", "utf-8", "gbk", "gb2312"):
+        try:
+            return p.read_text(encoding=enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return p.read_text(errors="replace")
+
+
+# ====== FAQ 问答对拆分 ======
+
+_RE_FAQ_QA = re.compile(r"【Q】(.*?)(?=【Q】|\Z)", re.DOTALL)
+_RE_FAQ_A = re.compile(r"【A】(.*)", re.DOTALL)
+
+
+def split_faq_pairs(text: str) -> List[dict]:
+    """将 FAQ 文本拆分为问答对，返回 [{"q": ..., "a": ..., "full": ...}]。
+    每个 FAQ 条目生成两条记录：
+    - 问题文本（用于向量检索时更好匹配用户问题）
+    - 完整问答对（用于答案生成）
+    """
+    pairs = []
+    for m in _RE_FAQ_QA.finditer(text):
+        block = m.group(1).strip()
+        lines = block.split("\n")
+        q_text = lines[0].strip() if lines else ""
+        a_match = _RE_FAQ_A.search(block)
+        a_text = a_match.group(1).strip() if a_match else ""
+        full_text = f"【Q】{q_text}\n【A】{a_text}"
+        if q_text and a_text:
+            pairs.append({"q": q_text, "a": a_text, "full": full_text})
+    return pairs
+
+
+# ====== 基础滑动窗口切块 ======
 
 def chunk_text(text: str, chunk_size: int = 600, overlap: int = 80):
     text = normalize_text(text)
@@ -54,6 +129,8 @@ def chunk_text(text: str, chunk_size: int = 600, overlap: int = 80):
         start = max(0, end - overlap)
     return chunks
 
+
+# ====== 内容感知子块切分 ======
 
 def _sub_chunk_semantic(body: str, max_size: int, overlap: int) -> List[str]:
     """
@@ -102,6 +179,8 @@ def _sub_chunk_semantic(body: str, max_size: int, overlap: int) -> List[str]:
 
     return chunks
 
+
+# ====== 科判结构切分 ======
 
 def chunk_by_kepan(text: str, chunk_size: int = 600, overlap: int = 80):
     """
@@ -160,6 +239,8 @@ def chunk_by_kepan(text: str, chunk_size: int = 600, overlap: int = 80):
     return results
 
 
+# ====== 品结构切分 ======
+
 def chunk_by_pin(text: str, chunk_size: int = 600, overlap: int = 80):
     """
     按品结构切分文本（无科判的论典）。
@@ -210,6 +291,8 @@ def chunk_by_pin(text: str, chunk_size: int = 600, overlap: int = 80):
     return results
 
 
+# ====== 通用分节切块 ======
+
 def _chunk_sectioned(sections: List[Dict], chunk_size: int, overlap: int,
                      content_type: str) -> List[Dict]:
     """
@@ -240,6 +323,8 @@ def _chunk_sectioned(sections: List[Dict], chunk_size: int, overlap: int,
                                 "content_type": content_type})
     return results
 
+
+# ====== 智能分块 ======
 
 def chunk_smart(text: str, chunk_size: int = 600, overlap: int = 80):
     """
@@ -291,15 +376,58 @@ def chunk_smart(text: str, chunk_size: int = 600, overlap: int = 80):
     return [{"text": c} for c in chunk_text(text, chunk_size, overlap)]
 
 
+# ====== 向量编码 ======
+
 def embed_texts(texts):
+    """编码文本列表为向量。支持 BGEM3FlagModel (dict 输出) 和 SentenceTransformer。
+    大批量时分批编码并报告进度。"""
+    if not texts:
+        raise ValueError("embed_texts: 输入文本列表为空")
+    # 空白文本用占位符替换，避免模型编码异常或维度不匹配
+    texts = [t if t and t.strip() else " " for t in texts]
     model = get_model()
-    vecs = model.encode(texts, batch_size=32, show_progress_bar=True, normalize_embeddings=False)
-    vecs = np.asarray(vecs, dtype="float32")
-    if vecs.ndim != 2:
-        raise ValueError(f"向量维度异常: {vecs.shape}")
+    np = _get_np()
+    faiss = _get_faiss()
+
+    # 分批编码，报告进度
+    n = len(texts)
+    bs = EMBED_BATCH_SIZE_BUILD
+    all_vecs = []
+    for start in range(0, n, bs):
+        end = min(start + bs, n)
+        batch = texts[start:end]
+        if n > bs:
+            print(f"[PROGRESS] Embedding batch {start // bs + 1}/{(n + bs - 1) // bs} ({end}/{n} chunks)")
+        out = model.encode(batch, batch_size=bs, max_length=EMBED_MAX_LENGTH_BUILD)
+
+        # 处理 dict 输出（BGEM3FlagModel 返回 dict）
+        batch_vecs = None
+        if isinstance(out, dict):
+            if out.get("dense_vecs") is not None:
+                batch_vecs = out["dense_vecs"]
+            elif out.get("dense") is not None:
+                batch_vecs = out["dense"]
+            elif out.get("embeddings") is not None:
+                batch_vecs = out["embeddings"]
+        else:
+            batch_vecs = out
+
+        if batch_vecs is None:
+            raise ValueError("encode 输出中未找到向量字段")
+
+        batch_vecs = np.asarray(batch_vecs, dtype="float32")
+        if batch_vecs.ndim != 2:
+            raise ValueError(f"向量维度异常: {batch_vecs.shape}")
+        if batch_vecs.shape[0] != len(batch):
+            raise ValueError(f"向量行数({batch_vecs.shape[0]})与文本数({len(batch)})不一致")
+        all_vecs.append(batch_vecs)
+
+    vecs = np.concatenate(all_vecs, axis=0) if len(all_vecs) > 1 else all_vecs[0]
     faiss.normalize_L2(vecs)
     return vecs
 
+
+# ====== 文件与类型推断 ======
 
 def _infer_source_type(fname: str) -> str:
     """根据文件名推断 source_type"""
@@ -347,6 +475,23 @@ def _collect_txt_files(pdir):
     return results
 
 
+# ====== 跨来源去重 ======
+
+def _dedup_records(records: List[dict]) -> List[dict]:
+    """跨来源去重：相同文本内容（忽略空白差异）只保留第一个来源的记录"""
+    seen_hashes = set()
+    deduped = []
+    for r in records:
+        key = " ".join(r["text"].split())
+        if key in seen_hashes:
+            continue
+        seen_hashes.add(key)
+        deduped.append(r)
+    return deduped
+
+
+# ====== 收集产品记录 ======
+
 def collect_product_records(product: str):
     pdir = KNOWLEDGE_DIR / product
     if not pdir.exists():
@@ -357,12 +502,58 @@ def collect_product_records(product: str):
         raise FileNotFoundError(f"目录为空：{pdir}")
     records = []
     for fpath, stype, display_name in all_files:
-        text = fpath.read_text(encoding="utf-8")
+        text = read_text_auto(fpath)
 
         if stype == "alias":
             # 别名文件不需要索引（仅用于 FAQ 匹配），跳过
             print(f"[SKIP] {product}/{display_name}: 别名文件不索引")
             continue
+        elif stype == "faq":
+            # FAQ 独立嵌入：按问答对拆分，问题和完整问答分别入库
+            faq_pairs = split_faq_pairs(text)
+            if faq_pairs:
+                faq_q_count = 0
+                for i, pair in enumerate(faq_pairs, 1):
+                    # 完整问答对（用于答案生成和 FAQ 快速路径）
+                    records.append({
+                        "text": pair["full"],
+                        "meta": {
+                            "product_id": product,
+                            "source_file": display_name,
+                            "source_type": "faq",
+                            "chunk_id": f"{display_name}#faq{i}",
+                        }
+                    })
+                    # 问题文本独立嵌入（向量检索时更好匹配用户问题）
+                    if len(pair["q"]) >= MIN_CHUNK_CHARS:
+                        faq_q_count += 1
+                        records.append({
+                            "text": pair["q"],
+                            "meta": {
+                                "product_id": product,
+                                "source_file": display_name,
+                                "source_type": "faq_question",
+                                "chunk_id": f"{display_name}#faqq{i}",
+                                "faq_answer": pair["a"],
+                            }
+                        })
+                print(f"[OK] {product}/{display_name}: {len(faq_pairs)} QA pairs + {faq_q_count} question embeddings")
+            else:
+                # 回退：无法解析 FAQ 格式时按普通文本切块
+                ctype = detect_content_type(text)
+                print(f"[INFO] {product}/{display_name}: FAQ 格式未识别，按「{ctype}」结构回退分块")
+                chunks_data = chunk_smart(text, CHUNK_SIZE, CHUNK_OVERLAP)
+                chunks_data = _filter_low_quality(chunks_data, product, display_name)
+                print(f"[OK] {product}/{display_name}: {len(chunks_data)} chunks (faq fallback)")
+                for i, cd in enumerate(chunks_data, 1):
+                    meta = {
+                        "product_id": product,
+                        "source_file": display_name,
+                        "source_type": stype,
+                        "chunk_id": f"{display_name}#{i}",
+                    }
+                    _attach_buddhist_meta(meta, cd)
+                    records.append({"text": cd["text"], "meta": meta})
         else:
             # 统一使用智能分块
             ctype = detect_content_type(text)
@@ -376,41 +567,78 @@ def collect_product_records(product: str):
             print(f"[INFO] {product}/{display_name}: 检测到「{type_names.get(ctype, ctype)}」结构")
             chunks_data = chunk_smart(text, CHUNK_SIZE, CHUNK_OVERLAP)
 
-        # 过滤低质量 chunk：太短（<30字）或纯标记/元数据
-        before_filter = len(chunks_data)
-        chunks_data = [
-            cd for cd in chunks_data
-            if len(re.sub(r"[\s【】\[\]()（）《》「」\-—·：:、，。？！]", "", cd.get("text", ""))) >= 20
-        ]
-        if len(chunks_data) < before_filter:
-            print(f"[FILTER] {product}/{display_name}: 过滤 {before_filter - len(chunks_data)} 个低质量 chunk")
-        print(f"[OK] {product}/{display_name}: {len(chunks_data)} chunks")
-        for i, cd in enumerate(chunks_data, 1):
-            meta = {
-                "product_id": product,
-                "source_file": display_name,
-                "source_type": stype,
-                "chunk_id": f"{display_name}#{i}",
-            }
-            # 保存结构元数据（科判/品/内容类型）
-            if "kepan_breadcrumb" in cd:
-                meta["kepan_breadcrumb"] = cd["kepan_breadcrumb"]
-                meta["kepan_marker"] = cd.get("kepan_marker", "")
-                meta["kepan_title"] = cd.get("kepan_title", "")
-            if "pin_title" in cd:
-                meta["pin_title"] = cd["pin_title"]
-            if "content_type" in cd:
-                meta["content_type"] = cd["content_type"]
-            if "section_title" in cd:
-                meta["section_title"] = cd["section_title"]
-            records.append({
-                "text": cd["text"],
-                "meta": meta,
-            })
+            # 过滤低质量 chunk
+            chunks_data = _filter_low_quality(chunks_data, product, display_name)
+
+            print(f"[OK] {product}/{display_name}: {len(chunks_data)} chunks")
+            for i, cd in enumerate(chunks_data, 1):
+                meta = {
+                    "product_id": product,
+                    "source_file": display_name,
+                    "source_type": stype,
+                    "chunk_id": f"{display_name}#{i}",
+                }
+                # 保存结构元数据（科判/品/内容类型）
+                _attach_buddhist_meta(meta, cd)
+                records.append({
+                    "text": cd["text"],
+                    "meta": meta,
+                })
+
     if not records:
         raise ValueError(f"{product} 没有可用文本")
+
+    # 跨来源去重
+    before = len(records)
+    records = _dedup_records(records)
+    if len(records) < before:
+        print(f"[INFO] {product}: 跨来源去重 {before} → {len(records)} records")
+
     return records
 
+
+def _filter_low_quality(chunks_data: List[Dict], product: str, display_name: str) -> List[Dict]:
+    """过滤低质量 chunk：太短（<20 有效字符）或纯标记/元数据"""
+    before_filter = len(chunks_data)
+    chunks_data = [
+        cd for cd in chunks_data
+        if len(re.sub(r"[\s【】\[\]()（）《》「」\-—·：:、，。？！]", "", cd.get("text", ""))) >= 20
+    ]
+    if len(chunks_data) < before_filter:
+        print(f"[FILTER] {product}/{display_name}: 过滤 {before_filter - len(chunks_data)} 个低质量 chunk")
+    return chunks_data
+
+
+def _attach_buddhist_meta(meta: dict, cd: dict):
+    """将 Buddhist 结构元数据（科判/品/内容类型/章节标题）附加到 meta"""
+    if "kepan_breadcrumb" in cd:
+        meta["kepan_breadcrumb"] = cd["kepan_breadcrumb"]
+        meta["kepan_marker"] = cd.get("kepan_marker", "")
+        meta["kepan_title"] = cd.get("kepan_title", "")
+    if "pin_title" in cd:
+        meta["pin_title"] = cd["pin_title"]
+    if "content_type" in cd:
+        meta["content_type"] = cd["content_type"]
+    if "section_title" in cd:
+        meta["section_title"] = cd["section_title"]
+
+
+# ====== FAISS 索引创建 ======
+
+def _create_faiss_index(dim: int, n_vectors: int):
+    """根据配置创建 FAISS 索引：支持 flat 和 hnsw 两种类型。
+    小规模数据（< 100 条）始终使用 flat 避免 HNSW 开销。"""
+    faiss = _get_faiss()
+    if FAISS_INDEX_TYPE == "hnsw" and n_vectors >= 100:
+        index = faiss.IndexHNSWFlat(dim, FAISS_HNSW_M, faiss.METRIC_INNER_PRODUCT)
+        index.hnsw.efConstruction = FAISS_HNSW_EF_CONSTRUCTION
+        index.hnsw.efSearch = FAISS_HNSW_EF_SEARCH
+        print(f"[INFO] 使用 HNSW 索引 (M={FAISS_HNSW_M}, efC={FAISS_HNSW_EF_CONSTRUCTION}, efS={FAISS_HNSW_EF_SEARCH})")
+        return index
+    return faiss.IndexFlatIP(dim)
+
+
+# ====== 构建索引 ======
 
 def build_for_product(product: str):
     records = collect_product_records(product)
@@ -419,7 +647,7 @@ def build_for_product(product: str):
     print(f"[INFO] Embedding {len(texts)} chunks ...")
     vecs = embed_texts(texts)
     dim = vecs.shape[1]
-    index = faiss.IndexFlatIP(dim)
+    index = _create_faiss_index(dim, len(texts))
     index.add(vecs)
 
     out_dir = STORE_ROOT / product
@@ -427,15 +655,21 @@ def build_for_product(product: str):
     docs_path = out_dir / "docs.jsonl"
     index_path = out_dir / "index.faiss"
 
-    with docs_path.open("w", encoding="utf-8") as f:
+    # 原子写入：先写临时文件，再 rename，防止进程中断导致文件损坏
+    tmp_docs = out_dir / "docs.jsonl.tmp"
+    tmp_index = out_dir / "index.faiss.tmp"
+    with tmp_docs.open("w", encoding="utf-8") as f:
         for r in records:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    faiss.write_index(index, str(index_path))
+    _get_faiss().write_index(index, str(tmp_index))
+    os.replace(str(tmp_docs), str(docs_path))
+    os.replace(str(tmp_index), str(index_path))
 
     print(f"[DONE] Built store")
     print(f"       product: {product}")
     print(f"       chunks : {len(records)}")
     print(f"       dim    : {dim}")
+    print(f"       index  : {FAISS_INDEX_TYPE}")
 
 
 def list_products():
@@ -449,14 +683,27 @@ def list_products():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--product", type=str, help="产品目录名")
+    ap.add_argument("--all", action="store_true", help="构建所有产品索引")
     ap.add_argument("--list", action="store_true")
     args = ap.parse_args()
 
     if args.list:
         list_products()
         return
+    if args.all:
+        if not KNOWLEDGE_DIR.exists():
+            print(f"[ERROR] knowledge 目录不存在：{KNOWLEDGE_DIR}")
+            return
+        products = sorted([p.name for p in KNOWLEDGE_DIR.iterdir() if p.is_dir()])
+        for pname in products:
+            print(f"\n{'=' * 40}\n构建产品: {pname}\n{'=' * 40}")
+            try:
+                build_for_product(pname)
+            except Exception as e:
+                print(f"[ERROR] {pname}: {e}")
+        return
     if not args.product:
-        ap.error("请使用 --product <name> 或 --list")
+        ap.error("请使用 --product <name> / --all / --list")
     build_for_product(args.product.strip())
 
 
