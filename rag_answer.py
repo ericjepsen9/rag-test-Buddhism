@@ -152,6 +152,59 @@ def detect_route(question: str) -> str:
     return max(route_scores.items(), key=lambda x: x[1])[0]
 
 
+def _suggest_related_topics(question: str, route: str) -> List[str]:
+    """根据问题和路由，推荐知识库中已有的相近主题"""
+    from rag_runtime_config import QUESTION_ROUTES, FAQ_KEYWORD_MAP
+    # 从问题中提取关键字符做模糊匹配
+    q = question.strip()
+    suggestions = []
+    # 优先在同路由下找相关关键词
+    route_kws = QUESTION_ROUTES.get(route, [])
+    for kw in route_kws:
+        # 有任意 2 字重叠即推荐
+        if any(ch in q for ch in kw if ch not in "的是了在"):
+            suggestions.append(kw)
+    # 从其他路由补充
+    if len(suggestions) < 3:
+        for r, kws in QUESTION_ROUTES.items():
+            if r == route:
+                continue
+            for kw in kws:
+                if any(ch in q for ch in kw if ch not in "的是了在"):
+                    suggestions.append(kw)
+                    if len(suggestions) >= 5:
+                        break
+            if len(suggestions) >= 5:
+                break
+    # 从 FAQ 关键词补充
+    if len(suggestions) < 3:
+        for kw in FAQ_KEYWORD_MAP:
+            if any(ch in q for ch in kw if ch not in "的是了在"):
+                suggestions.append(kw)
+    # 去重并限制数量
+    seen = set()
+    unique = []
+    for s in suggestions:
+        if s not in seen:
+            seen.add(s)
+            unique.append(s)
+        if len(unique) >= 5:
+            break
+    return unique
+
+
+def _build_not_found_response(question: str, route: str, rewrite: dict) -> str:
+    """构建未命中时的友好回复，附带相关主题建议"""
+    suggestions = _suggest_related_topics(question, route)
+    fallback = ["当前知识库未找到与该问题直接相关的内容。"]
+    if suggestions:
+        fallback.append("您可以尝试以下相关主题：" + "、".join(suggestions))
+    else:
+        fallback.append("建议尝试更具体的佛教术语进行提问，如：四圣谛、八正道、菩提心、入行论等。")
+    fallback.append("如需深入了解，建议查阅相关佛教经典或咨询法师。")
+    return format_structured_answer(route, fallback, [], add_risk_note=False)
+
+
 def build_evidence(hits: List[Dict]) -> List[Dict]:
     ev = []
     for h in hits[:6]:
@@ -372,17 +425,21 @@ def answer_one(question: str, mode: str) -> str:
     # 语义去重 + 来源多样性控制
     hits = _deduplicate_hits(hits)
 
+    # 置信度检测：所有结果分都低时，标记为低置信度
+    low_confidence = False
+    if hits:
+        best_vec = max((float(h.get("score", 0.0)) for h in hits), default=0.0)
+        best_kw = max((float(h.get("keyword_score", 0.0)) for h in hits), default=0.0)
+        # 向量分 < 0.45 且关键词分 < 0.3 → 知识库大概率不包含相关内容
+        if best_vec < 0.45 and best_kw < 0.3:
+            low_confidence = True
+
     if not hits:
-        fallback = [
-            "当前知识库未覆盖该问题的直接内容。",
-            "建议方向：请查阅相关佛教经典或咨询法师。",
-            "您也可以尝试更具体的关键词进行提问。",
-        ]
-        return format_structured_answer(route, fallback, [], add_risk_note=False)
+        return _build_not_found_response(question, route, rewrite)
 
     # 3. 优先使用 LLM 基于检索上下文生成答案（真正的 RAG）
     context = extract_chunks_as_context(hits, max_chunks=6)
-    llm_answer = openai_rag_generate(question, context, route)
+    llm_answer = openai_rag_generate(question, context, route, low_confidence=low_confidence)
     # 验证 LLM 答案：至少 15 字 + 不是单纯复述问题
     if llm_answer and len(llm_answer.strip()) >= 15:
         # 回声检测：答案长度与问题接近且高度重叠时才判为复述
@@ -412,18 +469,13 @@ def answer_one(question: str, mode: str) -> str:
         body_lines = parse_bullets_from_section(main_text, faq_text, route, mode)
 
     if not body_lines:
-        fallback = [
-            "当前知识库未覆盖该问题的直接内容。",
-            "建议方向：请查阅相关佛教经典或咨询法师。",
-            "您也可以尝试更具体的关键词进行提问。",
-        ]
-        return format_structured_answer(route, fallback, build_evidence(hits), add_risk_note=False)
+        return _build_not_found_response(question, route, rewrite)
 
     text = format_structured_answer(route, body_lines, build_evidence(hits), add_risk_note=(route == "practice"))
     return text
 
 
-def openai_rag_generate(question: str, context: str, route: str) -> str:
+def openai_rag_generate(question: str, context: str, route: str, low_confidence: bool = False) -> str:
     """真正的 RAG：将检索到的知识库内容作为上下文，让 LLM 生成准确答案"""
     if not USE_OPENAI:
         return ""
@@ -443,8 +495,10 @@ def openai_rag_generate(question: str, context: str, route: str) -> str:
             "可简要添加，但必须标注「（补充说明）」以区分\n"
             "2. **部分可答则答**：如果资料只能回答问题的一部分，先回答能回答的部分，"
             "然后注明「关于XX部分，现有资料未涉及」\n"
-            "3. 回答要条理清晰，使用分点或分段组织\n"
-            "4. 如参考资料中有经典原文，引用时用「」括起\n\n"
+            "3. **资料不相关时坦诚说明**：如果参考资料与用户问题明显不相关或无法回答该问题，"
+            "请直接说明「现有资料库未收录该主题的相关内容」，不要强行从不相关资料中拼凑答案\n"
+            "4. 回答要条理清晰，使用分点或分段组织\n"
+            "5. 如参考资料中有经典原文，引用时用「」括起\n\n"
             "## 来源标注\n"
             "- 参考资料标记为 [来源1：...]、[来源2：...] 等\n"
             "- 在回答中引用具体内容后，用 [来源N] 标注，N 为对应编号\n"
@@ -452,6 +506,14 @@ def openai_rag_generate(question: str, context: str, route: str) -> str:
             "## 格式\n"
             "- 回答末尾加上：「以上内容基于佛教经典与传统教义整理，仅供学习参考。」\n"
         )
+        # 低置信度时强化"不要编造"指令
+        if low_confidence:
+            system_prompt += (
+                "\n## 重要提醒\n"
+                "本次检索的参考资料与用户问题的相关度较低。请你仔细判断资料是否真正回答了问题。"
+                "如果资料内容与问题无关，请回答：「该问题超出了当前知识库的覆盖范围，"
+                "建议查阅相关佛教经典或咨询法师获取更准确的解答。」\n"
+            )
 
         user_prompt = (
             f"【参考资料】\n{context}\n\n"
