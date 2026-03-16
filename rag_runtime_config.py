@@ -1,4 +1,4 @@
-import os
+import os as _os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -8,16 +8,15 @@ KNOWLEDGE_DIR = BASE_DIR / "knowledge"
 STORE_ROOT = BASE_DIR / "stores"
 OUT_PATH = BASE_DIR / "answer.txt"
 
-# ===== OpenAI 开关 =====
-USE_OPENAI = False
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-
-# ===== 向量模型 =====
-MODEL_NAME = "BAAI/bge-m3"
-
-# ===== 分块参数 =====
-CHUNK_SIZE = 600
-CHUNK_OVERLAP = 150
+# ===== OpenAI / 兼容 API 开关 =====
+# 支持 Cherry Studio 等 OpenAI 兼容 API 服务：
+#   export RAG_USE_OPENAI=1
+#   export OPENAI_API_KEY=cs-sk-...
+#   export OPENAI_API_BASE=http://127.0.0.1:23333/v1
+#   export RAG_OPENAI_MODEL=your-model-name
+USE_OPENAI = _os.environ.get("RAG_USE_OPENAI", "").strip().lower() in ("1", "true", "yes")
+OPENAI_MODEL = _os.environ.get("RAG_OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_API_BASE = _os.environ.get("OPENAI_API_BASE", "").strip() or None
 
 # ===== 输出与调试 =====
 DEBUG = False
@@ -28,8 +27,7 @@ DEFAULT_TOP_K = 8
 REFERENCE_NOTE = "以上内容基于佛教经典与传统教义整理，仅供学习参考。"
 RISK_NOTE = "深入修行建议亲近善知识，依止有经验的法师指导。"
 
-# ===== 知识领域配置（对应原始 rag_config.py 的 PRODUCTS）=====
-# 每个知识领域一个 ID，knowledge/<id> 下放 main/faq/alias 文件
+# ===== 知识领域配置 =====
 PRODUCTS = {
     "buddhism": {
         "display_name": "佛教知识（Buddhism）",
@@ -58,24 +56,133 @@ UNCLEAR_PRODUCT_PROMPT = (
     "- 佛教经典（心经、金刚经等）\n"
 )
 
-# ===== 问题类型配置（对应原始 rag_config.py 的 QUESTION_TYPE_CONFIG）=====
-# 每个路由可独立设置检索 top_k 和分数阈值
+# ===== 无知识兜底回复 =====
+PRICE_REPLY = "佛教修行不涉及价格问题，建议向当地寺院或佛学院咨询相关信息。"
+COMPARISON_REPLY = "不同修行法门各有殊胜之处，建议亲近善知识，根据自身根机选择合适的修行方法。"
+LOCATION_REPLY = "建议通过当地佛教协会或正规寺院查询相关信息。"
+
+# ===== 实体关联 =====
+RELATIONS_FILE = KNOWLEDGE_DIR / "relations.json"
+
+# ===== 模型参数 =====
+EMBED_MODEL_NAME = "BAAI/bge-m3"
+EMBED_USE_FP16 = True
+EMBED_BATCH_SIZE_BUILD = 8
+EMBED_BATCH_SIZE_QUERY = 1
+EMBED_MAX_LENGTH_BUILD = 8192
+EMBED_MAX_LENGTH_QUERY = 1024
+CHUNK_SIZE = 600
+CHUNK_OVERLAP = 150
+
+# ===== LLM 参数 =====
+LLM_REWRITE_ENABLED = _os.environ.get("RAG_LLM_REWRITE", "1").strip().lower() in ("1", "true", "yes")
+
+LLM_TEMPERATURE = 0.3
+LLM_MAX_TOKENS_BRIEF = 1500
+LLM_MAX_TOKENS_FULL = 2500
+
+# 路由专属温度：教义/概念类需要确定性低温，修行/历史可稍高
+ROUTE_LLM_TEMPERATURE = {
+    "doctrine":   0.1,
+    "concept":    0.1,
+    "scripture":  0.2,
+    "basic":      0.2,
+    "practice":   0.3,
+    "sect":       0.3,
+    "history":    0.4,
+    "ritual":     0.3,
+}
+
+# ===== 搜索调优 =====
+
+
+def _safe_float(key: str, default: str) -> float:
+    """安全读取环境变量并转为 float，非法值回退默认值并打印警告。"""
+    raw = _os.environ.get(key, default)
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        print(f"[WARN] 环境变量 {key}='{raw}' 无法转为 float，使用默认值 {default}")
+        return float(default)
+
+
+def _safe_int(key: str, default: str) -> int:
+    """安全读取环境变量并转为 int，非法值回退默认值并打印警告。"""
+    raw = _os.environ.get(key, default)
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        print(f"[WARN] 环境变量 {key}='{raw}' 无法转为 int，使用默认值 {default}")
+        return int(default)
+
+
+BM25_K1 = _safe_float("RAG_BM25_K1", "1.5")
+BM25_B = _safe_float("RAG_BM25_B", "0.75")
+SIGMOID_SCALE = _safe_float("RAG_SIGMOID_SCALE", "5.0")
+ROUTE_BOOST = _safe_float("RAG_ROUTE_BOOST", "0.12")
+CACHE_MAX_PRODUCTS = 32
+
+# ===== 回答构建 =====
+MAX_SUB_QUESTIONS = 4    # 单次问答最多拆分的子问题数
+MAX_EVIDENCE_CHUNKS = 6  # build_evidence / answer_formatter 保留的最大证据片段数
+
+# ===== 检索 =====
+VECTOR_TOP_K = _safe_int("RAG_VECTOR_TOP_K", "12")
+KEYWORD_TOP_K = _safe_int("RAG_KEYWORD_TOP_K", "12")
+HYBRID_VECTOR_WEIGHT = _safe_float("RAG_HYBRID_VW", "0.65")
+HYBRID_KEYWORD_WEIGHT = _safe_float("RAG_HYBRID_KW", "0.35")
+
+# ===== Rerank 配置 =====
+# cross-encoder 精排（BGE-reranker-v2-m3），在 hybrid merge + filter 之后使用
+USE_RERANK = True
+RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
+RERANK_TOP_K = 6
+RERANK_SCORE_THRESHOLD = 0.1
+# 同时保持与参考项目兼容的开关（BGE-M3 compute_score 模式）
+RERANK_ENABLED = _os.environ.get("RAG_RERANK_ENABLED", "0").strip().lower() in ("1", "true", "yes")
+RERANK_TOP_N = _safe_int("RAG_RERANK_TOP_N", "10")
+
+# ===== 动态阈值 =====
+DYNAMIC_THRESHOLD_ENABLED = _os.environ.get("RAG_DYN_THRESHOLD", "1").strip().lower() in ("1", "true", "yes")
+DYNAMIC_THRESHOLD_RATIO = _safe_float("RAG_DYN_RATIO", "0.40")
+DYNAMIC_THRESHOLD_FLOOR_RATIO = _safe_float("RAG_DYN_FLOOR_RATIO", "0.70")
+
+# ===== 中文分词 =====
+# 佛教项目使用自建词典分词，jieba 作为可选补充
+JIEBA_ENABLED = _os.environ.get("RAG_JIEBA_ENABLED", "0").strip().lower() in ("1", "true", "yes")
+
+# ===== FAISS 索引类型 =====
+FAISS_INDEX_TYPE = _os.environ.get("RAG_FAISS_INDEX", "flat").strip().lower()
+FAISS_HNSW_M = _safe_int("RAG_HNSW_M", "32")
+FAISS_HNSW_EF_CONSTRUCTION = _safe_int("RAG_HNSW_EFC", "200")
+FAISS_HNSW_EF_SEARCH = _safe_int("RAG_HNSW_EFS", "128")
+
+# ===== 按问题类型调整检索参数 =====
 QUESTION_TYPE_CONFIG = {
-    "doctrine":  {"k": 8, "threshold": 0.25},
-    "practice":  {"k": 8, "threshold": 0.25},
-    "scripture": {"k": 8, "threshold": 0.25},
-    "sect":      {"k": 8, "threshold": 0.25},
-    "concept":   {"k": 8, "threshold": 0.25},
-    "history":   {"k": 8, "threshold": 0.25},
-    "ritual":    {"k": 6, "threshold": 0.25},
-    "basic":     {"k": 6, "threshold": 0.30},
+    "doctrine":  {"k": 8,  "threshold": 0.25},
+    "practice":  {"k": 8,  "threshold": 0.25},
+    "scripture": {"k": 8,  "threshold": 0.25, "vw": 0.55, "kw": 0.45},
+    "sect":      {"k": 8,  "threshold": 0.25},
+    "concept":   {"k": 8,  "threshold": 0.25},
+    "history":   {"k": 8,  "threshold": 0.25},
+    "ritual":    {"k": 6,  "threshold": 0.25},
+    "basic":     {"k": 6,  "threshold": 0.30},
 }
 
 # 默认分数阈值（路由未配置时使用）
 SCORE_THRESHOLD = 0.25
 
-# ===== brief/full 模式配置（对应原始 rag_config.py 的 ANSWER_MODE_CONFIG）=====
-# 控制每个路由在 brief/full 模式下的最大输出条目数
+# ===== FAQ 快速路径阈值 =====
+FAQ_FAST_PATH_THRESHOLDS = {
+    "doctrine":  {"score": 0.38, "ratio": 0.45},
+    "practice":  {"score": 0.35, "ratio": 0.40},
+    "scripture": {"score": 0.38, "ratio": 0.45},
+    "concept":   {"score": 0.38, "ratio": 0.45},
+    "basic":     {"score": 0.35, "ratio": 0.40},
+}
+FAQ_FAST_PATH_DEFAULT = {"score": 0.40, "ratio": 0.50}
+
+# ===== brief/full 模式配置 =====
 ANSWER_MODE_CONFIG = {
     "brief": {
         "max_items_default": 8,
@@ -100,13 +207,6 @@ ANSWER_MODE_CONFIG = {
         "basic": 20,
     },
 }
-
-# ===== Rerank 配置 =====
-# 开启后在 hybrid merge + filter 之后、送入 LLM 之前，用 cross-encoder 对候选做精排
-USE_RERANK = True
-RERANK_MODEL = "BAAI/bge-reranker-v2-m3"  # 本地 cross-encoder，中文效果最好
-RERANK_TOP_K = 6                           # rerank 后保留的最终 top-K
-RERANK_SCORE_THRESHOLD = 0.1              # rerank 分数低于此值的丢弃（cross-encoder 分数范围约 0-1）
 
 # ===== 问题路由 =====
 QUESTION_ROUTES = {
@@ -242,11 +342,413 @@ FAQ_KEYWORD_MAP = {
     "智慧品": "智慧品",
 }
 
-# ===== 检索 =====
-VECTOR_TOP_K = 12
-KEYWORD_TOP_K = 12
-HYBRID_VECTOR_WEIGHT = 0.65
-HYBRID_KEYWORD_WEIGHT = 0.35
+# ===== 媒体 =====
+# 每个产品的媒体文件位于 knowledge/{product_id}/media.json
+# 由 media_router.py 按 product_id 加载
 
 # ===== 测试 =====
 REGRESSION_CASES_FILE = BASE_DIR / "regression_cases.json"
+
+# ===== 服务器配置 =====
+SERVER_HOST = _os.environ.get("RAG_SERVER_HOST", "0.0.0.0")
+SERVER_PORT = _safe_int("RAG_SERVER_PORT", "8000")
+
+# ===== 运行时热更新支持 =====
+import json as _json
+import threading as _threading
+
+_CONFIG_FILE = BASE_DIR / "data" / "runtime_overrides.json"
+_SERVER_CONFIG_FILE = BASE_DIR / "data" / "server_config.json"
+_config_lock = _threading.Lock()
+
+# 模型提供商预设
+MODEL_PRESETS = {
+    "openai": {
+        "label": "OpenAI",
+        "models": ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"],
+        "default_model": "gpt-4o-mini",
+        "api_base": "",
+    },
+    "deepseek": {
+        "label": "DeepSeek",
+        "models": ["deepseek-chat", "deepseek-reasoner"],
+        "default_model": "deepseek-chat",
+        "api_base": "https://api.deepseek.com/v1",
+    },
+    "minimax": {
+        "label": "MiniMax",
+        "models": ["MiniMax-Text-01", "abab6.5s-chat", "abab5.5-chat"],
+        "default_model": "MiniMax-Text-01",
+        "api_base": "https://api.minimax.chat/v1",
+    },
+    "custom": {
+        "label": "Custom / 自定义",
+        "models": [],
+        "default_model": "",
+        "api_base": "",
+    },
+}
+
+# 可热更新参数定义
+TUNABLE_PARAMS = {
+    "bm25_k1":          ("BM25_K1",          float, 0.5, 5.0,   "BM25 词频饱和参数"),
+    "bm25_b":           ("BM25_B",           float, 0.0, 1.0,   "BM25 文档长度归一化"),
+    "sigmoid_scale":    ("SIGMOID_SCALE",    float, 1.0, 20.0,  "BM25 分数 sigmoid 缩放"),
+    "route_boost":      ("ROUTE_BOOST",      float, 0.0, 0.5,   "路由匹配加分"),
+    "vector_top_k":     ("VECTOR_TOP_K",     int,   1,   50,    "向量检索返回数"),
+    "keyword_top_k":    ("KEYWORD_TOP_K",    int,   1,   50,    "关键词检索返回数"),
+    "hybrid_vw":        ("HYBRID_VECTOR_WEIGHT",  float, 0.0, 1.0, "混合检索向量权重"),
+    "hybrid_kw":        ("HYBRID_KEYWORD_WEIGHT", float, 0.0, 1.0, "混合检索关键词权重"),
+    "rerank_enabled":   ("RERANK_ENABLED",   bool, None, None,  "启用 Reranker 重排序"),
+    "rerank_top_n":     ("RERANK_TOP_N",     int,   5,   50,    "Reranker 候选数"),
+    "use_rerank":       ("USE_RERANK",       bool, None, None,  "启用 CrossEncoder 精排"),
+    "rerank_top_k":     ("RERANK_TOP_K",     int,   1,   20,    "CrossEncoder 精排 Top-K"),
+    "dyn_threshold_enabled": ("DYNAMIC_THRESHOLD_ENABLED", bool, None, None, "启用动态阈值"),
+    "dyn_ratio":        ("DYNAMIC_THRESHOLD_RATIO",       float, 0.1, 0.9, "动态阈值比率"),
+    "dyn_floor_ratio":  ("DYNAMIC_THRESHOLD_FLOOR_RATIO", float, 0.3, 1.0, "动态阈值下限比率"),
+    "llm_temperature":  ("LLM_TEMPERATURE",       float, 0.0, 1.0,  "LLM 默认温度"),
+    "llm_max_brief":    ("LLM_MAX_TOKENS_BRIEF",  int,   100, 4000, "LLM brief 最大 token"),
+    "llm_max_full":     ("LLM_MAX_TOKENS_FULL",   int,   200, 8000, "LLM full 最大 token"),
+    "llm_rewrite":      ("LLM_REWRITE_ENABLED",   bool,  None, None, "启用 LLM 查询改写"),
+    "chunk_size":       ("CHUNK_SIZE",       int,   100, 2000, "文本分块大小（字符）"),
+    "chunk_overlap":    ("CHUNK_OVERLAP",    int,   0,   500,  "分块重叠长度"),
+    "faiss_index_type": ("FAISS_INDEX_TYPE", str,   None, None, "FAISS 索引类型 (flat/hnsw)"),
+    "use_openai":       ("USE_OPENAI",       bool, None, None, "启用 LLM（OpenAI 兼容）"),
+    "openai_model":     ("OPENAI_MODEL",     str,  None, None, "LLM 模型名称"),
+    "openai_api_base":  ("OPENAI_API_BASE",  str,  None, None, "LLM API 地址"),
+}
+
+
+def get_tunable_config() -> dict:
+    """获取所有可调参数的当前值"""
+    import rag_runtime_config as _mod
+    result = {}
+    for key, (var_name, vtype, vmin, vmax, desc) in TUNABLE_PARAMS.items():
+        val = getattr(_mod, var_name, None)
+        result[key] = {
+            "value": val,
+            "type": vtype.__name__,
+            "min": vmin,
+            "max": vmax,
+            "description": desc,
+            "var_name": var_name,
+        }
+    return result
+
+
+def update_tunable_config(updates: dict) -> dict:
+    """热更新可调参数，返回实际更新的字段"""
+    import rag_runtime_config as _mod
+    changed = {}
+    for key, new_val in updates.items():
+        if key not in TUNABLE_PARAMS:
+            continue
+        var_name, vtype, vmin, vmax, desc = TUNABLE_PARAMS[key]
+        try:
+            if vtype == bool:
+                if isinstance(new_val, str):
+                    new_val = new_val.strip().lower() in ("1", "true", "yes", "on")
+                else:
+                    new_val = bool(new_val)
+            elif vtype == int:
+                new_val = int(new_val)
+            elif vtype == float:
+                new_val = float(new_val)
+            else:
+                new_val = str(new_val).strip()
+        except (ValueError, TypeError):
+            continue
+        if vtype in (int, float) and vmin is not None and vmax is not None:
+            new_val = max(vmin, min(vmax, new_val))
+        if key == "faiss_index_type" and new_val not in ("flat", "hnsw"):
+            continue
+        old_val = getattr(_mod, var_name, None)
+        if old_val != new_val:
+            setattr(_mod, var_name, new_val)
+            changed[key] = {"old": old_val, "new": new_val}
+    if changed:
+        _persist_overrides(updates)
+    return changed
+
+
+def _persist_overrides(updates: dict) -> None:
+    """将运行时覆盖保存到文件，下次启动时自动加载"""
+    with _config_lock:
+        data_dir = _CONFIG_FILE.parent
+        data_dir.mkdir(parents=True, exist_ok=True)
+        existing = {}
+        if _CONFIG_FILE.exists():
+            try:
+                existing = _json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        for key, val in updates.items():
+            if key in TUNABLE_PARAMS:
+                existing[key] = val
+        tmp = _CONFIG_FILE.with_suffix(".tmp")
+        tmp.write_text(_json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(_CONFIG_FILE)
+
+
+def load_persisted_overrides() -> dict:
+    """启动时加载持久化的覆盖值"""
+    if not _CONFIG_FILE.exists():
+        return {}
+    try:
+        data = _json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
+        if data:
+            changed = update_tunable_config(data)
+            if changed:
+                print(f"[INFO] 加载了 {len(changed)} 个运行时配置覆盖: {list(changed.keys())}")
+            return changed
+    except Exception as e:
+        print(f"[WARN] 加载运行时配置覆盖失败: {e}")
+    return {}
+
+
+def get_model_config() -> dict:
+    """获取当前模型配置"""
+    return {
+        "use_openai": USE_OPENAI,
+        "model": OPENAI_MODEL,
+        "api_base": OPENAI_API_BASE or "",
+        "api_key_set": bool(_os.environ.get("OPENAI_API_KEY", "").strip()),
+        "llm_rewrite": LLM_REWRITE_ENABLED,
+        "presets": MODEL_PRESETS,
+    }
+
+
+def switch_model_provider(provider: str, model: str = "", api_base: str = "",
+                          api_key: str = "") -> dict:
+    """切换模型提供商"""
+    import rag_runtime_config as _mod
+    preset = MODEL_PRESETS.get(provider)
+    if not preset and provider != "custom":
+        return {"error": f"未知提供商: {provider}"}
+    if preset and not model:
+        model = preset["default_model"]
+    if preset and not api_base:
+        api_base = preset["api_base"]
+    _mod.USE_OPENAI = True
+    _mod.OPENAI_MODEL = model
+    _mod.OPENAI_API_BASE = api_base or None
+    if api_key:
+        _os.environ["OPENAI_API_KEY"] = api_key
+    try:
+        from rag_answer import _get_openai_client
+        import rag_answer
+        rag_answer._openai_client = None
+        rag_answer._openai_client_checked = False
+    except Exception:
+        pass
+    try:
+        from llm_client import sync_from_legacy
+        sync_from_legacy()
+    except Exception:
+        pass
+    _persist_overrides({
+        "use_openai": True,
+        "openai_model": model,
+        "openai_api_base": api_base or "",
+    })
+    return {
+        "ok": True,
+        "provider": provider,
+        "model": model,
+        "api_base": api_base or "",
+    }
+
+
+# ===== 服务器 / 域名配置管理 =====
+
+def get_server_config() -> dict:
+    data = _load_server_config_file()
+    return {
+        "host": SERVER_HOST,
+        "port": SERVER_PORT,
+        "domain": data.get("domain", ""),
+        "ssl_enabled": data.get("ssl_enabled", False),
+        "cors_origins": _os.environ.get("CORS_ORIGINS", "*"),
+        "chat_path": "/chat",
+        "admin_path": "/admin",
+        "api_path": "/ask",
+    }
+
+
+def update_server_config(updates: dict) -> dict:
+    import rag_runtime_config as _mod
+    data = _load_server_config_file()
+    changed = {}
+    allowed_keys = {"domain", "ssl_enabled", "ssl_cert_path", "ssl_key_path",
+                    "cors_origins", "auto_start"}
+    for key, val in updates.items():
+        if key not in allowed_keys:
+            continue
+        if key == "ssl_enabled":
+            val = bool(val)
+        elif key == "cors_origins":
+            val = str(val).strip()
+            _os.environ["CORS_ORIGINS"] = val
+        else:
+            val = str(val).strip()
+        old = data.get(key, "")
+        if old != val:
+            data[key] = val
+            changed[key] = {"old": old, "new": val}
+    if "host" in updates:
+        new_host = str(updates["host"]).strip()
+        if new_host != SERVER_HOST:
+            _mod.SERVER_HOST = new_host
+            data["host"] = new_host
+            changed["host"] = {"old": SERVER_HOST, "new": new_host}
+    if "port" in updates:
+        try:
+            new_port = int(updates["port"])
+            if 1 <= new_port <= 65535 and new_port != SERVER_PORT:
+                _mod.SERVER_PORT = new_port
+                data["port"] = new_port
+                changed["port"] = {"old": SERVER_PORT, "new": new_port}
+        except (ValueError, TypeError):
+            pass
+    if changed:
+        _save_server_config_file(data)
+    return changed
+
+
+def _load_server_config_file() -> dict:
+    if not _SERVER_CONFIG_FILE.exists():
+        return {}
+    try:
+        return _json.loads(_SERVER_CONFIG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_server_config_file(data: dict) -> None:
+    with _config_lock:
+        d = _SERVER_CONFIG_FILE.parent
+        d.mkdir(parents=True, exist_ok=True)
+        tmp = _SERVER_CONFIG_FILE.with_suffix(".tmp")
+        tmp.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(_SERVER_CONFIG_FILE)
+
+
+# ===== BGE-M3 嵌入模型控制 =====
+
+def get_embedding_status() -> dict:
+    try:
+        import rag_answer
+        model = getattr(rag_answer, "_model", None)
+        return {
+            "loaded": model is not None,
+            "model_name": EMBED_MODEL_NAME,
+            "use_fp16": EMBED_USE_FP16,
+        }
+    except Exception:
+        return {"loaded": False, "model_name": EMBED_MODEL_NAME}
+
+
+def start_embedding_model() -> dict:
+    try:
+        from rag_answer import get_model, embed_query
+        get_model()
+        embed_query("预热")
+        return {"ok": True, "message": "BGE-M3 模型已加载"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def stop_embedding_model() -> dict:
+    try:
+        import rag_answer
+        import gc
+        rag_answer._model = None
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+        return {"ok": True, "message": "BGE-M3 模型已卸载"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ===== LLM 服务控制 =====
+
+def get_llm_status() -> dict:
+    try:
+        import rag_answer
+        client = getattr(rag_answer, "_openai_client", None)
+        checked = getattr(rag_answer, "_openai_client_checked", False)
+        return {
+            "enabled": USE_OPENAI,
+            "client_ready": client is not None,
+            "client_checked": checked,
+            "model": OPENAI_MODEL,
+            "api_base": OPENAI_API_BASE or "",
+            "api_key_set": bool(_os.environ.get("OPENAI_API_KEY", "").strip()),
+            "rewrite_enabled": LLM_REWRITE_ENABLED,
+            "temperature": LLM_TEMPERATURE,
+        }
+    except Exception:
+        return {
+            "enabled": USE_OPENAI,
+            "client_ready": False,
+            "model": OPENAI_MODEL,
+        }
+
+
+def start_llm_service(api_key: str = "") -> dict:
+    import rag_runtime_config as _mod
+    if api_key:
+        _os.environ["OPENAI_API_KEY"] = api_key
+    _mod.USE_OPENAI = True
+    try:
+        import rag_answer
+        rag_answer._openai_client = None
+        rag_answer._openai_client_checked = False
+        client = rag_answer._get_openai_client()
+        if client is None:
+            return {"ok": False, "error": "LLM client 创建失败，请检查 API Key 和 API Base"}
+        try:
+            from llm_client import sync_from_legacy
+            sync_from_legacy()
+        except Exception:
+            pass
+        return {"ok": True, "message": f"LLM 服务已启动 (model={OPENAI_MODEL})"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def stop_llm_service() -> dict:
+    import rag_runtime_config as _mod
+    _mod.USE_OPENAI = False
+    try:
+        import rag_answer
+        rag_answer._openai_client = None
+        rag_answer._openai_client_checked = False
+    except Exception:
+        pass
+    try:
+        from llm_client import sync_from_legacy
+        sync_from_legacy()
+    except Exception:
+        pass
+    _persist_overrides({"use_openai": False})
+    return {"ok": True, "message": "LLM 服务已停止"}
+
+
+# 启动时自动加载持久化覆盖
+load_persisted_overrides()
+
+# 启动时加载服务器配置
+_server_data = _load_server_config_file()
+if _server_data.get("host"):
+    SERVER_HOST = _server_data["host"]
+if _server_data.get("port"):
+    try:
+        SERVER_PORT = int(_server_data["port"])
+    except (ValueError, TypeError):
+        pass

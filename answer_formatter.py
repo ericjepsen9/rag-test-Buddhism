@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional
-from rag_runtime_config import REFERENCE_NOTE, RISK_NOTE
+from rag_runtime_config import REFERENCE_NOTE, RISK_NOTE, MAX_EVIDENCE_CHUNKS
 
-# 内容类型显示标签
+# 内容类型显示标签（佛教文本类型）
 _CTYPE_LABELS = {
     "ritual": "仪轨", "talk": "开示", "method": "方法",
     "article": "文章", "qa": "问答", "gongan": "公案",
@@ -10,31 +10,41 @@ _CTYPE_LABELS = {
     "plain": "通用",
 }
 
+_SAFETY_ROUTES = frozenset(("doctrine", "concept"))
+
+_TITLE_MAP = {
+    "basic": "佛教基础",
+    "doctrine": "教义解说",
+    "practice": "修行方法",
+    "scripture": "经典介绍",
+    "sect": "宗派介绍",
+    "concept": "核心概念",
+    "history": "佛教历史",
+    "ritual": "节日与礼仪",
+}
+
 
 def format_structured_answer(
     route: str,
     body_lines: List[str],
     evidence: Optional[List[Dict]] = None,
     add_risk_note: bool = False,
+    custom_title: str = "",
 ) -> str:
-    title_map = {
-        "basic": "佛教基础",
-        "doctrine": "教义解说",
-        "practice": "修行方法",
-        "scripture": "经典介绍",
-        "sect": "宗派介绍",
-        "concept": "核心概念",
-        "history": "佛教历史",
-        "ritual": "节日与礼仪",
-    }
-    title = title_map.get(route, "回答")
-    out = [f"{title}："]
+    title = custom_title or _TITLE_MAP.get(route, "回答")
+    out = [f"【{title}】", ""]
 
-    # 正文：跳过空行
+    # 正文
     valid_lines = [ln for ln in (body_lines or []) if ln and ln.strip()]
     if valid_lines:
         for ln in valid_lines:
-            out.append(f"- {ln}")
+            stripped = ln.strip()
+            if not stripped:
+                out.append("")
+            elif stripped.startswith(("-", "•", "·", "【")):
+                out.append(stripped)
+            else:
+                out.append(f"- {stripped}")
     else:
         out.append("- 当前知识库未覆盖该问题的直接内容。")
 
@@ -42,7 +52,7 @@ def format_structured_answer(
     if evidence:
         source_entries = []
         seen_sources = set()
-        for ev in evidence[:6]:
+        for ev in evidence[:MAX_EVIDENCE_CHUNKS]:
             if ev is None:
                 continue
             meta = ev.get("meta", {})
@@ -80,17 +90,18 @@ def format_structured_answer(
                 if ctype_label:
                     entry += f"｜类型：{ctype_label}"
             else:
-                continue  # 跳过完全无来源信息的条目
+                continue
 
             source_entries.append(entry)
 
         if source_entries:
+            out.append("")
             out.append("依据：")
             out.extend(source_entries)
 
     # 提示与风险提醒
-    out.append(f"提示：{REFERENCE_NOTE}")
-    if add_risk_note:
+    out.append("")
+    if add_risk_note or route in _SAFETY_ROUTES:
         out.append(f"修行建议：{RISK_NOTE}")
-
+    out.append(f"提示：{REFERENCE_NOTE}")
     return "\n".join(out).strip()
