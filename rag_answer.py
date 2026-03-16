@@ -19,7 +19,8 @@ from rag_runtime_config import (
     PRODUCT_ALIASES, PROJECT_ALIASES, VECTOR_TOP_K, KEYWORD_TOP_K,
     HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, FAQ_KEYWORD_MAP,
     SCORE_THRESHOLD, QUESTION_TYPE_CONFIG, ANSWER_MODE_CONFIG,
-    DEFAULT_PRODUCT,
+    DEFAULT_PRODUCT, USE_RERANK, RERANK_MODEL, RERANK_TOP_K,
+    RERANK_SCORE_THRESHOLD,
 )
 from search_utils import (
     normalize_text, normalize_lines, uniq, is_faq_line, section_block,
@@ -33,6 +34,86 @@ _model = None
 _faiss = None
 _store_cache = {}  # 缓存已加载的 index + docs
 _store_mtime = {}  # 缓存文件修改时间，用于自动失效
+_reranker = None   # cross-encoder reranker 模型缓存
+
+
+def get_reranker():
+    """懒加载 cross-encoder reranker 模型"""
+    global _reranker
+    if _reranker is None:
+        if not USE_RERANK:
+            return None
+        try:
+            from sentence_transformers import CrossEncoder
+            if DEBUG:
+                print(f"[INFO] 加载 reranker 模型：{RERANK_MODEL}")
+            _reranker = CrossEncoder(RERANK_MODEL, max_length=1024)
+        except Exception as e:
+            log_error("reranker_load", repr(e))
+            if DEBUG:
+                print(f"[WARN] Reranker 加载失败，回退到无 rerank 模式: {e}")
+            return None
+    return _reranker
+
+
+def rerank_hits(query: str, hits: List[Dict], top_k: int = None,
+                score_threshold: float = None) -> List[Dict]:
+    """
+    使用 cross-encoder 对检索结果做精排。
+
+    Cross-encoder 与 bi-encoder 的区别：
+    - Bi-encoder（向量搜索）：分别编码 query 和 doc，速度快但精度有限
+    - Cross-encoder（rerank）：同时编码 query+doc，精度更高但速度慢
+
+    因此流程是：bi-encoder 粗召回 → cross-encoder 精排 → 取 top-K
+
+    Args:
+        query: 用户问题
+        hits: hybrid search + filter + dedup 后的候选结果
+        top_k: 精排后保留的最大数量
+        score_threshold: 精排分数低于此值的丢弃
+    Returns:
+        重排序后的 hits 列表
+    """
+    if not hits:
+        return hits
+    if top_k is None:
+        top_k = RERANK_TOP_K
+    if score_threshold is None:
+        score_threshold = RERANK_SCORE_THRESHOLD
+
+    reranker = get_reranker()
+    if reranker is None:
+        # reranker 不可用时，保持原始排序，截断到 top_k
+        return hits[:top_k]
+
+    try:
+        # 构建 query-doc 对
+        pairs = []
+        for h in hits:
+            text = h.get("text", "").strip()
+            if not text:
+                text = "(empty)"
+            pairs.append((query, text))
+
+        # cross-encoder 打分
+        scores = reranker.predict(pairs, show_progress_bar=False)
+
+        # 将 rerank 分数写入 hit
+        for h, score in zip(hits, scores):
+            h["rerank_score"] = float(score)
+
+        # 按 rerank 分数降序排列
+        hits_sorted = sorted(hits, key=lambda x: x.get("rerank_score", 0.0), reverse=True)
+
+        # 过滤低分 + 截断
+        result = [h for h in hits_sorted if h.get("rerank_score", 0.0) >= score_threshold]
+        return result[:top_k]
+    except Exception as e:
+        log_error("rerank_hits", repr(e))
+        if DEBUG:
+            print(f"[WARN] Rerank 执行失败，回退到原始排序: {e}")
+        return hits[:top_k]
 
 
 def get_faiss():
@@ -398,6 +479,10 @@ def answer_one(question: str, mode: str) -> str:
     hits = filter_by_score(hits, route_threshold)
     hits = _deduplicate_hits(hits)
 
+    # 3. Rerank：cross-encoder 精排（粗召回后用更精确的模型重排序）
+    if USE_RERANK and hits:
+        hits = rerank_hits(question, hits, top_k=RERANK_TOP_K)
+
     # 置信度检测
     low_confidence = False
     if hits:
@@ -409,7 +494,7 @@ def answer_one(question: str, mode: str) -> str:
     if not hits:
         return _build_not_found_response(question, route, rewrite)
 
-    # 3. 优先使用 LLM 基于检索上下文生成答案（真正的 RAG）
+    # 4. 优先使用 LLM 基于检索上下文生成答案（真正的 RAG）
     context = extract_chunks_as_context(hits, max_chunks=6)
     llm_answer = openai_rag_generate(question, context, route, low_confidence=low_confidence)
     if llm_answer and len(llm_answer.strip()) >= 15:
@@ -423,7 +508,7 @@ def answer_one(question: str, mode: str) -> str:
         evidence = build_evidence(hits)
         return format_structured_answer(route, [llm_answer.strip()], evidence, add_risk_note=(route == "practice"))
 
-    # 4. 无 LLM 时：向量检索结果直接作为答案段落
+    # 5. 无 LLM 时：向量检索结果直接作为答案段落
     body_lines = extract_from_hits(hits, route, mode)
     body_lines = [
         p for p in body_lines

@@ -101,6 +101,13 @@ ANSWER_MODE_CONFIG = {
     },
 }
 
+# ===== Rerank 配置 =====
+# 开启后在 hybrid merge + filter 之后、送入 LLM 之前，用 cross-encoder 对候选做精排
+USE_RERANK = True
+RERANK_MODEL = "BAAI/bge-reranker-v2-m3"  # 本地 cross-encoder，中文效果最好
+RERANK_TOP_K = 6                           # rerank 后保留的最终 top-K
+RERANK_SCORE_THRESHOLD = 0.1              # rerank 分数低于此值的丢弃（cross-encoder 分数范围约 0-1）
+
 # ===== 问题路由 =====
 QUESTION_ROUTES = {
     "doctrine": ["四圣谛", "八正道", "十二因缘", "三法印", "四法印", "缘起", "中道",
