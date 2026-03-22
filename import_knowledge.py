@@ -35,7 +35,34 @@ try:
 except Exception:
     pass
 
-from rag_runtime_config import KNOWLEDGE_DIR, OPENAI_MODEL, OPENAI_API_BASE
+import tempfile
+
+from rag_runtime_config import (
+    KNOWLEDGE_DIR, OPENAI_MODEL, OPENAI_API_BASE,
+    SHARED_ENTITY_DIRS,
+)
+
+try:
+    import fcntl
+    _HAS_FCNTL = True
+except ImportError:
+    _HAS_FCNTL = False
+
+
+def _atomic_write(path: Path, content: str, encoding: str = "utf-8") -> None:
+    """原子写入文件：先写临时文件再 rename，避免写入中途崩溃导致文件损坏。"""
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(tmp_fd, "w", encoding=encoding) as f:
+            f.write(content)
+        os.replace(tmp_path, str(path))
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
 
 # 知识类型 → (目录名, 是否单文件追加模式)
 _ENTITY_TYPES = {
@@ -371,26 +398,44 @@ def _write_knowledge_files(result: dict, entity_type: str, entity_id: str,
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # main.txt
     main_txt = result.get("main_txt", "")
     if main_txt:
         main_path = out_dir / "main.txt"
         if is_single and main_path.exists():
-            existing = main_path.read_text(encoding="utf-8")
-            main_txt = existing.rstrip() + "\n\n" + main_txt
-            print(f"[INFO] 追加内容到已有文件: {main_path}")
-        main_path.write_text(main_txt, encoding="utf-8")
+            # 单文件模式：追加内容（使用文件锁防止并发覆盖）
+            if _HAS_FCNTL:
+                lock_path = main_path.with_suffix(".lock")
+                with open(lock_path, "w") as lf:
+                    fcntl.flock(lf, fcntl.LOCK_EX)
+                    try:
+                        existing = main_path.read_text(encoding="utf-8")
+                        main_txt = existing.rstrip() + "\n\n" + main_txt
+                        print(f"[INFO] 追加内容到已有文件: {main_path}")
+                        _atomic_write(main_path, main_txt)
+                    finally:
+                        fcntl.flock(lf, fcntl.LOCK_UN)
+            else:
+                existing = main_path.read_text(encoding="utf-8")
+                main_txt = existing.rstrip() + "\n\n" + main_txt
+                print(f"[INFO] 追加内容到已有文件: {main_path}")
+                _atomic_write(main_path, main_txt)
+        else:
+            _atomic_write(main_path, main_txt)
         print(f"[OK] 写入 {main_path} ({len(main_txt)} 字)")
 
+    # faq.txt（仅经典类型）
     faq_txt = result.get("faq_txt", "")
     if faq_txt and entity_type == "scripture":
         faq_path = out_dir / "faq.txt"
-        faq_path.write_text(faq_txt, encoding="utf-8")
+        _atomic_write(faq_path, faq_txt)
         print(f"[OK] 写入 {faq_path} ({len(faq_txt)} 字)")
 
+    # alias.txt
     alias_txt = result.get("alias_txt", "")
     if alias_txt:
         alias_path = out_dir / "alias.txt"
-        alias_path.write_text(alias_txt, encoding="utf-8")
+        _atomic_write(alias_path, alias_txt)
         print(f"[OK] 写入 {alias_path}")
 
     return out_dir
@@ -415,10 +460,18 @@ def _print_registration_hint(result: dict, entity_type: str, entity_id: str):
 
 def _build_index(entity_type: str, entity_id: str):
     """构建 FAISS 索引"""
-    from build_faiss import build_for_product
+    from build_faiss import build_for_product, build_shared
+
+    _, is_single = _ENTITY_TYPES[entity_type]
 
     print(f"\n[INFO] 构建索引: buddhism")
     build_for_product("buddhism")
+
+    # 共享知识类型也构建共享索引
+    if entity_type != "scripture" and entity_type != "doctrine":
+        print(f"\n[INFO] 构建共享知识索引")
+        build_shared()
+
     print("[DONE] 索引构建完成")
 
 
@@ -448,12 +501,19 @@ def main():
                     help="导入后自动构建 FAISS 索引")
     ap.add_argument("--dry-run", action="store_true",
                     help="仅预览 LLM 整理结果，不写入文件")
+    ap.add_argument("--no-keywords", action="store_true",
+                    help="跳过 LLM 关键词提取（同义词/分词/路由关键词）")
     args = ap.parse_args()
 
     entity_type = args.type
     entity_id = args.id.strip()
     _, is_single = _ENTITY_TYPES[entity_type]
 
+    # 校验：entity_id 不允许路径遍历字符
+    if entity_id and (".." in entity_id or "/" in entity_id or "\\" in entity_id):
+        ap.error(f"--id 不允许包含路径分隔符或 '..'：{entity_id}")
+
+    # 校验：非单文件类型必须提供 --id
     if not is_single and not entity_id:
         ap.error(f"--type {entity_type} 需要提供 --id 参数（作为目录名）")
 
@@ -484,6 +544,49 @@ def main():
 
     if not args.dry_run:
         _print_registration_hint(result, entity_type, entity_id)
+
+    # ============================================================
+    # 关键词提取：在导入时自动从原始文档中提取同义词、分词词典、路由关键词
+    # ============================================================
+    if not args.dry_run and not args.no_keywords:
+        print(f"\n[INFO] 正在提取关键词（同义词/分词词典/路由关键词）...")
+        try:
+            from keyword_extractor import extract_keywords_from_document, save_extraction_result
+            # 获取已有同义词用于去重
+            existing_synonyms = {}
+            try:
+                from search_utils import _SYNONYM_MAP
+                existing_synonyms = dict(_SYNONYM_MAP)
+            except ImportError:
+                pass
+            try:
+                from synonym_store import get_all_learned
+                for item in get_all_learned():
+                    existing_synonyms[item["original"]] = item["mapped_to"]
+            except ImportError:
+                pass
+
+            kw_result = extract_keywords_from_document(
+                client, _get_knowledge_model(), raw_text,
+                entity_type, entity_id, existing_synonyms,
+            )
+
+            # 保存提取结果
+            stats = save_extraction_result(kw_result)
+            print(f"[OK] 关键词提取完成:")
+            print(f"  - 同义词新增: {stats['synonyms_added']} 条（待审核）")
+            print(f"  - jieba 自定义词新增: {stats['jieba_words_added']} 条")
+            print(f"  - 路由关键词新增: {stats['route_keywords_added']} 条")
+
+            if stats["synonyms_added"] > 0:
+                print(f"[提示] 新增同义词需要审核，请在管理后台查看或运行：")
+                print(f"  python -c \"from keyword_extractor import get_pending_review; "
+                      f"import json; print(json.dumps(get_pending_review(), ensure_ascii=False, indent=2))\"")
+        except Exception as e:
+            print(f"[WARN] 关键词提取失败: {e}")
+
+    elif args.no_keywords:
+        print(f"[INFO] 跳过关键词提取（--no-keywords）")
 
     if args.build and not args.dry_run:
         _build_index(entity_type, entity_id)

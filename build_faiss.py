@@ -16,8 +16,12 @@ from rag_runtime_config import (
     KNOWLEDGE_DIR, STORE_ROOT,
     EMBED_MODEL_NAME, EMBED_USE_FP16, EMBED_BATCH_SIZE_BUILD, EMBED_MAX_LENGTH_BUILD,
     CHUNK_SIZE as _DEFAULT_CHUNK_SIZE, CHUNK_OVERLAP as _DEFAULT_CHUNK_OVERLAP,
+    SHARED_ENTITY_DIRS as _SHARED_ENTITY_DIRS,
     FAISS_INDEX_TYPE, FAISS_HNSW_M, FAISS_HNSW_EF_CONSTRUCTION, FAISS_HNSW_EF_SEARCH,
 )
+
+# 预计算共享目录名，避免 _is_product_dir 每次调用重建 set
+_SHARED_DIR_NAMES = frozenset(_SHARED_ENTITY_DIRS.values())
 from search_utils import (
     normalize_text, has_kepan_structure, split_by_kepan,
     has_pin_structure, split_by_pin, split_semantic_paragraphs,
@@ -672,18 +676,127 @@ def build_for_product(product: str):
     print(f"       index  : {FAISS_INDEX_TYPE}")
 
 
+def collect_shared_records():
+    """收集所有共享知识实体的文本记录。"""
+    from rag_runtime_config import SHARED_ENTITY_DIRS
+    records = []
+    for entity_type, subdir in SHARED_ENTITY_DIRS.items():
+        edir = KNOWLEDGE_DIR / subdir
+        if not edir.exists():
+            continue
+        # 两种结构：1) subdir/main.txt (单文件实体) 2) subdir/{name}/main.txt (多实例)
+        main_file = edir / "main.txt"
+        if main_file.exists():
+            # 单文件实体
+            text = read_text_auto(main_file)
+            chunks_data = chunk_smart(text, CHUNK_SIZE, CHUNK_OVERLAP)
+            print(f"[OK] {subdir}/main.txt: {len(chunks_data)} chunks")
+            for i, cd in enumerate(chunks_data, 1):
+                meta = {
+                    "product_id": "_shared",
+                    "entity_type": entity_type,
+                    "source_file": f"{subdir}/main.txt",
+                    "source_type": entity_type,
+                    "chunk_id": i,
+                }
+                _attach_buddhist_meta(meta, cd)
+                records.append({"text": cd["text"], "meta": meta})
+        # 多实例子目录
+        for inst in sorted(edir.iterdir()):
+            if not inst.is_dir():
+                continue
+            for fname, stype in [("main.txt", "main"), ("faq.txt", "faq"), ("alias.txt", "alias")]:
+                f = inst / fname
+                if not f.exists():
+                    continue
+                text = read_text_auto(f)
+                if stype == "alias":
+                    chunks_data = [{"text": text}]
+                else:
+                    chunks_data = chunk_smart(text, CHUNK_SIZE, CHUNK_OVERLAP)
+                label = f"{subdir}/{inst.name}/{fname}"
+                print(f"[OK] {label}: {len(chunks_data)} chunks")
+                for i, cd in enumerate(chunks_data, 1):
+                    meta = {
+                        "product_id": "_shared",
+                        "entity_type": entity_type,
+                        "entity_id": inst.name,
+                        "source_file": label,
+                        "source_type": stype,
+                        "chunk_id": i,
+                    }
+                    _attach_buddhist_meta(meta, cd)
+                    records.append({"text": cd["text"], "meta": meta})
+    # 跨来源去重
+    before = len(records)
+    records = _dedup_records(records)
+    if len(records) < before:
+        print(f"[INFO] shared: 跨来源去重 {before} → {len(records)} records")
+    return records
+
+
+def build_shared():
+    """构建共享知识索引（存储在 stores/_shared/）"""
+    records = collect_shared_records()
+    if not records:
+        print("[WARN] 无共享知识可索引")
+        return
+    texts = [r["text"] for r in records]
+    print(f"[INFO] Shared total chunks: {len(texts)}")
+    print(f"[INFO] Embedding {len(texts)} chunks ...")
+    vecs = embed_texts(texts)
+    dim = vecs.shape[1]
+    index = _create_faiss_index(dim, len(texts))
+    index.add(vecs)
+
+    out_dir = STORE_ROOT / "_shared"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    docs_path = out_dir / "docs.jsonl"
+    index_path = out_dir / "index.faiss"
+
+    # 原子写入：先写临时文件，再 rename
+    tmp_docs = out_dir / "docs.jsonl.tmp"
+    tmp_index = out_dir / "index.faiss.tmp"
+    with tmp_docs.open("w", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    _get_faiss().write_index(index, str(tmp_index))
+    os.replace(str(tmp_docs), str(docs_path))
+    os.replace(str(tmp_index), str(index_path))
+
+    print(f"[DONE] Built shared store ({len(records)} chunks, dim={dim})")
+
+
+def _is_product_dir(p: Path) -> bool:
+    """顶层目录且有 main.txt，且不是共享知识目录"""
+    return p.is_dir() and (p / "main.txt").exists() and p.name not in _SHARED_DIR_NAMES
+
+
 def list_products():
     if not KNOWLEDGE_DIR.exists():
         print(f"[ERROR] knowledge 目录不存在：{KNOWLEDGE_DIR}")
         return
-    for p in sorted([x.name for x in KNOWLEDGE_DIR.iterdir() if x.is_dir()]):
-        print(p)
+    # 列出产品目录（顶层有 main.txt 且不是共享知识目录）
+    for p in sorted(KNOWLEDGE_DIR.iterdir()):
+        if _is_product_dir(p):
+            print(f"[product] {p.name}")
+    # 列出共享知识目录
+    for entity_type, subdir in _SHARED_ENTITY_DIRS.items():
+        edir = KNOWLEDGE_DIR / subdir
+        if not edir.exists():
+            continue
+        if (edir / "main.txt").exists():
+            print(f"[{entity_type}] {subdir}/")
+        for inst in sorted(edir.iterdir()):
+            if inst.is_dir() and (inst / "main.txt").exists():
+                print(f"[{entity_type}] {subdir}/{inst.name}/")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--product", type=str, help="产品目录名")
-    ap.add_argument("--all", action="store_true", help="构建所有产品索引")
+    ap.add_argument("--shared", action="store_true", help="构建共享知识索引")
+    ap.add_argument("--all", action="store_true", help="构建所有产品+共享知识")
     ap.add_argument("--list", action="store_true")
     args = ap.parse_args()
 
@@ -691,19 +804,20 @@ def main():
         list_products()
         return
     if args.all:
-        if not KNOWLEDGE_DIR.exists():
-            print(f"[ERROR] knowledge 目录不存在：{KNOWLEDGE_DIR}")
-            return
-        products = sorted([p.name for p in KNOWLEDGE_DIR.iterdir() if p.is_dir()])
-        for pname in products:
-            print(f"\n{'=' * 40}\n构建产品: {pname}\n{'=' * 40}")
-            try:
-                build_for_product(pname)
-            except Exception as e:
-                print(f"[ERROR] {pname}: {e}")
+        # 构建所有产品（排除共享知识目录）
+        for p in sorted(KNOWLEDGE_DIR.iterdir()):
+            if _is_product_dir(p):
+                print(f"\n{'='*40}\n构建产品: {p.name}\n{'='*40}")
+                build_for_product(p.name)
+        # 构建共享知识
+        print(f"\n{'='*40}\n构建共享知识\n{'='*40}")
+        build_shared()
+        return
+    if args.shared:
+        build_shared()
         return
     if not args.product:
-        ap.error("请使用 --product <name> / --all / --list")
+        ap.error("请使用 --product <name> / --shared / --all / --list")
     build_for_product(args.product.strip())
 
 
