@@ -22,6 +22,7 @@ from rag_runtime_config import (
 
 # 预计算共享目录名，避免 _is_product_dir 每次调用重建 set
 _SHARED_DIR_NAMES = frozenset(_SHARED_ENTITY_DIRS.values())
+
 from search_utils import (
     normalize_text, has_kepan_structure, split_by_kepan,
     has_pin_structure, split_by_pin, split_semantic_paragraphs,
