@@ -56,6 +56,17 @@ SHARED_ENTITY_DIRS = {
     "glossary":     "glossary",
 }
 
+
+def _safe_int(key: str, default: str) -> int:
+    """安全读取环境变量并转为 int，非法值回退默认值并打印警告。"""
+    raw = _os.environ.get(key, default)
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        print(f"[WARN] 环境变量 {key}='{raw}' 无法转为 int，使用默认值 {default}")
+        return int(default)
+
+
 # ===== 消歧引导配置 =====
 CLARIFICATION_ENABLED = _os.environ.get("RAG_CLARIFICATION", "1").strip().lower() in ("1", "true", "yes")
 CLARIFICATION_MIN_QUERY_LEN = _safe_int("RAG_CLARIFY_MIN_LEN", "6")
@@ -116,16 +127,6 @@ def _safe_float(key: str, default: str) -> float:
     except (ValueError, TypeError):
         print(f"[WARN] 环境变量 {key}='{raw}' 无法转为 float，使用默认值 {default}")
         return float(default)
-
-
-def _safe_int(key: str, default: str) -> int:
-    """安全读取环境变量并转为 int，非法值回退默认值并打印警告。"""
-    raw = _os.environ.get(key, default)
-    try:
-        return int(raw)
-    except (ValueError, TypeError):
-        print(f"[WARN] 环境变量 {key}='{raw}' 无法转为 int，使用默认值 {default}")
-        return int(default)
 
 
 BM25_K1 = _safe_float("RAG_BM25_K1", "1.5")
