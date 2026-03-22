@@ -49,6 +49,18 @@ DEFAULT_PRODUCT = "buddhism"
 # 易混淆词（命中时提示用户明确）
 AMBIGUOUS_TOKENS = []
 
+# ===== 共享知识实体（非产品级，跨产品通用） =====
+SHARED_ENTITY_DIRS = {
+    "scripture":    "scriptures",
+    "master":       "masters",
+    "glossary":     "glossary",
+}
+
+# ===== 消歧引导配置 =====
+CLARIFICATION_ENABLED = _os.environ.get("RAG_CLARIFICATION", "1").strip().lower() in ("1", "true", "yes")
+CLARIFICATION_MIN_QUERY_LEN = _safe_int("RAG_CLARIFY_MIN_LEN", "6")
+CLARIFICATION_MAX_QUERY_LEN = _safe_int("RAG_CLARIFY_MAX_LEN", "15")
+
 UNCLEAR_PRODUCT_PROMPT = (
     "请明确您想了解的佛教领域或主题，例如：\n"
     "- 佛教基础教义（四圣谛、八正道等）\n"
@@ -416,6 +428,7 @@ TUNABLE_PARAMS = {
     "use_openai":       ("USE_OPENAI",       bool, None, None, "启用 LLM（OpenAI 兼容）"),
     "openai_model":     ("OPENAI_MODEL",     str,  None, None, "LLM 模型名称"),
     "openai_api_base":  ("OPENAI_API_BASE",  str,  None, None, "LLM API 地址"),
+    "clarification_enabled": ("CLARIFICATION_ENABLED", bool, None, None, "启用模糊查询消歧引导"),
 }
 
 
@@ -752,3 +765,76 @@ if _server_data.get("port"):
         SERVER_PORT = int(_server_data["port"])
     except (ValueError, TypeError):
         pass
+
+
+# ===== Nginx 配置生成 =====
+
+def generate_nginx_config(domain: str, port: int = 0, ssl: bool = False,
+                          cert_path: str = "", key_path: str = "") -> str:
+    """生成 nginx 反向代理配置"""
+    port = port or SERVER_PORT
+    if ssl and cert_path and key_path:
+        return f"""server {{
+    listen 80;
+    server_name {domain};
+    return 301 https://$host$request_uri;
+}}
+
+server {{
+    listen 443 ssl http2;
+    server_name {domain};
+
+    ssl_certificate     {cert_path};
+    ssl_certificate_key {key_path};
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+
+    client_max_body_size 100m;
+
+    location / {{
+        proxy_pass http://127.0.0.1:{port};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+    }}
+
+    location /v1/chat/completions {{
+        proxy_pass http://127.0.0.1:{port};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }}
+}}"""
+    else:
+        return f"""server {{
+    listen 80;
+    server_name {domain};
+
+    client_max_body_size 100m;
+
+    location / {{
+        proxy_pass http://127.0.0.1:{port};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+    }}
+
+    location /v1/chat/completions {{
+        proxy_pass http://127.0.0.1:{port};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }}
+}}"""

@@ -1,0 +1,57 @@
+[
+  {"_comment": "========== 一、基本信息（basic） =========="},
+  {"q": "佛教是什么", "expect_any": ["释迦牟尼", "觉悟", "教义", "修行"], "route": "basic", "category": "基本信息"},
+  {"q": "释迦牟尼佛是谁", "expect_any": ["释迦", "悉达多", "成道", "佛陀"], "route": "basic", "category": "基本信息"},
+  {"q": "佛教的起源", "expect_any": ["印度", "公元前", "释迦", "古印度"], "route": "basic", "category": "基本信息"},
+
+  {"_comment": "========== 二、核心教义概念（concept） =========="},
+  {"q": "四圣谛是什么", "expect_any": ["苦", "集", "灭", "道"], "route": "concept", "category": "教义概念"},
+  {"q": "什么是缘起性空", "expect_any": ["缘起", "空性", "因缘", "条件"], "route": "concept", "category": "教义概念"},
+  {"q": "什么是因果报应", "expect_any": ["因", "果", "业", "善恶"], "route": "concept", "category": "教义概念"},
+  {"q": "八正道有哪些", "expect_any": ["正见", "正思", "正语", "正业"], "route": "concept", "category": "教义概念"},
+  {"q": "什么是无我", "expect_any": ["无我", "五蕴", "自性", "空"], "route": "concept", "category": "教义概念"},
+  {"q": "什么是涅槃", "expect_any": ["涅槃", "解脱", "寂静", "烦恼"], "route": "concept", "category": "教义概念"},
+  {"q": "三法印是什么", "expect_any": ["无常", "无我", "涅槃", "寂静"], "route": "concept", "category": "教义概念"},
+
+  {"_comment": "========== 三、修行方法（practice） =========="},
+  {"q": "禅修怎么入门", "expect_any": ["坐姿", "呼吸", "打坐", "禅修"], "route": "practice", "category": "修行方法"},
+  {"q": "念佛的正确方法", "expect_any": ["念佛", "阿弥陀", "持名", "专注"], "route": "practice", "category": "修行方法"},
+  {"q": "如何持大悲咒", "expect_any": ["持咒", "大悲咒", "诵读", "功德"], "route": "practice", "category": "修行方法"},
+  {"q": "在家居士日常功课", "expect_any": ["早课", "晚课", "诵经", "念佛"], "route": "practice", "category": "修行方法"},
+  {"q": "如何发菩提心", "expect_any": ["菩提心", "发愿", "利他", "大乘"], "route": "practice", "category": "修行方法"},
+
+  {"_comment": "========== 四、经典文献（scripture） =========="},
+  {"q": "心经讲了什么", "expect_any": ["般若", "空", "色即是空", "五蕴"], "route": "scripture", "category": "经典文献"},
+  {"q": "金刚经的核心要义", "expect_any": ["般若", "空", "无相", "应无所住"], "route": "scripture", "category": "经典文献"},
+  {"q": "法华经主要内容", "expect_any": ["一乘", "方便", "佛性", "法华"], "route": "scripture", "category": "经典文献"},
+  {"q": "初学佛推荐读什么经", "expect_any": ["心经", "金刚经", "地藏经", "入门"], "route": "scripture", "category": "经典文献"},
+
+  {"_comment": "========== 五、宗派介绍（school） =========="},
+  {"q": "禅宗的历史和特点", "expect_any": ["达摩", "六祖", "直指人心", "见性成佛"], "route": "school", "category": "宗派"},
+  {"q": "净土宗的修行方法", "expect_any": ["念佛", "阿弥陀", "往生", "净土"], "route": "school", "category": "宗派"},
+  {"q": "密宗和显宗有什么区别", "expect_any": ["密宗", "显宗", "灌顶", "传承"], "route": "school", "category": "宗派"},
+  {"q": "天台宗的特点", "expect_any": ["天台", "止观", "智者大师", "法华"], "route": "school", "category": "宗派"},
+
+  {"_comment": "========== 六、戒律（precept） =========="},
+  {"q": "五戒是哪五戒", "expect_any": ["杀生", "偷盗", "邪淫", "妄语", "饮酒"], "route": "precept", "category": "戒律"},
+  {"q": "在家居士要持什么戒", "expect_any": ["五戒", "八关斋戒", "菩萨戒"], "route": "precept", "category": "戒律"},
+  {"q": "犯戒了怎么忏悔", "expect_any": ["忏悔", "悔过", "发愿", "不再犯"], "route": "precept", "category": "戒律"},
+
+  {"_comment": "========== 七、功德利益（effect） =========="},
+  {"q": "念佛有什么功德", "expect_any": ["功德", "往生", "消业", "福报"], "route": "effect", "category": "功德"},
+  {"q": "放生有什么利益", "expect_any": ["放生", "慈悲", "功德", "善业"], "route": "effect", "category": "功德"},
+  {"q": "诵经有什么好处", "expect_any": ["功德", "智慧", "消业", "利益"], "route": "effect", "category": "功德"},
+
+  {"_comment": "========== 八、仪轨礼仪（ritual） =========="},
+  {"q": "拜佛的正确方法", "expect_any": ["拜佛", "三拜", "合掌", "恭敬"], "route": "ritual", "category": "仪轨"},
+  {"q": "烧香有什么讲究", "expect_any": ["烧香", "供养", "三支", "礼仪"], "route": "ritual", "category": "仪轨"},
+
+  {"_comment": "========== 九、口语化/模糊表达 =========="},
+  {"q": "怎么才能成佛", "expect_any": ["修行", "觉悟", "菩提", "佛果"], "route": "practice", "category": "口语化"},
+  {"q": "佛教说的轮回真的存在吗", "expect_any": ["轮回", "六道", "因果", "业力"], "route": "concept", "category": "口语化"},
+  {"q": "学佛有什么好处", "expect_any": ["智慧", "慈悲", "安心", "解脱"], "route": "effect", "category": "口语化"},
+
+  {"_comment": "========== 十、综合问题 =========="},
+  {"q": "初学佛应该从哪里开始", "expect_any": ["入门", "皈依", "三宝", "经典"], "route": "basic", "category": "综合"},
+  {"q": "佛教各宗派有什么区别", "expect_any": ["禅宗", "净土", "密宗", "区别"], "route": "school", "category": "综合"}
+]

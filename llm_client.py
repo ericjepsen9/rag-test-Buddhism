@@ -4,11 +4,14 @@
 支持为「对话」和「知识库整理」分别配置不同的 LLM 提供商 / 模型 / API Key。
 所有 LLM 调用统一通过本模块获取 client，不再直接使用 rag_runtime_config 中的全局变量。
 """
+import base64
+import copy
 import os
 import threading
 from typing import Optional, Dict, Any
 
 _lock = threading.Lock()
+_persist_lock = threading.Lock()
 
 # 两个用途的独立配置
 # "chat"      — 用户对话（rag_answer, query_rewrite）
@@ -19,7 +22,9 @@ _llm_configs: Dict[str, Dict[str, Any]] = {
         "provider": "",
         "model": "",
         "api_base": "",
-        "api_key": "",      # 运行时存储，不持久化
+        "api_key": "",
+        "model_format": "standard",  # "standard" or "litellm" (provider:model_id)
+        "connection_verified": False,  # 测试连接成功后设为 True，配置变更时重置
     },
     "knowledge": {
         "enabled": False,
@@ -27,6 +32,8 @@ _llm_configs: Dict[str, Dict[str, Any]] = {
         "model": "",
         "api_base": "",
         "api_key": "",
+        "model_format": "standard",  # "standard" or "litellm" (provider:model_id)
+        "connection_verified": False,
     },
 }
 
@@ -47,6 +54,7 @@ def _init_from_legacy():
             cfg["api_base"] = OPENAI_API_BASE or ""
             cfg["api_key"] = key
             if OPENAI_API_BASE:
+                # 根据 api_base 猜测 provider
                 base_lower = OPENAI_API_BASE.lower()
                 if "deepseek" in base_lower:
                     cfg["provider"] = "deepseek"
@@ -67,6 +75,9 @@ def get_llm_config(purpose: str = "chat") -> Dict[str, Any]:
         "model": cfg["model"],
         "api_base": cfg["api_base"],
         "api_key_set": bool(cfg["api_key"]),
+        "model_format": cfg.get("model_format", "standard"),
+        "client_ready": _clients.get(purpose) is not None and _clients_checked.get(purpose, False),
+        "connection_verified": cfg.get("connection_verified", False),
     }
 
 
@@ -83,8 +94,12 @@ def update_llm_config(purpose: str, *,
                        model: str = "",
                        api_base: Optional[str] = None,
                        api_key: str = "",
-                       enabled: Optional[bool] = None) -> Dict[str, Any]:
-    """更新指定用途的 LLM 配置，并重置对应的 client 缓存。"""
+                       enabled: Optional[bool] = None,
+                       model_format: str = "") -> Dict[str, Any]:
+    """更新指定用途的 LLM 配置，并重置对应的 client 缓存。
+
+    api_base: None 表示不更新，"" 表示清空（恢复默认）。
+    """
     if purpose not in _llm_configs:
         return {"error": f"未知用途: {purpose}，支持 chat / knowledge"}
 
@@ -108,13 +123,16 @@ def update_llm_config(purpose: str, *,
             cfg["api_key"] = api_key
         if enabled is not None:
             cfg["enabled"] = bool(enabled)
-        # 重置 client 缓存
+        if model_format and model_format in ("standard", "litellm"):
+            cfg["model_format"] = model_format
+        # 配置变更，重置连接验证状态和 client 缓存
+        cfg["connection_verified"] = False
         _clients[purpose] = None
         _clients_checked[purpose] = False
+        # 同步到旧版全局变量（在锁内执行，防止并发更新竞争）
+        _sync_to_legacy(purpose)
 
-    # 同步到旧版全局变量（保持向后兼容）
-    _sync_to_legacy(purpose)
-    # 持久化
+    # 持久化（锁外执行，避免 I/O 阻塞其他配置读取）
     _persist_llm_configs()
 
     return {
@@ -124,6 +142,7 @@ def update_llm_config(purpose: str, *,
         "model": cfg["model"],
         "api_base": cfg["api_base"],
         "enabled": cfg["enabled"],
+        "model_format": cfg.get("model_format", "standard"),
     }
 
 
@@ -134,12 +153,13 @@ def get_client(purpose: str = "chat"):
     if purpose not in _llm_configs:
         purpose = "chat"
 
-    # 快速路径：已检查过直接返回
+    # 快速路径：已检查过直接返回（GIL 保证 dict 读安全）
     if _clients_checked[purpose]:
         return _clients[purpose]
 
-    # 慢路径：加锁创建 client
+    # 慢路径：加锁创建 client，防止并发重复创建
     with _lock:
+        # double-check：另一个线程可能已经完成创建
         if _clients_checked[purpose]:
             return _clients[purpose]
 
@@ -158,21 +178,48 @@ def get_client(purpose: str = "chat"):
             kwargs = {"api_key": api_key}
             if cfg["api_base"]:
                 kwargs["base_url"] = cfg["api_base"]
+            # 超时配置：连接 10s，读取 60s（LLM 生成可能较慢）
+            _timeout = float(os.environ.get("LLM_CLIENT_TIMEOUT", "60"))
+            kwargs["timeout"] = _timeout
             _clients[purpose] = OpenAI(**kwargs)
-        except Exception:
+        except Exception as e:
+            from rag_logger import log_error
+            log_error("llm_client", f"OpenAI client ({purpose}) 初始化失败: {e}")
             _clients[purpose] = None
+            # 不标记 checked，允许后续重试（可能是临时网络错误）
+            return None
         _clients_checked[purpose] = True
         return _clients[purpose]
 
 
 def get_model(purpose: str = "chat") -> str:
-    """获取指定用途的模型名称"""
-    return _llm_configs.get(purpose, _llm_configs["chat"])["model"]
+    """获取指定用途的模型名称。
+
+    当 model_format 为 "litellm" 时，返回 "provider:model" 格式
+    （适用于 LiteLLM 代理等需要 provider:model_id 格式的 API 端点）。
+    """
+    cfg = _llm_configs.get(purpose, _llm_configs["chat"])
+    model = cfg["model"]
+    if cfg.get("model_format") == "litellm" and model:
+        # LiteLLM 模式：模型名本身已包含 provider 前缀（如 openai/xxx）
+        # 仅当模型名中没有 "/" 也没有 ":" 时才拼接 provider
+        if "/" not in model and ":" not in model and cfg["provider"] and cfg["provider"] != "custom":
+            return f"{cfg['provider']}:{model}"
+    return model
 
 
 def is_enabled(purpose: str = "chat") -> bool:
     """指定用途的 LLM 是否启用"""
     return _llm_configs.get(purpose, _llm_configs["chat"])["enabled"]
+
+
+def mark_connection_verified(purpose: str = "chat", verified: bool = True):
+    """标记指定用途的连接验证状态（测试成功后调用）"""
+    cfg = _llm_configs.get(purpose)
+    if cfg:
+        with _lock:
+            cfg["connection_verified"] = verified
+        _persist_llm_configs()
 
 
 def reset_client(purpose: str = "chat"):
@@ -210,11 +257,13 @@ def _sync_to_legacy(purpose: str):
 
 
 def sync_from_legacy():
-    """从旧版全局变量同步到 llm_client（旧 API 调用后调用此函数保持一致）。"""
-    from rag_runtime_config import USE_OPENAI, OPENAI_MODEL, OPENAI_API_BASE
+    """从旧版全局变量同步到 llm_client（旧 API 调用后调用此函数保持一致）。
+    注意：不同步 enabled 字段。服务控制（start/stop）是运行时总开关，
+    不应改变模型配置页面的 enabled 状态。enabled 只通过模型配置页面保存来修改。
+    """
+    from rag_runtime_config import OPENAI_MODEL, OPENAI_API_BASE
     cfg = _llm_configs["chat"]
     with _lock:
-        cfg["enabled"] = USE_OPENAI
         cfg["model"] = OPENAI_MODEL
         cfg["api_base"] = OPENAI_API_BASE or ""
         key = os.environ.get("OPENAI_API_KEY", "").strip()
@@ -225,25 +274,43 @@ def sync_from_legacy():
 
 
 def _persist_llm_configs():
-    """持久化多 LLM 配置到文件"""
+    """持久化多 LLM 配置到文件。
+    使用 _persist_lock 序列化写入，用 _lock 短暂持锁读取快照，
+    避免并发 update_llm_config 导致后写入覆盖先写入的修改。"""
     import json
     from rag_runtime_config import BASE_DIR
     config_file = BASE_DIR / "data" / "llm_configs.json"
     config_file.parent.mkdir(parents=True, exist_ok=True)
+    # 短暂持锁读取配置快照
+    with _lock:
+        snapshot = copy.deepcopy(_llm_configs)
     data = {}
-    for purpose, cfg in _llm_configs.items():
+    for purpose, cfg in snapshot.items():
+        raw_key = cfg["api_key"] or ""
+        encoded_key = base64.b64encode(raw_key.encode()).decode() if raw_key else ""
         data[purpose] = {
             "enabled": cfg["enabled"],
             "provider": cfg["provider"],
             "model": cfg["model"],
             "api_base": cfg["api_base"],
-            # api_key 不持久化到文件（安全考虑）
             "api_key_set": bool(cfg["api_key"]),
+            "api_key_enc": encoded_key,
+            "model_format": cfg.get("model_format", "standard"),
+            "connection_verified": cfg.get("connection_verified", False),
         }
-    with _lock:
+    # 用独立的持久化锁序列化文件写入
+    with _persist_lock:
         tmp = config_file.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            os.chmod(str(tmp), 0o600)
+        except OSError:
+            pass
         tmp.replace(config_file)
+        try:
+            os.chmod(str(config_file), 0o600)
+        except OSError:
+            pass
 
 
 def load_persisted_llm_configs():
@@ -264,21 +331,35 @@ def load_persisted_llm_configs():
                 cfg["provider"] = saved.get("provider", "")
                 cfg["model"] = saved.get("model", "")
                 cfg["api_base"] = saved.get("api_base", "")
-                if purpose == "chat":
-                    cfg["api_key"] = os.environ.get("OPENAI_API_KEY", "").strip()
-                elif purpose == "knowledge":
-                    cfg["api_key"] = os.environ.get(
-                        "KNOWLEDGE_LLM_API_KEY",
-                        os.environ.get("OPENAI_API_KEY", "")
-                    ).strip()
+                cfg["model_format"] = saved.get("model_format", "standard")
+                cfg["connection_verified"] = saved.get("connection_verified", False)
+                # api_key: 优先从持久化文件恢复，其次从环境变量
+                enc_key = saved.get("api_key_enc", "")
+                if enc_key:
+                    try:
+                        cfg["api_key"] = base64.b64decode(enc_key).decode()
+                    except Exception:
+                        cfg["api_key"] = ""
+                if not cfg["api_key"]:
+                    if purpose == "chat":
+                        cfg["api_key"] = os.environ.get("OPENAI_API_KEY", "").strip()
+                    elif purpose == "knowledge":
+                        cfg["api_key"] = os.environ.get(
+                            "KNOWLEDGE_LLM_API_KEY",
+                            os.environ.get("OPENAI_API_KEY", "")
+                        ).strip()
                 loaded = True
         if loaded:
+            # 同步 chat 到旧版全局变量
             _sync_to_legacy("chat")
-            print(f"[INFO] 已加载多 LLM 配置: chat={_llm_configs['chat']['provider']}/{_llm_configs['chat']['model']}, "
-                  f"knowledge={_llm_configs['knowledge']['provider']}/{_llm_configs['knowledge']['model']}")
+            from rag_logger import log_event
+            log_event("llm_config", "已加载多 LLM 配置",
+                      meta={"chat": f"{_llm_configs['chat']['provider']}/{_llm_configs['chat']['model']}",
+                            "knowledge": f"{_llm_configs['knowledge']['provider']}/{_llm_configs['knowledge']['model']}"})
         return loaded
     except Exception as e:
-        print(f"[WARN] 加载多 LLM 配置失败: {e}")
+        from rag_logger import log_error
+        log_error("llm_client", f"加载多 LLM 配置失败: {e}")
         return False
 
 

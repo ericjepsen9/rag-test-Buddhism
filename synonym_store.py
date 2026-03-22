@@ -14,7 +14,7 @@ import json
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -34,7 +34,10 @@ def _load() -> Dict[str, Any]:
     try:
         with LEARNED_SYNONYMS_FILE.open("r", encoding="utf-8") as f:
             return json.load(f)
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as e:
+        from rag_logger import log_error
+        log_error("synonym_store", f"同义词文件加载失败: {e}",
+                  meta={"path": str(LEARNED_SYNONYMS_FILE)})
         return {}
 
 
@@ -46,12 +49,19 @@ def _save(data: Dict[str, Any]) -> None:
         with tmp.open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         tmp.replace(LEARNED_SYNONYMS_FILE)
-    except OSError:
+    except OSError as e:
         tmp.unlink(missing_ok=True)
+        from rag_logger import log_error
+        log_error("synonym_store", f"同义词文件写入失败: {e}",
+                  meta={"path": str(LEARNED_SYNONYMS_FILE)})
+        raise
 
 
 def save_learned(original_term: str, mapped_to: str) -> None:
-    """保存一条 LLM 改写成功的映射。"""
+    """保存一条 LLM 改写成功的映射。
+
+    如果该映射已存在，更新计数和最后使用时间。
+    """
     original_term = original_term.strip()
     mapped_to = mapped_to.strip()
     if not original_term or not mapped_to or original_term == mapped_to:
@@ -64,6 +74,7 @@ def save_learned(original_term: str, mapped_to: str) -> None:
             entry = data[original_term]
             entry["count"] = entry.get("count", 1) + 1
             entry["last_seen"] = now
+            # 如果映射目标变了（LLM 给出更好的映射），更新
             if entry.get("mapped_to") != mapped_to:
                 entry["mapped_to"] = mapped_to
         else:
@@ -73,7 +84,7 @@ def save_learned(original_term: str, mapped_to: str) -> None:
                 "first_seen": now,
                 "last_seen": now,
                 "source": "llm_rewrite",
-                "approved": False,
+                "approved": False,  # 默认未审核
             }
         _save(data)
 
@@ -117,6 +128,86 @@ def delete_learned(original_term: str) -> bool:
         del data[original_term]
         _save(data)
     return True
+
+
+def add_manual(original_term: str, mapped_to: str) -> Dict[str, Any]:
+    """手动添加一条同义词映射（来源标记为 manual）。
+
+    如果原始词已存在，返回错误提示。
+    """
+    original_term = original_term.strip()
+    mapped_to = mapped_to.strip()
+    if not original_term or not mapped_to:
+        return {"ok": False, "error": "原始词和映射词不能为空"}
+    if original_term == mapped_to:
+        return {"ok": False, "error": "原始词和映射词不能相同"}
+
+    now = datetime.now().isoformat(timespec="seconds")
+    with _lock:
+        data = _load()
+        if original_term in data:
+            return {"ok": False, "error": f"「{original_term}」已存在，请使用编辑功能修改"}
+        data[original_term] = {
+            "mapped_to": mapped_to,
+            "count": 0,
+            "first_seen": now,
+            "last_seen": now,
+            "source": "manual",
+            "approved": True,  # 手动添加默认已审核
+        }
+        _save(data)
+    return {"ok": True}
+
+
+def update_learned(original_term: str, mapped_to: str) -> Dict[str, Any]:
+    """编辑已有同义词的映射目标。"""
+    original_term = original_term.strip()
+    mapped_to = mapped_to.strip()
+    if not original_term or not mapped_to:
+        return {"ok": False, "error": "原始词和映射词不能为空"}
+
+    with _lock:
+        data = _load()
+        if original_term not in data:
+            return {"ok": False, "error": f"「{original_term}」不存在"}
+        data[original_term]["mapped_to"] = mapped_to
+        data[original_term]["last_seen"] = datetime.now().isoformat(timespec="seconds")
+        _save(data)
+    return {"ok": True}
+
+
+def batch_approve(terms: List[str]) -> Dict[str, Any]:
+    """批量审核通过多条同义词。"""
+    if not terms:
+        return {"ok": False, "error": "terms 列表为空"}
+    with _lock:
+        data = _load()
+        approved = []
+        for t in terms:
+            t = t.strip()
+            if t in data and not data[t].get("approved"):
+                data[t]["approved"] = True
+                approved.append(t)
+        if approved:
+            _save(data)
+    return {"ok": True, "approved_count": len(approved), "approved": approved}
+
+
+def batch_delete(terms: List[str]) -> Dict[str, Any]:
+    """批量删除多条同义词。"""
+    if not terms:
+        return {"ok": False, "error": "terms 列表为空"}
+    with _lock:
+        data = _load()
+        deleted = []
+        for t in terms:
+            t = t.strip()
+            if t in data:
+                del data[t]
+                deleted.append(t)
+        if deleted:
+            _save(data)
+    return {"ok": True, "deleted_count": len(deleted), "deleted": deleted}
 
 
 def get_static_synonyms() -> List[Dict[str, str]]:

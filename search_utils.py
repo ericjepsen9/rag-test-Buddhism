@@ -1,9 +1,11 @@
 import hashlib
 import math
+import os
 import re
 import sys
 import threading
 import unicodedata
+from collections import OrderedDict
 from functools import lru_cache
 from typing import Any, List, Dict, Tuple, Optional
 
@@ -33,6 +35,14 @@ def _get_jieba():
             _CUSTOM_WORDS = list(_BUDDHIST_VOCAB)
             for w in _CUSTOM_WORDS:
                 _jieba_mod.add_word(w)
+            # 加载导入时提取的自定义词（data/jieba_user_dict.txt）
+            try:
+                from keyword_extractor import load_jieba_user_dict
+                user_dict_count = load_jieba_user_dict(_jieba_mod)
+                if user_dict_count > 0:
+                    print(f"[INFO] 加载 jieba 用户词典: {user_dict_count} 条")
+            except ImportError:
+                pass
             _jieba = _jieba_mod
         except ImportError:
             print("[WARN] jieba 未安装，回退到 bigram 分词")
@@ -45,6 +55,32 @@ _RE_WHITESPACE = re.compile(r"\s+")
 _RE_TERM_SPLIT = re.compile(r"[\s,，;；、？?！!。]+")
 _RE_CJK_WORD = re.compile(r"^[\u4e00-\u9fff]+$")
 _SEPARATOR_CHARS = frozenset("=-_ ")
+
+# jieba 分词结果缓存：同一查询在 expand_synonyms / _extract_terms 中避免重复分词
+_JIEBA_CUT_CACHE: OrderedDict = OrderedDict()
+_JIEBA_CUT_CACHE_MAX = int(os.environ.get("RAG_JIEBA_CACHE_MAX", "2000"))
+_jieba_cut_lock = threading.Lock()
+
+
+def _jieba_cut_cached(text: str, mode: str = "default") -> list:
+    """缓存版 jieba 分词，避免相同文本重复分词。mode: 'default' | 'search'"""
+    cache_key = f"{mode}|{text}"
+    with _jieba_cut_lock:
+        if cache_key in _JIEBA_CUT_CACHE:
+            _JIEBA_CUT_CACHE.move_to_end(cache_key)
+            return _JIEBA_CUT_CACHE[cache_key]
+    j = _get_jieba()
+    if j is None:
+        return []
+    if mode == "search":
+        result = list(j.cut_for_search(text))
+    else:
+        result = list(j.cut(text))
+    with _jieba_cut_lock:
+        if len(_JIEBA_CUT_CACHE) >= _JIEBA_CUT_CACHE_MAX:
+            _JIEBA_CUT_CACHE.popitem(last=False)
+        _JIEBA_CUT_CACHE[cache_key] = result
+    return result
 
 
 # ===== 科判（层级大纲标记）解析 =====
@@ -1177,16 +1213,72 @@ def tokenize_chinese(text: str) -> List[str]:
     return tokens
 
 
+# ===== 查询词提取（jieba + bigram 混合）=====
+
+def _extract_terms_bigram(query: str) -> List[str]:
+    """原始 bigram 分词：按空格/标点分割，再对中文长词做 bigram 切分（jieba 不可用时的回退方案）"""
+    raw = [x for x in _RE_TERM_SPLIT.split(query.lower()) if x]
+    terms = []
+    seen = set()
+    for w in raw:
+        if w not in seen:
+            terms.append(w)
+            seen.add(w)
+        # 对纯中文且长度>=3的词做 bigram 切分，提高部分匹配能力
+        if len(w) >= 3 and _RE_CJK_WORD.match(w):
+            for i in range(len(w) - 1):
+                bg = w[i:i+2]
+                if bg not in seen:
+                    terms.append(bg)
+                    seen.add(bg)
+    return terms
+
+
+def _extract_terms_jieba(query: str) -> List[str]:
+    """jieba 分词 + bigram 补充：先用 jieba 精确分词，再对长中文词补充 bigram 提高部分匹配能力"""
+    q_lower = query.lower()
+    # jieba 切词（搜索引擎模式：更细粒度，召回更高）——使用缓存版避免重复分词
+    raw_words = _jieba_cut_cached(q_lower, "search")
+    terms = []
+    seen = set()
+    for w in raw_words:
+        w = w.strip()
+        if not w or w in seen:
+            continue
+        # 过滤纯标点和空白
+        if _RE_TERM_SPLIT.fullmatch(w):
+            continue
+        terms.append(w)
+        seen.add(w)
+        # 对 jieba 切出的长中文词仍做 bigram 补充，增加部分匹配能力
+        if len(w) >= 4 and _RE_CJK_WORD.match(w):
+            for i in range(len(w) - 1):
+                bg = w[i:i+2]
+                if bg not in seen:
+                    terms.append(bg)
+                    seen.add(bg)
+    return terms
+
+
+def _extract_terms(query: str) -> List[str]:
+    """从查询中提取搜索词：优先 jieba 分词，不可用时回退 bigram"""
+    if _get_jieba() is not None:
+        return _extract_terms_jieba(query)
+    return _extract_terms_bigram(query)
+
+
 # ===== Sigmoid 归一化 =====
 
 def _sigmoid_norm(raw_score: float) -> float:
-    """BM25 分数归一化：sigmoid(score/scale)"""
+    """BM25 分数归一化：sigmoid(score/scale)，钳位防 exp 溢出。
+    将 raw_score 量化到 2 位小数以提高 LRU 缓存命中率。"""
     z = round(raw_score / SIGMOID_SCALE, 2)
     return _sigmoid_cached(max(-20.0, min(20.0, z)))
 
 
 @lru_cache(maxsize=512)
 def _sigmoid_cached(z: float) -> float:
+    """LRU 缓存的 sigmoid：典型 BM25 分数分布在有限区间，命中率高。"""
     return 1.0 / (1.0 + math.exp(-z))
 
 

@@ -1,4 +1,5 @@
 import re
+import time
 import threading
 from collections import OrderedDict
 from typing import Dict, Any, List, Optional
@@ -9,6 +10,11 @@ from rag_runtime_config import (
     LLM_REWRITE_ENABLED,
 )
 from search_utils import detect_terms, uniq, split_multi_question
+try:
+    from clarification_engine import should_clarify, generate_clarification
+except ImportError:
+    should_clarify = None
+    generate_clarification = None
 
 # 路由专属检索扩展词：当检测到某路由时，补充高区分度关键词帮助 BM25 命中正确 chunk
 _ROUTE_EXPANSION = {
@@ -25,7 +31,12 @@ _ROUTE_EXPANSION = {
 # ===== LLM 查询改写 =====
 # 当静态同义词/别名无法识别用户术语时，用 LLM 将其映射到知识库已有概念
 
-_LLM_REWRITE_ENABLED = USE_OPENAI and LLM_REWRITE_ENABLED
+def _is_llm_rewrite_enabled():
+    """动态检查 LLM 改写是否启用（响应热更新）"""
+    import rag_runtime_config as _cfg
+    return getattr(_cfg, 'USE_OPENAI', False) and getattr(_cfg, 'LLM_REWRITE_ENABLED', False)
+
+_LLM_REWRITE_ENABLED = USE_OPENAI and LLM_REWRITE_ENABLED  # 保留作快速路径
 _LLM_REWRITE_CACHE_SIZE = 256
 
 # 构建知识库已知术语列表（告知 LLM 可以映射到哪些词）
@@ -40,27 +51,47 @@ _KNOWN_VOCAB = "、".join(sorted(set(_KNOWN_VOCAB_PARTS)))
 
 
 class _LRUCache:
-    """简易线程安全 LRU 缓存"""
-    def __init__(self, maxsize: int = 256):
+    """线程安全 LRU 缓存，支持 TTL 过期"""
+    def __init__(self, maxsize: int = 256, ttl: float = 3600.0):
         self._cache: OrderedDict = OrderedDict()
         self._maxsize = maxsize
+        self._ttl = ttl  # 秒，默认 1 小时
         self._lock = threading.Lock()
+        self._hits = 0
+        self._misses = 0
 
     def get(self, key: str) -> Optional[str]:
         with self._lock:
-            if key in self._cache:
+            entry = self._cache.get(key)
+            if entry is not None:
+                ts, value = entry
+                # TTL 过期检查
+                if time.monotonic() - ts > self._ttl:
+                    self._cache.pop(key, None)
+                    self._misses += 1
+                    return None
                 self._cache.move_to_end(key)
-                return self._cache[key]
+                self._hits += 1
+                return value
+            self._misses += 1
         return None
 
     def put(self, key: str, value: str) -> None:
+        now = time.monotonic()
         with self._lock:
             if key in self._cache:
+                self._cache[key] = (now, value)
                 self._cache.move_to_end(key)
             else:
                 if len(self._cache) >= self._maxsize:
                     self._cache.popitem(last=False)
-            self._cache[key] = value
+                self._cache[key] = (now, value)
+
+    @property
+    def stats(self) -> Dict[str, int]:
+        with self._lock:
+            return {"size": len(self._cache), "hits": self._hits,
+                    "misses": self._misses, "maxsize": self._maxsize}
 
 
 _llm_rewrite_cache = _LRUCache(_LLM_REWRITE_CACHE_SIZE)
@@ -73,23 +104,39 @@ def _should_trigger_llm_rewrite(question: str, products: list, projects: list,
                                  detected_routes: list, is_chitchat: bool,
                                  is_offtopic: bool) -> bool:
     """判断是否需要触发 LLM 查询改写。
-    只在静态手段完全失效时触发，避免不必要的 LLM 调用。
+
+    改进策略：不仅在静态手段完全失效时触发，还在以下「边界情况」触发：
+    1. 未识别到任何产品/项目且路由为 basic（最弱命中）
+    2. 问题含有模糊/口语化表达，但只命中了一个通用路由关键词
+    这样可以让更多「用词不精确」的查询被 LLM 纠正到规范术语。
     """
-    if not _LLM_REWRITE_ENABLED:
+    if not _is_llm_rewrite_enabled():
         return False
     if is_chitchat or is_offtopic:
         return False
+    # 问题太短（≤2字）或太长（>50字）不触发
     q = question.strip()
     if len(q) <= 2 or len(q) > 50:
         return False
-    if products or projects:
+    # 已识别到产品 + 明确路由 → 静态手段工作良好，不需要 LLM
+    if products and detected_routes and not (len(detected_routes) == 1 and detected_routes[0] == "basic"):
         return False
-    if detected_routes and not (len(detected_routes) == 1 and detected_routes[0] == "basic"):
+    # 已识别到项目 + 明确路由 → 不需要 LLM
+    if projects and detected_routes and not (len(detected_routes) == 1 and detected_routes[0] == "basic"):
         return False
+    # 如果只命中了 basic 路由或没命中任何路由 → 触发 LLM 改写
+    # 即使识别到了产品/项目，路由不明确也值得让 LLM 帮助理解用户意图
+    if not detected_routes or (len(detected_routes) == 1 and detected_routes[0] == "basic"):
+        return True
+    # 检查是否包含足够的已知路由关键词（命中数 >= 2 才认为静态手段可靠）
     q_lower = q.lower()
-    if any(kw in q_lower for kw in _ALL_ROUTE_KEYWORDS):
+    route_kw_hits = sum(1 for kw in _ALL_ROUTE_KEYWORDS if kw in q_lower)
+    if route_kw_hits >= 2:
         return False
-    return True
+    # 只命中一个路由关键词且没有产品/项目 → 边界情况，触发 LLM
+    if not products and not projects:
+        return True
+    return False
 
 
 def _llm_rewrite_query(question: str) -> str:
@@ -119,7 +166,7 @@ def _llm_rewrite_query(question: str) -> str:
         except Exception:
             client = None
     if client is None:
-        _llm_rewrite_cache.put(question, "")
+        # 不缓存：client 可能稍后变为可用（如用户配置了 API key）
         return ""
 
     system_prompt = (
@@ -158,7 +205,7 @@ def _llm_rewrite_query(question: str) -> str:
                       meta={"question": question[:100]})
         except Exception:
             pass
-        _llm_rewrite_cache.put(question, "")
+        # 不缓存 API 异常结果，允许后续重试（仅缓存 LLM 明确返回"无需改写"的情况）
         return ""
 
 
@@ -250,6 +297,40 @@ _CORRECTION_PREFIX = re.compile(
 _ALL_ROUTE_KEYWORDS: set = set()
 for _kws in QUESTION_ROUTES.values():
     _ALL_ROUTE_KEYWORDS.update(kw.lower() for kw in _kws)
+
+# 所有产品/项目别名汇集（小写），用于领域相关性检测
+_ALL_PRODUCT_TERMS: set = set()
+for _aliases in PRODUCT_ALIASES.values():
+    _ALL_PRODUCT_TERMS.update(a.lower() for a in _aliases)
+for _aliases in PROJECT_ALIASES.values():
+    _ALL_PRODUCT_TERMS.update(a.lower() for a in _aliases)
+
+
+def _has_domain_relevance(text: str) -> bool:
+    """检查查询是否包含任何佛教领域相关词汇。
+
+    用于拦截与佛教完全无关的短查询，
+    避免系统对无关查询强行返回知识库内容。
+    """
+    if not text:
+        return False
+    low = text.lower()
+
+    # 1. 包含佛教保护词
+    if _BUDDHISM_GUARD_PATTERNS.search(text):
+        return True
+
+    # 2. 包含路由关键词
+    for kw in _ALL_ROUTE_KEYWORDS:
+        if kw in low:
+            return True
+
+    # 3. 包含产品/项目名
+    for term in _ALL_PRODUCT_TERMS:
+        if term in low:
+            return True
+
+    return False
 
 # 预计算小写路由关键词
 _QUESTION_ROUTES_LOWER = {
@@ -475,6 +556,12 @@ def rewrite_query(question: str, history: Optional[List[Dict]] = None,
         and not _BUDDHISM_GUARD_PATTERNS.search(raw)
     )
 
+    # 领域无关兜底检测：短查询（≤6字）且不含任何佛教领域词汇时也标记为 offtopic
+    # 防止完全无关查询被默认路由到 basic 并返回知识库内容
+    if not is_offtopic and not chitchat and len(raw) <= 6:
+        if not _has_domain_relevance(raw):
+            is_offtopic = True
+
     # 清理纠正前缀
     cleaned = _CORRECTION_PREFIX.sub("", raw).strip() if _CORRECTION_PREFIX.search(raw) else raw
 
@@ -546,6 +633,28 @@ def rewrite_query(question: str, history: Optional[List[Dict]] = None,
         history_summary, history_pairs = _build_history_summary_and_pairs(history)
         last_user_q = history_ctx.get("last_user_q", "")
 
+    # ---- 消歧引导：查询模糊且缺乏上下文时生成候选选项 ----
+    clarification = None
+    needs_clarification = False
+    if should_clarify is not None and not chitchat and not is_offtopic:
+        history_product = history_ctx.get("product", "")
+        history_route = history_ctx.get("route", "")
+        if should_clarify(
+            raw, products, projects, detected_routes,
+            history_product=history_product,
+            history_route=history_route,
+            is_chitchat=chitchat,
+            is_offtopic=is_offtopic,
+        ):
+            clarification = generate_clarification(
+                raw,
+                products=products,
+                projects=projects,
+                history_product=history_product,
+            )
+            if clarification:
+                needs_clarification = True
+
     return {
         "original": q,
         "raw_input": raw,
@@ -565,4 +674,6 @@ def rewrite_query(question: str, history: Optional[List[Dict]] = None,
         "history_pairs": history_pairs,
         "last_user_q": last_user_q,
         "last_routed_q": history_ctx.get("last_routed_q", ""),
+        "needs_clarification": needs_clarification,
+        "clarification": clarification,
     }

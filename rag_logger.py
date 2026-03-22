@@ -1,18 +1,38 @@
 from __future__ import annotations
 
+import contextvars
 import json
 import os
+import re
 import threading
+import uuid
 from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+# ===== 请求级 Trace ID =====
+# 使用 contextvars 实现跨异步/线程的请求追踪
+_trace_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("trace_id", default="")
+
+
+def set_trace_id(trace_id: str = "") -> str:
+    """设置当前请求的 trace_id，返回实际使用的 ID"""
+    tid = trace_id or uuid.uuid4().hex[:12]
+    _trace_id_var.set(tid)
+    return tid
+
+
+def get_trace_id() -> str:
+    """获取当前请求的 trace_id"""
+    return _trace_id_var.get("")
 
 BASE_DIR = Path(__file__).resolve().parent
 LOG_DIR = BASE_DIR / "logs"
 QA_LOG = LOG_DIR / "qa_log.jsonl"
 MISS_LOG = LOG_DIR / "miss_log.jsonl"
 ERROR_LOG = LOG_DIR / "error_log.jsonl"
+EVENT_LOG = LOG_DIR / "event_log.jsonl"
 
 # 日志文件大小上限（默认 10MB），超过后轮转
 def _safe_int(env_key: str, default: int) -> int:
@@ -25,6 +45,25 @@ LOG_MAX_BYTES = _safe_int("LOG_MAX_BYTES", 10 * 1024 * 1024)
 LOG_BACKUP_COUNT = _safe_int("LOG_BACKUP_COUNT", 3)
 
 _write_lock = threading.Lock()
+
+# ===== PII 脱敏 =====
+_RE_PHONE = re.compile(r'(?<!\d)(1[3-9]\d{9})(?!\d)')
+_RE_IDCARD = re.compile(r'(?<!\d)(\d{6})\d{6,8}(\d{4}[0-9Xx])(?!\d)')
+_RE_EMAIL = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
+_RE_NAME = re.compile(r'(?:我(?:叫|是|姓)|(?:姓名|名字)[是为：:]\s*)([\u4e00-\u9fff]{2,4})')
+
+_SANITIZE_ENABLED = os.environ.get("RAG_LOG_SANITIZE", "1").strip() not in ("0", "false", "")
+
+
+def _sanitize_pii(text: str) -> str:
+    """对文本中的手机号、身份证、邮箱、自报姓名进行脱敏"""
+    if not text or not _SANITIZE_ENABLED:
+        return text
+    text = _RE_PHONE.sub(lambda m: m.group(1)[:3] + '****' + m.group(1)[-4:], text)
+    text = _RE_IDCARD.sub(lambda m: m.group(1) + '******' + m.group(2), text)
+    text = _RE_EMAIL.sub('***@***.***', text)
+    text = _RE_NAME.sub(lambda m: m.group(0).replace(m.group(1), '*' * len(m.group(1))), text)
+    return text
 
 
 def _ensure_dir() -> None:
@@ -54,8 +93,10 @@ def _rotate_if_needed(path: Path) -> None:
 
 def _append_jsonl(path: Path, payload: Dict[str, Any]) -> None:
     _ensure_dir()
+    trace_id = get_trace_id()
     row = {
         "ts": datetime.now().isoformat(timespec="seconds"),
+        **({"trace_id": trace_id} if trace_id else {}),
         **payload,
     }
     line = json.dumps(row, ensure_ascii=False) + "\n"
@@ -79,9 +120,9 @@ def log_qa(
     meta: Optional[Dict[str, Any]] = None,
 ) -> None:
     payload: Dict[str, Any] = {
-        "question": question,
-        "rewritten_query": rewritten_query or "",
-        "answer": answer,
+        "question": _sanitize_pii(question),
+        "rewritten_query": _sanitize_pii(rewritten_query or ""),
+        "answer": _sanitize_pii(answer),
         "hit": bool(hit),
         "latency_ms": latency_ms,
         "matched_sources": matched_sources or [],
@@ -92,8 +133,8 @@ def log_qa(
         _append_jsonl(
             MISS_LOG,
             {
-                "question": question,
-                "rewritten_query": rewritten_query or "",
+                "question": _sanitize_pii(question),
+                "rewritten_query": _sanitize_pii(rewritten_query or ""),
                 "meta": meta or {},
             },
         )
@@ -116,6 +157,14 @@ def log_error(stage: str, error: str, *, meta: Optional[Dict[str, Any]] = None) 
             print(f"[LOG_ERROR_FAIL] stage={stage} error={error}", file=sys.stderr)
         except Exception:
             pass
+
+
+def log_event(stage: str, message: str, *, meta: Optional[Dict[str, Any]] = None) -> None:
+    """记录 info 级别事件（启动、关闭、配置变更等）"""
+    try:
+        _append_jsonl(EVENT_LOG, {"stage": stage, "message": message, "meta": meta or {}})
+    except Exception:
+        print(f"[EVENT] {stage}: {message}")
 
 
 def read_recent(path: Path, limit: int = 20) -> list[Dict[str, Any]]:

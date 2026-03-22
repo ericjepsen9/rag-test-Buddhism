@@ -32,6 +32,7 @@ import sys
 import json
 import re
 import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 
@@ -90,6 +91,7 @@ _store_cache: Dict[str, tuple] = {}   # {product: (index, docs, mtime)}
 _store_lock = threading.Lock()
 _store_product_locks: Dict[str, threading.Lock] = {}
 _store_product_locks_guard = threading.Lock()
+_STORE_PRODUCT_LOCKS_MAX = 100  # prevent unbounded growth
 _reranker = None  # cross-encoder reranker model cache
 
 # Module-level thread pool for parallel search
@@ -231,6 +233,18 @@ def get_model():
     if _model is None:
         with _model_lock:
             if _model is None:
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        gpu_name = torch.cuda.get_device_name(0)
+                        if DEBUG:
+                            print(f"[INFO] CUDA available, using GPU: {gpu_name}")
+                    else:
+                        if DEBUG:
+                            print("[INFO] CUDA not available, model will run on CPU")
+                except ImportError:
+                    if DEBUG:
+                        print("[INFO] PyTorch not installed, cannot detect GPU")
                 from sentence_transformers import SentenceTransformer
                 _model = SentenceTransformer("BAAI/bge-m3")
     return _model
@@ -256,28 +270,35 @@ def save_answer(text: str):
 # Embedding cache
 # ===================================================================
 
-_embed_cache: Dict[str, np.ndarray] = {}
+_embed_cache: OrderedDict = OrderedDict()
 _EMBED_CACHE_MAX = 1024
+_embed_cache_lock = threading.Lock()
 
 
 def embed_query(text: str) -> np.ndarray:
-    cached = _embed_cache.get(text)
-    if cached is not None:
-        return cached.copy()
+    with _embed_cache_lock:
+        cached = _embed_cache.get(text)
+        if cached is not None:
+            _embed_cache.move_to_end(text)  # LRU: mark as recently used
+            return cached.copy()
 
     model = get_model()
     vec = model.encode([text], normalize_embeddings=False)
     vec = np.asarray(vec, dtype="float32")
     get_faiss().normalize_L2(vec)
 
-    # Write to cache (evict oldest when full)
-    if len(_embed_cache) >= _EMBED_CACHE_MAX:
-        try:
-            oldest = next(iter(_embed_cache))
-            _embed_cache.pop(oldest, None)
-        except StopIteration:
-            pass
-    _embed_cache[text] = vec.copy()
+    # Write to cache with LRU eviction (thread-safe)
+    with _embed_cache_lock:
+        if text in _embed_cache:
+            _embed_cache[text] = vec.copy()
+            _embed_cache.move_to_end(text)
+        else:
+            while len(_embed_cache) >= _EMBED_CACHE_MAX:
+                try:
+                    _embed_cache.popitem(last=False)
+                except KeyError:
+                    break
+            _embed_cache[text] = vec.copy()
     return vec
 
 
@@ -296,9 +317,49 @@ def _evict_cache(cache: dict, max_size: int) -> None:
 
 
 def invalidate_store_cache(product: str) -> None:
-    """Thread-safe store cache invalidation."""
+    """Thread-safe store cache invalidation (index + BM25)."""
     with _store_lock:
         _store_cache.pop(product, None)
+    # Also clear BM25 corpus cache to avoid stale DF/avgDL data
+    try:
+        from search_utils import invalidate_bm25_cache
+        invalidate_bm25_cache(product)
+    except Exception:
+        pass
+
+
+def _auto_rebuild_index(product: str, docs: List[Dict], store_dir: Path):
+    """Auto-rebuild FAISS index when docs.jsonl count != index.faiss vector count.
+    Uses the already-loaded embed model. Returns new index or None on failure."""
+    try:
+        texts = [(d.get("text") or "").strip() for d in docs]
+        texts = [t if t else " " for t in texts]  # placeholder for empty text
+        model = get_model()
+        vec = model.encode(texts, normalize_embeddings=False)
+        if isinstance(vec, dict):
+            vecs = vec.get("dense_vecs") or vec.get("dense") or vec.get("embeddings")
+        else:
+            vecs = vec
+        if vecs is None:
+            log_error("index_rebuild", "Failed to get vectors",
+                      meta={"product": product})
+            return None
+        vecs = np.asarray(vecs, dtype="float32")
+        faiss = get_faiss()
+        faiss.normalize_L2(vecs)
+        dim = vecs.shape[1]
+        index = faiss.IndexFlatIP(dim)
+        index.add(vecs)
+        # Write back to disk
+        index_path = store_dir / "index.faiss"
+        faiss.write_index(index, str(index_path))
+        if DEBUG:
+            print(f"[INFO] Auto-rebuilt index for {product}: {len(docs)} vectors, dim={dim}")
+        return index
+    except Exception as e:
+        log_error("index_rebuild", f"Auto-rebuild failed: {e}",
+                  meta={"product": product})
+        return None
 
 
 def load_store(product: str):
@@ -318,6 +379,12 @@ def load_store(product: str):
     # Per-product lock to prevent concurrent loading of same product
     with _store_product_locks_guard:
         if product not in _store_product_locks:
+            # Prevent unbounded growth: evict locks for products not in cache
+            if len(_store_product_locks) >= _STORE_PRODUCT_LOCKS_MAX:
+                cached_products = set(_store_cache.keys())
+                for k in list(_store_product_locks):
+                    if k not in cached_products:
+                        del _store_product_locks[k]
             _store_product_locks[product] = threading.Lock()
         product_lock = _store_product_locks[product]
 
@@ -355,6 +422,12 @@ def load_store(product: str):
         if index_path.exists():
             try:
                 index = get_faiss().read_index(str(index_path))
+                # Auto-rebuild if doc count != index vector count
+                if index.ntotal != len(docs):
+                    if DEBUG:
+                        print(f"[INFO] Index/doc count mismatch for {product}: "
+                              f"index={index.ntotal}, docs={len(docs)}, rebuilding...")
+                    index = _auto_rebuild_index(product, docs, store_dir)
             except Exception as e:
                 log_error("load_store", f"Index load failed: {e}",
                           meta={"product": product, "index_path": str(index_path)})
@@ -1135,14 +1208,20 @@ def openai_rag_generate(question: str, context: str, route: str,
 # LLM fallback / static fallback
 # ===================================================================
 
-_KNOWLEDGE_TOPICS = (
-    "佛教教义（四圣谛、八正道、十二因缘、缘起性空等）、"
-    "修行方法（禅修、念佛、持咒、止观等）、"
-    "佛教经典（心经、金刚经、法华经、入行论等）、"
-    "宗派传承（禅宗、净土宗、天台宗、藏传佛教等）、"
-    "佛教概念（菩提心、佛性、般若、涅槃等）、"
-    "佛教历史与仪轨"
-)
+def _build_knowledge_topics() -> str:
+    """Dynamically build knowledge topics from PRODUCT_ALIASES instead of hardcoding."""
+    prod_names = [aliases[0] for aliases in PRODUCT_ALIASES.values() if aliases]
+    prod_hint = "、".join(prod_names) if prod_names else "佛学主题"
+    return (
+        f"{prod_hint}等相关的佛教教义（四圣谛、八正道、十二因缘、缘起性空等）、"
+        "修行方法（禅修、念佛、持咒、止观等）、"
+        "佛教经典（心经、金刚经、法华经、入行论等）、"
+        "宗派传承（禅宗、净土宗、天台宗、藏传佛教等）、"
+        "佛教概念（菩提心、佛性、般若、涅槃等）、"
+        "佛教历史与仪轨"
+    )
+
+_KNOWLEDGE_TOPICS = _build_knowledge_topics()
 
 
 def _llm_fallback_answer(question: str, route: str, hits: list) -> str:
