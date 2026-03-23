@@ -5,66 +5,301 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>佛教知识 RAG 后台管理</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 24px; background:#f7f7f9; color:#222; }
-    .card { background:#fff; border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 2px 8px rgba(0,0,0,.06); }
-    button { padding:8px 14px; border:none; border-radius:8px; cursor:pointer; }
-    input { padding:8px; width:240px; }
-    pre { white-space:pre-wrap; word-break:break-word; background:#fafafa; padding:12px; border-radius:8px; }
+    /* ===== CSS 变量 ===== */
+    :root {
+      --primary:      #5b6bf0;
+      --primary-dark: #4558e0;
+      --success:      #22c55e;
+      --danger:       #ef4444;
+      --warning:      #f59e0b;
+      --info:         #3b82f6;
+      --bg:           #f4f6f9;
+      --card:         #ffffff;
+      --border:       #e2e5ea;
+      --text:         #1e2330;
+      --text-sec:     #6b7280;
+      --radius:       12px;
+      --nav-h:        56px;
+    }
+
+    /* ===== 重置 & 基础 ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ===== 顶部导航栏 ===== */
+    .topbar {
+      position: sticky; top: 0; z-index: 100;
+      height: var(--nav-h);
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center;
+      padding: 0 24px;
+      gap: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    .topbar-title {
+      font-size: 16px; font-weight: 700; color: var(--primary);
+      margin-right: 8px; white-space: nowrap;
+    }
+
+    /* ===== Tab 导航 ===== */
+    .tabs {
+      display: flex; gap: 2px; overflow-x: auto;
+      scrollbar-width: none; flex: 1;
+    }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab-btn {
+      padding: 6px 14px;
+      border: none; background: transparent;
+      border-radius: 8px;
+      font-size: 13px; font-weight: 500;
+      color: var(--text-sec);
+      cursor: pointer; white-space: nowrap;
+      transition: background .15s, color .15s;
+    }
+    .tab-btn:hover { background: var(--bg); color: var(--text); }
+    .tab-btn.active {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    /* ===== Tab 内容区 ===== */
+    .tab-panel { display: none; padding: 24px; }
+    .tab-panel.active { display: block; }
+
+    /* ===== 卡片 ===== */
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 4px 12px rgba(0,0,0,.06);
+    }
+    .card-title {
+      font-size: 15px; font-weight: 700;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ===== 按钮 ===== */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 16px;
+      border: none; border-radius: 8px;
+      font-size: 13px; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary  { background: var(--primary);  color: #fff; }
+    .btn-primary:hover:not(:disabled)  { background: var(--primary-dark); }
+    .btn-success  { background: var(--success);  color: #fff; }
+    .btn-danger   { background: var(--danger);   color: #fff; }
+    .btn-warning  { background: var(--warning);  color: #fff; }
+    .btn-info     { background: var(--info);     color: #fff; }
+    .btn-outline  {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-outline:hover { background: var(--bg); }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+    /* ===== 表单元素 ===== */
+    label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 5px; }
+    input[type="text"],
+    input[type="password"],
+    input[type="url"],
+    input[type="number"],
+    select, textarea {
+      width: 100%; padding: 8px 12px;
+      border: 1px solid var(--border); border-radius: 8px;
+      font-size: 14px; font-family: inherit;
+      background: #fff; color: var(--text);
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(91,107,240,.12);
+    }
+    textarea { resize: vertical; min-height: 100px; line-height: 1.5; }
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%236b7280' stroke-width='1.5'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 12px center;
+      padding-right: 32px; appearance: none;
+    }
+
+    /* ===== 表格 ===== */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th {
+      background: var(--bg); text-align: left;
+      padding: 8px 12px; font-weight: 600;
+      border-bottom: 2px solid var(--border);
+      white-space: nowrap;
+    }
+    td {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafbff; }
+
+    /* ===== 行工具 ===== */
+    .row-flex { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+    .row-flex > * { flex: 1; min-width: 140px; }
+    .row-flex > .btn { flex: 0 0 auto; margin-bottom: 0; }
+
+    /* ===== 状态提示 ===== */
+    .badge {
+      display: inline-block; padding: 2px 8px;
+      border-radius: 12px; font-size: 11px; font-weight: 600;
+    }
+    .badge-success { background: #dcfce7; color: #16a34a; }
+    .badge-danger  { background: #fee2e2; color: #dc2626; }
+    .badge-info    { background: #dbeafe; color: #1d4ed8; }
+    .badge-warn    { background: #fef9c3; color: #a16207; }
+
+    /* ===== 输出 pre ===== */
+    pre.out {
+      white-space: pre-wrap; word-break: break-word;
+      background: #f8f9fb; padding: 12px; border-radius: 8px;
+      font-size: 12px; font-family: 'Menlo', 'Consolas', monospace;
+      border: 1px solid var(--border);
+      max-height: 400px; overflow-y: auto;
+      margin-top: 12px;
+    }
+
+    /* ===== 空状态 ===== */
+    .empty { text-align: center; padding: 40px; color: var(--text-sec); font-size: 13px; }
+
+    /* ===== 弹窗 ===== */
+    .modal-bg {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.4); z-index: 200;
+      align-items: center; justify-content: center;
+    }
+    .modal-bg.open { display: flex; }
+    .modal {
+      background: #fff; border-radius: var(--radius);
+      padding: 24px; width: min(600px, 95vw);
+      max-height: 90vh; overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,.2);
+    }
+    .modal-title {
+      font-size: 16px; font-weight: 700;
+      margin-bottom: 16px; padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .modal-close { cursor: pointer; font-size: 20px; color: var(--text-sec); line-height: 1; }
+    .modal-close:hover { color: var(--danger); }
+    .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+
+    /* ===== Toast ===== */
+    #toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #1e2330; color: #fff;
+      padding: 10px 20px; border-radius: 8px;
+      font-size: 13px; font-weight: 500;
+      opacity: 0; transition: opacity .25s;
+      z-index: 999; pointer-events: none; white-space: nowrap;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ===== 加载动画 ===== */
+    .spin {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin .6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
-  <h1>佛教知识 RAG 后台管理</h1>
 
-  <div class="card">
-    <h2>知识库产品列表</h2>
-    <button onclick="loadProducts()">刷新</button>
-    <pre id="products">点击刷新查看</pre>
+  <!-- 顶部导航栏 -->
+  <div class="topbar">
+    <span class="topbar-title">☸ RAG 后台</span>
+    <nav class="tabs" id="mainTabs">
+      <button class="tab-btn active" onclick="showTab('dashboard')">仪表盘</button>
+      <button class="tab-btn" onclick="showTab('index')">索引管理</button>
+      <button class="tab-btn" onclick="showTab('logs')">日志</button>
+      <button class="tab-btn" onclick="showTab('knowledge')">知识库</button>
+      <button class="tab-btn" onclick="showTab('synonyms')">同义词</button>
+      <button class="tab-btn" onclick="showTab('keywords')">关键词</button>
+      <button class="tab-btn" onclick="showTab('import')">知识导入</button>
+      <button class="tab-btn" onclick="showTab('system')">系统</button>
+    </nav>
   </div>
 
-  <div class="card">
-    <h2>一键重建索引</h2>
-    <input id="product" placeholder="例如 buddhism" value="buddhism">
-    <button onclick="rebuild()">开始重建</button>
-    <pre id="rebuild_out">等待执行</pre>
+  <!-- Tab 内容区 -->
+  <div id="tab-dashboard" class="tab-panel active">
+    <div class="card"><div class="card-title">仪表盘</div><div class="empty">Phase 1C 将填充内容</div></div>
   </div>
 
-  <div class="card">
-    <h2>最近问答日志</h2>
-    <button onclick="loadLogs('qa')">刷新问答</button>
-    <pre id="qa_logs">点击刷新查看</pre>
+  <div id="tab-index" class="tab-panel">
+    <div class="card"><div class="card-title">索引管理</div><div class="empty">Phase 2A 将填充内容</div></div>
   </div>
 
-  <div class="card">
-    <h2>最近未命中</h2>
-    <button onclick="loadLogs('miss')">刷新未命中</button>
-    <pre id="miss_logs">点击刷新查看</pre>
+  <div id="tab-logs" class="tab-panel">
+    <div class="card"><div class="card-title">日志</div><div class="empty">Phase 2B 将填充内容</div></div>
   </div>
+
+  <div id="tab-knowledge" class="tab-panel">
+    <div class="card"><div class="card-title">知识库</div><div class="empty">Phase 3A 将填充内容</div></div>
+  </div>
+
+  <div id="tab-synonyms" class="tab-panel">
+    <div class="card"><div class="card-title">同义词</div><div class="empty">Phase 4A 将填充内容</div></div>
+  </div>
+
+  <div id="tab-keywords" class="tab-panel">
+    <div class="card"><div class="card-title">关键词</div><div class="empty">Phase 5A 将填充内容</div></div>
+  </div>
+
+  <div id="tab-import" class="tab-panel">
+    <div class="card"><div class="card-title">知识导入</div><div class="empty">Phase 6A 将填充内容</div></div>
+  </div>
+
+  <div id="tab-system" class="tab-panel">
+    <div class="card"><div class="card-title">系统</div><div class="empty">Phase 7A 将填充内容</div></div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"></div>
 
   <script>
-    async function loadProducts() {
-      const r = await fetch('/admin/products');
-      const j = await r.json();
-      document.getElementById('products').textContent = JSON.stringify(j, null, 2);
+    /* ===== Tab 切换 ===== */
+    function showTab(name) {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+      event.currentTarget.classList.add('active');
     }
 
-    async function rebuild() {
-      const product = document.getElementById('product').value.trim();
-      const out = document.getElementById('rebuild_out');
-      out.textContent = '执行中...';
-      const r = await fetch('/admin/rebuild', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({product, timeout_sec: 180})
-      });
-      const j = await r.json();
-      out.textContent = JSON.stringify(j, null, 2);
-    }
-
-    async function loadLogs(kind) {
-      const r = await fetch('/admin/logs/' + kind + '?limit=20');
-      const j = await r.json();
-      document.getElementById(kind + '_logs').textContent = JSON.stringify(j, null, 2);
+    /* ===== Toast ===== */
+    let _toastTimer;
+    function toast(msg, duration = 2500) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(() => el.classList.remove('show'), duration);
     }
   </script>
+
 </body>
 </html>
