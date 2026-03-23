@@ -878,7 +878,29 @@
       <!-- 预览文件 Tab -->
       <div id="impPreviewTabs" style="display:none">
         <div style="display:flex;gap:4px;margin-bottom:10px" id="impFileTabs"></div>
-        <pre class="out" id="impFileContent" style="max-height:500px"></pre>
+        <pre class="out" id="impFileContent" style="max-height:400px"></pre>
+      </div>
+
+      <!-- 精炼区（预览后才出现） -->
+      <div id="impRefineArea" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px">修改意见
+          <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:6px">
+            描述需要调整的内容，LLM 将据此修订
+          </span>
+        </div>
+        <textarea id="impFeedback" style="min-height:80px;margin-bottom:10px"
+                  placeholder="例如：将「四圣谛」的解释补充得更详细，并增加相关经文引用"></textarea>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-warning" id="impRefineBtn" onclick="doRefine()">
+            ↺ 精炼修订
+          </button>
+          <button class="btn btn-success" id="impCommitBtn" onclick="doCommit()">
+            ✓ 确认写入
+          </button>
+          <label style="margin:0;font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
+            <input type="checkbox" id="impCommitBuild" checked> 写入后构建索引
+          </label>
+        </div>
       </div>
     </div>
 
@@ -1325,17 +1347,16 @@
         const fileKeys = Object.keys(preview);
         if (fileKeys.length) {
           _impPreviewData = preview;
-          const tabs = document.getElementById('impFileTabs');
-          tabs.innerHTML = fileKeys.map((k, i) =>
-            `<button class="btn btn-sm ${i===0?'btn-primary':'btn-outline'}"
-                     onclick="showImpPreviewFile('${k}', this)">${_esc(k)}</button>`
-          ).join('');
-          document.getElementById('impPreviewTabs').style.display = '';
-          showImpPreviewFile(fileKeys[0], tabs.children[0]);
+          _updatePreviewTabs(preview);
+          // 干运行：展示精炼区
+          if (dryRun) {
+            document.getElementById('impRefineArea').style.display = '';
+          }
         }
 
         if (!dryRun && d.ok) {
           toast('导入成功 ✓');
+          document.getElementById('impRefineArea').style.display = 'none';
           loadDashboard();
         }
       } catch(e) {
@@ -1349,11 +1370,117 @@
       }
     }
 
+    function _updatePreviewTabs(preview) {
+      const fileKeys = Object.keys(preview);
+      const tabs = document.getElementById('impFileTabs');
+      tabs.innerHTML = fileKeys.map((k, i) =>
+        `<button class="btn btn-sm ${i===0?'btn-primary':'btn-outline'}"
+                 onclick="showImpPreviewFile('${k}', this)">${_esc(k)}</button>`
+      ).join('');
+      document.getElementById('impPreviewTabs').style.display = '';
+      if (fileKeys.length) showImpPreviewFile(fileKeys[0], tabs.children[0]);
+    }
+
     function showImpPreviewFile(key, btn) {
       if (!_impPreviewData) return;
       document.getElementById('impFileContent').textContent = _impPreviewData[key] || '（空）';
       document.querySelectorAll('#impFileTabs button').forEach(b =>
         b.className = b === btn ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-outline');
+    }
+
+    async function doRefine() {
+      const feedback = document.getElementById('impFeedback').value.trim();
+      if (!feedback) { toast('请填写修改意见'); return; }
+      if (!_impPreviewData) { toast('请先生成预览'); return; }
+      const type = document.getElementById('impType').value;
+      const id   = document.getElementById('impId').value.trim();
+      const raw_text = document.getElementById('impContent').value.trim();
+      const btn = document.getElementById('impRefineBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> 修订中…';
+      document.getElementById('impResultSummary').innerHTML =
+        '<span style="color:var(--text-sec)">LLM 正在根据意见修订，请稍候…</span>';
+      try {
+        const r = await apiFetch('/admin/import_knowledge/refine', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type, id,
+            feedback,
+            current: _impPreviewData,
+            raw_text
+          })
+        });
+        const d = await r.json();
+        if (!d.ok) {
+          document.getElementById('impResultSummary').innerHTML =
+            `<span style="color:var(--danger)">修订失败：${_esc(d.detail || '')}</span>`;
+          toast('修订失败', 4000); return;
+        }
+        _impPreviewData = d.preview || _impPreviewData;
+        _updatePreviewTabs(_impPreviewData);
+        const filesInfo = Object.entries(d.files_generated || {})
+          .map(([f, sz]) => `<span class="badge badge-info">${_esc(f)} ${_fmtSize(sz)}</span>`)
+          .join(' ');
+        document.getElementById('impResultSummary').innerHTML =
+          `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+             <span class="badge badge-success">修订完成</span>
+             ${filesInfo}
+             <span style="font-size:12px;color:var(--text-sec)">模型：${_esc(d.model||'')}</span>
+           </div>`;
+        document.getElementById('impFeedback').value = '';
+        toast('修订完成 ✓');
+      } catch(e) {
+        document.getElementById('impResultSummary').innerHTML =
+          `<span style="color:var(--danger)">请求失败：${_esc(e.message)}</span>`;
+        if (e.message !== '403') toast('修订失败：' + e.message, 4000);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '↺ 精炼修订';
+      }
+    }
+
+    async function doCommit() {
+      if (!_impPreviewData || !_impPreviewData.main_txt) {
+        toast('请先生成预览内容再提交'); return;
+      }
+      const type  = document.getElementById('impType').value;
+      const id    = document.getElementById('impId').value.trim();
+      const build = document.getElementById('impCommitBuild').checked;
+      if (!confirm(`确认将当前预览内容写入知识库？\n类型：${type}${id ? '\nID：' + id : ''}`)) return;
+      const btn = document.getElementById('impCommitBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> 写入中…';
+      try {
+        const r = await apiFetch('/admin/import_knowledge/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, id, content: _impPreviewData, build })
+        });
+        const d = await r.json();
+        if (d.ok) {
+          const builtBadge = d.built_index
+            ? '<span class="badge badge-success">索引已构建</span>'
+            : '<span class="badge badge-warn">索引未构建</span>';
+          document.getElementById('impResultSummary').innerHTML =
+            `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+               <span class="badge badge-success">写入成功 ✓</span>
+               ${builtBadge}
+               <span style="font-size:12px;color:var(--text-sec)">${_esc(d.output_dir||'')}</span>
+             </div>`;
+          document.getElementById('impRefineArea').style.display = 'none';
+          _impPreviewData = null;
+          toast('知识库写入成功 ✓');
+          loadDashboard();
+        } else {
+          toast('写入失败：' + (d.detail || ''), 4000);
+        }
+      } catch(e) {
+        if (e.message !== '403') toast('写入失败：' + e.message, 4000);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '✓ 确认写入';
+      }
     }
 
     /* ===== LLM 智能扩展 ===== */
