@@ -226,6 +226,36 @@
       animation: spin .6s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== 登录遮罩 ===== */
+    #loginOverlay {
+      position: fixed; inset: 0; z-index: 500;
+      background: linear-gradient(135deg, #f4f6f9 0%, #e8ecf4 100%);
+      display: flex; align-items: center; justify-content: center;
+    }
+    #loginOverlay.hidden { display: none; }
+    .login-box {
+      background: #fff; border-radius: 16px; padding: 36px 40px;
+      width: min(400px, 92vw);
+      box-shadow: 0 8px 40px rgba(0,0,0,.12);
+      text-align: center;
+    }
+    .login-box h2 { font-size: 22px; margin-bottom: 6px; color: var(--primary); }
+    .login-box p  { font-size: 13px; color: var(--text-sec); margin-bottom: 24px; }
+    .login-box input {
+      margin-bottom: 14px; text-align: center; letter-spacing: 2px;
+    }
+    .login-err { color: var(--danger); font-size: 12px; min-height: 18px; margin-bottom: 8px; }
+
+    /* ===== 顶部鉴权状态 ===== */
+    .auth-info {
+      margin-left: auto; display: flex; align-items: center; gap: 10px;
+      font-size: 12px; color: var(--text-sec); white-space: nowrap;
+    }
+    .auth-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--success); flex-shrink: 0;
+    }
   </style>
 </head>
 <body>
@@ -243,6 +273,11 @@
       <button class="tab-btn" onclick="showTab('import')">知识导入</button>
       <button class="tab-btn" onclick="showTab('system')">系统</button>
     </nav>
+    <div class="auth-info">
+      <span class="auth-dot" id="authDot"></span>
+      <span id="authLabel">未登录</span>
+      <button class="btn btn-outline btn-sm" id="logoutBtn" onclick="logout()" style="display:none">退出</button>
+    </div>
   </div>
 
   <!-- Tab 内容区 -->
@@ -278,6 +313,20 @@
     <div class="card"><div class="card-title">系统</div><div class="empty">Phase 7A 将填充内容</div></div>
   </div>
 
+  <!-- 登录遮罩 -->
+  <div id="loginOverlay">
+    <div class="login-box">
+      <h2>☸ RAG 后台管理</h2>
+      <p>请输入管理员 API Key 以继续</p>
+      <input type="password" id="keyInput" placeholder="ADMIN_API_KEY"
+             onkeydown="if(event.key==='Enter')login()">
+      <div class="login-err" id="loginErr"></div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="login()">
+        登录
+      </button>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="toast"></div>
 
@@ -299,6 +348,65 @@
       clearTimeout(_toastTimer);
       _toastTimer = setTimeout(() => el.classList.remove('show'), duration);
     }
+
+    /* ===== 鉴权 ===== */
+    const STORAGE_KEY = 'rag_admin_key';
+    let _apiKey = '';
+
+    function _setAuthUI(loggedIn) {
+      document.getElementById('authDot').style.background = loggedIn ? 'var(--success)' : 'var(--danger)';
+      document.getElementById('authLabel').textContent = loggedIn ? '已登录' : '未登录';
+      document.getElementById('logoutBtn').style.display = loggedIn ? '' : 'none';
+      document.getElementById('loginOverlay').classList.toggle('hidden', loggedIn);
+    }
+
+    async function login() {
+      const key = document.getElementById('keyInput').value.trim();
+      const errEl = document.getElementById('loginErr');
+      if (!key) { errEl.textContent = '请输入 API Key'; return; }
+      errEl.textContent = '';
+      // 用 /admin/products 验证 key 是否有效
+      try {
+        const r = await fetch('/admin/products', {
+          headers: { Authorization: 'Bearer ' + key }
+        });
+        if (r.status === 403) { errEl.textContent = 'API Key 错误，请重试'; return; }
+        if (!r.ok) { errEl.textContent = '服务器错误 ' + r.status; return; }
+        _apiKey = key;
+        localStorage.setItem(STORAGE_KEY, key);
+        _setAuthUI(true);
+        toast('登录成功');
+      } catch (e) {
+        errEl.textContent = '连接失败：' + e.message;
+      }
+    }
+
+    function logout() {
+      _apiKey = '';
+      localStorage.removeItem(STORAGE_KEY);
+      _setAuthUI(false);
+      document.getElementById('keyInput').value = '';
+      toast('已退出登录');
+    }
+
+    // 带鉴权的 fetch 封装
+    async function apiFetch(url, opts = {}) {
+      opts.headers = Object.assign({ Authorization: 'Bearer ' + _apiKey }, opts.headers || {});
+      const r = await fetch(url, opts);
+      if (r.status === 403) { toast('鉴权失败，请重新登录'); logout(); throw new Error('403'); }
+      return r;
+    }
+
+    // 页面加载时自动恢复登录态
+    (function _initAuth() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        _apiKey = saved;
+        _setAuthUI(true);
+      } else {
+        _setAuthUI(false);
+      }
+    })();
   </script>
 
 </body>
