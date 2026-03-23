@@ -437,7 +437,31 @@
   </div>
 
   <div id="tab-knowledge" class="tab-panel">
-    <div class="card"><div class="card-title">知识库</div><div class="empty">Phase 3A 将填充内容</div></div>
+    <div style="display:grid;grid-template-columns:200px 1fr;gap:16px;align-items:start">
+
+      <!-- 左侧产品列表 -->
+      <div class="card" style="margin:0;padding:16px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+          产品列表
+          <button class="btn btn-outline btn-sm" onclick="loadKnowledgeProducts()">刷新</button>
+        </div>
+        <div id="knProductList">
+          <div class="empty" style="padding:20px 0">加载中…</div>
+        </div>
+      </div>
+
+      <!-- 右侧文件列表 -->
+      <div class="card" style="margin:0">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span id="knProductTitle">请选择产品</span>
+          <button class="btn btn-outline btn-sm" id="knRefreshBtn" onclick="loadKnowledgeFiles()" style="display:none">刷新</button>
+        </div>
+        <div id="knFileArea">
+          <div class="empty">← 从左侧选择产品</div>
+        </div>
+      </div>
+
+    </div>
   </div>
 
   <div id="tab-synonyms" class="tab-panel">
@@ -480,6 +504,7 @@
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.getElementById('tab-' + name).classList.add('active');
       event.currentTarget.classList.add('active');
+      if (name === 'knowledge') loadKnowledgeProducts();
     }
 
     /* ===== Toast ===== */
@@ -551,6 +576,96 @@
         _setAuthUI(false);
       }
     })();
+
+    /* ===== 知识库文件管理 ===== */
+    let _knProduct = '';
+
+    async function loadKnowledgeProducts() {
+      const listEl = document.getElementById('knProductList');
+      listEl.innerHTML = '<div class="empty" style="padding:20px 0">加载中…</div>';
+      try {
+        const r = await apiFetch('/admin/products');
+        const d = await r.json();
+        const products = d.products || [];
+        if (!products.length) {
+          listEl.innerHTML = '<div class="empty" style="padding:20px 0">暂无产品</div>';
+          return;
+        }
+        listEl.innerHTML = products.map(p => `
+          <div class="kn-prod-item" id="knProd_${p.product}"
+               onclick="selectKnProduct('${p.product}')"
+               style="padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px;
+                      display:flex;justify-content:space-between;align-items:center;
+                      transition:background .15s">
+            <span>📁 ${_esc(p.product)}</span>
+            <span style="font-size:11px;color:var(--text-sec)">${p.files.length} 文件</span>
+          </div>`).join('');
+      } catch(e) {
+        if (e.message !== '403') listEl.innerHTML = '<div class="empty">加载失败</div>';
+      }
+    }
+
+    function selectKnProduct(product) {
+      _knProduct = product;
+      document.querySelectorAll('.kn-prod-item').forEach(el => {
+        el.style.background = el.id === 'knProd_' + product ? 'var(--bg)' : '';
+        el.style.fontWeight  = el.id === 'knProd_' + product ? '700' : '';
+      });
+      loadKnowledgeFiles();
+    }
+
+    async function loadKnowledgeFiles() {
+      if (!_knProduct) return;
+      document.getElementById('knProductTitle').textContent = '📁 ' + _knProduct;
+      document.getElementById('knRefreshBtn').style.display = '';
+      const area = document.getElementById('knFileArea');
+      area.innerHTML = '<div class="empty">加载中…</div>';
+      try {
+        const r = await apiFetch(`/admin/knowledge/${encodeURIComponent(_knProduct)}`);
+        const d = await r.json();
+        const files = d.files || [];
+        if (!files.length) {
+          area.innerHTML = '<div class="empty">该产品暂无文件</div>';
+          return;
+        }
+        area.innerHTML = `
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>文件名</th>
+                  <th style="width:90px">大小</th>
+                  <th style="width:160px">修改时间</th>
+                  <th style="width:70px">类型</th>
+                  <th style="width:60px">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${files.map(f => `<tr>
+                  <td><span style="font-family:monospace;font-size:13px">${_esc(f.name)}</span></td>
+                  <td style="font-size:12px;color:var(--text-sec)">${_fmtSize(f.size)}</td>
+                  <td style="font-size:12px;color:var(--text-sec)">${new Date(f.modified*1000).toLocaleString('zh-CN')}</td>
+                  <td>${f.editable
+                    ? '<span class="badge badge-info">可编辑</span>'
+                    : '<span class="badge badge-warn">二进制</span>'}</td>
+                  <td>
+                    ${f.editable
+                      ? `<button class="btn btn-outline btn-sm" onclick="openFileEdit('${_esc(f.name)}')">编辑</button>`
+                      : `<button class="btn btn-outline btn-sm" disabled>查看</button>`}
+                  </td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>`;
+      } catch(e) {
+        if (e.message !== '403') area.innerHTML = '<div class="empty">加载失败：' + _esc(e.message) + '</div>';
+      }
+    }
+
+    // 占位：Phase 3B 实现
+    function openFileEdit(filename) {
+      toast('文件编辑功能将在 Phase 3B 实现');
+    }
 
     /* ===== 日志 ===== */
     let _curLogTab = 'qa';
