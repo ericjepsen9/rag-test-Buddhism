@@ -738,6 +738,51 @@
       </div>
     </div>
 
+    <!-- LLM 自动扩展 -->
+    <div class="card">
+      <div class="card-title">LLM 智能扩展
+        <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
+          调用 LLM 基于现有词库生成新词条
+        </span>
+      </div>
+      <div class="row-flex" style="margin-bottom:14px">
+        <div>
+          <label>扩展类型</label>
+          <select id="llmExpandCat">
+            <option value="synonym">同义词</option>
+            <option value="clarification">消歧规则</option>
+          </select>
+        </div>
+        <div>
+          <label>期望数量</label>
+          <input type="number" id="llmExpandCount" value="20" min="5" max="50" style="width:90px">
+        </div>
+        <button class="btn btn-primary" id="llmExpandBtn" onclick="doLlmExpand()">开始扩展</button>
+        <button class="btn btn-outline" onclick="loadLlmExpandLog()">查看历史</button>
+      </div>
+      <pre class="out" id="llmExpandOut" style="display:none"></pre>
+
+      <!-- 历史记录 -->
+      <div id="llmExpandLogWrap" style="display:none">
+        <div style="font-size:13px;font-weight:600;margin:12px 0 8px">扩展历史</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:160px">时间</th>
+                <th style="width:100px">类型</th>
+                <th style="width:80px">生成数</th>
+                <th>内容摘要</th>
+              </tr>
+            </thead>
+            <tbody id="llmExpandLogBody">
+              <tr><td colspan="4" class="empty">暂无历史</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <div id="tab-import" class="tab-panel">
@@ -1065,6 +1110,75 @@
         }
       } catch(e) {
         if (e.message !== '403') toast('删除失败：' + e.message, 4000);
+      }
+    }
+
+    /* ===== LLM 智能扩展 ===== */
+    async function doLlmExpand() {
+      const category = document.getElementById('llmExpandCat').value;
+      const count    = parseInt(document.getElementById('llmExpandCount').value) || 20;
+      const btn      = document.getElementById('llmExpandBtn');
+      const out      = document.getElementById('llmExpandOut');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> 扩展中…';
+      out.style.display = '';
+      out.textContent = `正在调用 LLM 生成${category === 'synonym' ? '同义词' : '消歧规则'}，请稍候…`;
+      try {
+        const r = await apiFetch('/admin/keywords/llm-expand', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category, count })
+        });
+        const d = await r.json();
+        if (d.ok) {
+          out.textContent = JSON.stringify(d, null, 2);
+          toast(`扩展完成，应用 ${d.applied ?? (d.items || []).length} 条 ✓`);
+          if (category === 'synonym') loadSynonyms();
+          else loadClarification();
+        } else {
+          out.textContent = '失败：' + (d.error || d.detail || JSON.stringify(d));
+          toast('扩展失败：' + (d.error || d.detail || ''), 4000);
+        }
+      } catch(e) {
+        out.textContent = '请求失败：' + e.message;
+        if (e.message !== '403') toast('请求失败：' + e.message, 3000);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '开始扩展';
+      }
+    }
+
+    async function loadLlmExpandLog() {
+      const logWrap = document.getElementById('llmExpandLogWrap');
+      const tbody   = document.getElementById('llmExpandLogBody');
+      logWrap.style.display = '';
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">加载中…</td></tr>';
+      try {
+        const r = await apiFetch('/admin/keywords/llm-expand/log?limit=20');
+        const d = await r.json();
+        const items = d.items || [];
+        if (!items.length) {
+          tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无历史记录</td></tr>';
+          return;
+        }
+        tbody.innerHTML = items.map(it => {
+          const catLabel = it.category === 'synonym' ? '同义词' : '消歧规则';
+          const catBadge = it.category === 'synonym'
+            ? '<span class="badge badge-info">同义词</span>'
+            : '<span class="badge badge-warn">消歧规则</span>';
+          const sample = (it.items || []).slice(0, 3)
+            .map(x => x.original || x.trigger || JSON.stringify(x)).join('、');
+          const more = (it.items || []).length > 3 ? `… 共 ${it.items.length} 条` : '';
+          return `<tr>
+            <td style="font-size:12px;white-space:nowrap">${_esc(_shortTs(it.ts))}</td>
+            <td>${catBadge}</td>
+            <td>${it.count ?? (it.items || []).length}</td>
+            <td style="font-size:12px;color:var(--text-sec)">${_esc(sample)}${more}</td>
+          </tr>`;
+        }).join('');
+      } catch(e) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty">加载失败</td></tr>';
+        if (e.message !== '403') toast('加载历史失败：' + e.message, 3000);
       }
     }
 
