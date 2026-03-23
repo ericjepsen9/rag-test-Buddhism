@@ -620,7 +620,77 @@
   </div>
 
   <div id="tab-keywords" class="tab-panel">
-    <div class="card"><div class="card-title">关键词</div><div class="empty">Phase 5A 将填充内容</div></div>
+
+    <!-- 统计行 -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;margin-bottom:16px">
+      <div class="card" style="margin:0;text-align:center;padding:14px">
+        <div style="font-size:22px;font-weight:700;color:var(--primary)" id="kw-total">—</div>
+        <div style="font-size:12px;color:var(--text-sec);margin-top:2px">总生效词条</div>
+      </div>
+      <div class="card" style="margin:0;text-align:center;padding:14px">
+        <div style="font-size:22px;font-weight:700;color:var(--text-sec)" id="kw-static">—</div>
+        <div style="font-size:12px;color:var(--text-sec);margin-top:2px">静态</div>
+      </div>
+      <div class="card" style="margin:0;text-align:center;padding:14px">
+        <div style="font-size:22px;font-weight:700;color:var(--warning)" id="kw-override">—</div>
+        <div style="font-size:12px;color:var(--text-sec);margin-top:2px">覆盖</div>
+      </div>
+      <div class="card" style="margin:0;text-align:center;padding:14px">
+        <div style="font-size:22px;font-weight:700;color:var(--success)" id="kw-learned">—</div>
+        <div style="font-size:12px;color:var(--text-sec);margin-top:2px">学习</div>
+      </div>
+    </div>
+
+    <!-- 同义词覆盖：新增/编辑 -->
+    <div class="card">
+      <div class="card-title">同义词覆盖
+        <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">可覆盖或新增任意词条</span>
+      </div>
+      <div class="row-flex">
+        <div><label>原词</label>
+          <input type="text" id="kwOvOriginal" placeholder="例如：坐禅"></div>
+        <div><label>映射到</label>
+          <input type="text" id="kwOvMappedTo" placeholder="例如：禅修"
+                 onkeydown="if(event.key==='Enter')addKwOverride()"></div>
+        <button class="btn btn-primary" onclick="addKwOverride()">添加 / 更新</button>
+      </div>
+    </div>
+
+    <!-- 生效词条列表 -->
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <span>生效词条列表</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="kwFilter" style="width:100px;padding:5px 8px;font-size:12px" onchange="renderKwTable()">
+            <option value="">全部</option>
+            <option value="static">静态</option>
+            <option value="override">覆盖</option>
+            <option value="learned">学习</option>
+          </select>
+          <input type="text" id="kwSearch" placeholder="搜索原词…"
+                 style="width:140px;padding:5px 10px;font-size:12px"
+                 oninput="renderKwTable()">
+          <button class="btn btn-outline btn-sm" onclick="loadKeywords()">刷新</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>原词</th>
+              <th>映射到</th>
+              <th style="width:80px">来源</th>
+              <th style="width:80px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="kwEffectiveBody">
+            <tr><td colspan="4" class="empty">点击刷新加载</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="kwPageInfo" style="font-size:12px;color:var(--text-sec);margin-top:8px;text-align:right"></div>
+    </div>
+
   </div>
 
   <div id="tab-import" class="tab-panel">
@@ -696,6 +766,7 @@
       event.currentTarget.classList.add('active');
       if (name === 'knowledge') loadKnowledgeProducts();
       if (name === 'synonyms')  loadSynonyms();
+      if (name === 'keywords')  loadKeywords();
     }
 
     /* ===== Toast ===== */
@@ -947,6 +1018,102 @@
         }
       } catch(e) {
         if (e.message !== '403') toast('删除失败：' + e.message, 4000);
+      }
+    }
+
+    /* ===== 关键词管理 ===== */
+    let _kwItems = [];
+
+    async function loadKeywords() {
+      try {
+        const r = await apiFetch('/admin/keywords/effective');
+        const d = await r.json();
+        _kwItems = d.items || [];
+        const s = d.sources || {};
+        document.getElementById('kw-total').textContent    = _fmt(d.total);
+        document.getElementById('kw-static').textContent   = _fmt(s.static   ?? 0);
+        document.getElementById('kw-override').textContent = _fmt(s.override ?? 0);
+        document.getElementById('kw-learned').textContent  = _fmt(s.learned  ?? 0);
+        renderKwTable();
+      } catch(e) {
+        if (e.message !== '403') toast('加载关键词失败：' + e.message, 3000);
+      }
+    }
+
+    function renderKwTable() {
+      const filter = document.getElementById('kwFilter').value;
+      const search = document.getElementById('kwSearch').value.trim().toLowerCase();
+      let items = _kwItems;
+      if (filter) items = items.filter(it => it.source === filter);
+      if (search) items = items.filter(it =>
+        (it.original || '').toLowerCase().includes(search) ||
+        (it.mapped_to || '').toLowerCase().includes(search));
+
+      const tbody = document.getElementById('kwEffectiveBody');
+      document.getElementById('kwPageInfo').textContent =
+        items.length < _kwItems.length
+          ? `显示 ${items.length} / ${_kwItems.length} 条`
+          : `共 ${_kwItems.length} 条`;
+
+      if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty">无匹配词条</td></tr>';
+        return;
+      }
+      tbody.innerHTML = items.map(it => {
+        const srcBadge = it.source === 'override'
+          ? '<span class="badge badge-warn">覆盖</span>'
+          : it.source === 'learned'
+            ? '<span class="badge badge-success">学习</span>'
+            : '<span class="badge" style="background:#f1f3f5;color:#555">静态</span>';
+        const canDel = it.source === 'override';
+        const delBtn = canDel
+          ? `<button class="btn btn-danger btn-sm" onclick="delKwOverride('${_esc(it.original)}')">删除</button>`
+          : '';
+        return `<tr>
+          <td><strong>${_esc(it.original)}</strong></td>
+          <td>${_esc(it.mapped_to)}</td>
+          <td>${srcBadge}</td>
+          <td>${delBtn}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    async function addKwOverride() {
+      const original  = document.getElementById('kwOvOriginal').value.trim();
+      const mapped_to = document.getElementById('kwOvMappedTo').value.trim();
+      if (!original || !mapped_to) { toast('请填写原词和映射词'); return; }
+      try {
+        const r = await apiFetch('/admin/keywords/synonym/override', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ original, mapped_to })
+        });
+        const d = await r.json();
+        if (d.ok) {
+          toast(`已添加覆盖：${original} → ${mapped_to} ✓`);
+          document.getElementById('kwOvOriginal').value  = '';
+          document.getElementById('kwOvMappedTo').value = '';
+          loadKeywords();
+        } else {
+          toast('操作失败：' + (d.detail || JSON.stringify(d)), 4000);
+        }
+      } catch(e) {
+        if (e.message !== '403') toast('操作失败：' + e.message, 3000);
+      }
+    }
+
+    async function delKwOverride(original) {
+      if (!confirm(`确认删除覆盖词条「${original}」？`)) return;
+      try {
+        const r = await apiFetch(
+          `/admin/keywords/synonym/override?original=${encodeURIComponent(original)}`,
+          { method: 'DELETE' }
+        );
+        const d = await r.json();
+        if (d.ok) { toast(`已删除：${original}`); loadKeywords(); }
+        else toast('删除失败：' + (d.detail || ''), 3000);
+      } catch(e) {
+        if (e.message !== '403') toast('删除失败：' + e.message, 3000);
       }
     }
 
