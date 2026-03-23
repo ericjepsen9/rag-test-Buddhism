@@ -1439,6 +1439,9 @@ async def admin_upload(request: "Request"):
                     except Exception:
                         text = content.decode("gbk", errors="replace")
                 fpath = pdir / fname
+                if not fpath.resolve().is_relative_to(pdir.resolve()):
+                    errors.append({"file": fname, "error": "非法文件路径"})
+                    continue
                 # 原子写入
                 tmp = fpath.with_suffix(fpath.suffix + ".tmp")
                 try:
@@ -1528,6 +1531,8 @@ async def admin_upload_zip(request: "Request"):
                             text = content.decode("utf-8-sig", errors="replace")
                         # 原子写入
                         dest = dest_dir / file_name
+                        if not dest.resolve().is_relative_to(pdir.resolve()):
+                            continue
                         tmp = dest.with_suffix(dest.suffix + ".tmp")
                         try:
                             tmp.write_text(text, encoding="utf-8")

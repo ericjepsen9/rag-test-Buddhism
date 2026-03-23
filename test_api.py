@@ -223,9 +223,10 @@ class TestAdminAuth:
         resp = client.get("/admin/products", headers=admin_headers)
         assert resp.status_code == 200
 
-    def test_admin_query_param_auth(self, client):
+    def test_admin_query_param_auth_rejected(self, client):
+        """Query-param auth is NOT supported — only Bearer header is accepted."""
         resp = client.get("/admin/products?admin_key=test-admin-key-12345")
-        assert resp.status_code == 200
+        assert resp.status_code == 403
 
     def test_admin_page_exempt_from_auth(self, client):
         resp = client.get("/admin")
