@@ -325,33 +325,40 @@ def _save_synonyms(synonyms: List[Dict]) -> int:
     if not synonyms:
         return 0
     try:
-        from synonym_store import add_manual, _load as _load_learned
+        from synonym_store import _load as _load_learned
         existing = _load_learned()
     except ImportError:
         return 0
 
+    from synonym_store import _load, _save, _lock
+    from datetime import datetime
     added = 0
-    for item in synonyms:
-        orig = item["original"]
-        mapped = item["mapped_to"]
-        if orig in existing:
-            continue
-        # 使用 add_manual 写入，但修改 source 标记
-        result = add_manual(orig, mapped)
-        if result.get("ok"):
-            # 修改 source 标记为 import_extract（区分手动添加和导入提取）
-            from synonym_store import _load, _save, _lock
-            import threading
-            with _lock:
-                data = _load()
-                if orig in data:
-                    data[orig]["source"] = "import_extract"
-                    data[orig]["approved"] = False  # 导入提取的默认待审核
-                    context = item.get("context", "")
-                    if context:
-                        data[orig]["context"] = context
-                    _save(data)
+    # 单次加锁批量写入，避免多次 add_manual + _load/_save 的 TOCTOU 问题
+    with _lock:
+        data = _load()
+        for item in synonyms:
+            orig = item["original"]
+            mapped = item["mapped_to"]
+            if orig in existing or orig in data:
+                continue
+            if not orig.strip() or not mapped.strip() or orig == mapped:
+                continue
+            now = datetime.now().isoformat(timespec="seconds")
+            entry = {
+                "mapped_to": mapped,
+                "count": 1,
+                "first_seen": now,
+                "last_seen": now,
+                "source": "import_extract",
+                "approved": False,
+            }
+            context = item.get("context", "")
+            if context:
+                entry["context"] = context
+            data[orig] = entry
             added += 1
+        if added:
+            _save(data)
 
     return added
 

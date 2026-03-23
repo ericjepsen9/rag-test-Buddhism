@@ -1150,7 +1150,7 @@ def section_block(text: str, titles: List[str], stops: List[str]) -> str:
         idx = sub.find(s)
         if idx > 0 and (end is None or idx < end):
             end = idx
-    if end:
+    if end is not None:
         sub = sub[:end]
     return sub.strip()
 

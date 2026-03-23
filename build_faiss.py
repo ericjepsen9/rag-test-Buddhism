@@ -484,13 +484,15 @@ def _collect_txt_files(pdir):
 
 def _dedup_records(records: List[dict]) -> List[dict]:
     """跨来源去重：相同文本内容（忽略空白差异）只保留第一个来源的记录"""
+    import hashlib as _hl
     seen_hashes = set()
     deduped = []
     for r in records:
-        key = " ".join(r["text"].split())
-        if key in seen_hashes:
+        normalized = " ".join(r["text"].split())
+        digest = _hl.sha256(normalized.encode("utf-8")).hexdigest()
+        if digest in seen_hashes:
             continue
-        seen_hashes.add(key)
+        seen_hashes.add(digest)
         deduped.append(r)
     return deduped
 

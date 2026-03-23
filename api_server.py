@@ -494,7 +494,11 @@ def ask(request: Request, req: AskRequest):
             latency_ms = int((time.monotonic() - t0) * 1000)
             log_error("api_ask_timeout", f"请求超时 ({_ASK_TIMEOUT_SEC}s)",
                       meta={"question": question[:200], "latency_ms": latency_ms})
-            return AskResponse(ok=False, answer=f"查询处理超时（{_ASK_TIMEOUT_SEC}秒），请简化问题后重试")
+            return JSONResponse(
+                status_code=504,
+                content={"ok": False, "answer": f"查询处理超时（{_ASK_TIMEOUT_SEC}秒），请简化问题后重试",
+                         "media": [], "latency_ms": latency_ms},
+            )
         latency_ms = int((time.monotonic() - t0) * 1000)
         route = _ctx.get("route", "")
         product_id = _ctx.get("product", "")

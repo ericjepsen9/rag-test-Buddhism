@@ -125,10 +125,10 @@ _HISTORY_SIGNALS = ("历史", "朝代", "传入", "发展", "祖师", "高僧",
 _RITUAL_SIGNALS = ("仪轨", "法会", "供养", "礼拜", "早课", "晚课",
                    "回向", "发愿", "忏悔", "法事", "放生")
 
-# Chitchat regex patterns
-_RE_CHAT_GREETING = re.compile(r"^(你好|嗨|hi|hello|hey|您好|在吗|在不在)$", re.IGNORECASE)
-_RE_CHAT_THANKS = re.compile(r"^(谢谢|感谢|多谢|辛苦了|谢啦|thx|thanks)$", re.IGNORECASE)
-_RE_CHAT_BYE = re.compile(r"^(再见|拜拜|bye|回头见|下次再聊)$", re.IGNORECASE)
+# Chitchat regex patterns — 使用非锚定模式支持句中匹配
+_RE_CHAT_GREETING = re.compile(r"(你好|嗨|hi|hello|hey|您好|在吗|在不在)", re.IGNORECASE)
+_RE_CHAT_THANKS = re.compile(r"(谢谢|感谢|多谢|辛苦了|谢啦|thx|thanks)", re.IGNORECASE)
+_RE_CHAT_BYE = re.compile(r"(再见|拜拜|bye|回头见|下次再聊)", re.IGNORECASE)
 
 # _fallback_from_hits pre-compiled patterns
 _RE_FALLBACK_SPLIT = re.compile(r"[\s,，;；、？?！!。【】]+")
@@ -246,7 +246,7 @@ def get_model():
                     if DEBUG:
                         print("[INFO] PyTorch not installed, cannot detect GPU")
                 from sentence_transformers import SentenceTransformer
-                _model = SentenceTransformer("BAAI/bge-m3")
+                _model = SentenceTransformer(EMBED_MODEL_NAME)
     return _model
 
 
@@ -1033,11 +1033,11 @@ _CHITCHAT_REPLIES = {
 
 def _chitchat_reply(raw: str) -> str:
     s = raw.strip().rstrip("！!。.~啊呀哇？?")
-    if _RE_CHAT_GREETING.match(s):
+    if _RE_CHAT_GREETING.search(s):
         return _CHITCHAT_REPLIES["greeting"]
-    if _RE_CHAT_THANKS.match(s):
+    if _RE_CHAT_THANKS.search(s):
         return _CHITCHAT_REPLIES["thanks"]
-    if _RE_CHAT_BYE.match(s):
+    if _RE_CHAT_BYE.search(s):
         return _CHITCHAT_REPLIES["bye"]
     return _CHITCHAT_REPLIES["ack"]
 

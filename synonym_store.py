@@ -29,11 +29,11 @@ def _ensure_dir() -> None:
 
 def _load() -> Dict[str, Any]:
     """加载已学习的同义词映射"""
-    if not LEARNED_SYNONYMS_FILE.exists():
-        return {}
     try:
         with LEARNED_SYNONYMS_FILE.open("r", encoding="utf-8") as f:
             return json.load(f)
+    except FileNotFoundError:
+        return {}
     except (json.JSONDecodeError, OSError) as e:
         from rag_logger import log_error
         log_error("synonym_store", f"同义词文件加载失败: {e}",
