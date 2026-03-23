@@ -307,6 +307,60 @@ class TestAdminEndpoints:
 
 
 # ============================================================
+# 服务管理端点测试
+# ============================================================
+
+class TestServiceManagement:
+    def test_embedding_status(self, client, admin_headers):
+        resp = client.get("/admin/service/embedding", headers=admin_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "loaded" in data
+        assert "model_name" in data
+
+    def test_llm_status(self, client, admin_headers):
+        resp = client.get("/admin/service/llm", headers=admin_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "enabled" in data
+        assert "model" in data
+
+    def test_embedding_start(self, client, admin_headers):
+        resp = client.post("/admin/service/embedding/start", headers=admin_headers)
+        # 200 if model loads, 500 if unavailable in test env
+        assert resp.status_code in (200, 500)
+        if resp.status_code == 200:
+            assert resp.json()["ok"] is True
+
+    def test_embedding_stop(self, client, admin_headers):
+        resp = client.post("/admin/service/embedding/stop", headers=admin_headers)
+        assert resp.status_code in (200, 500)
+        if resp.status_code == 200:
+            assert resp.json()["ok"] is True
+
+    def test_llm_start(self, client, admin_headers):
+        resp = client.post("/admin/service/llm/start",
+                           json={}, headers=admin_headers)
+        # 200 if API key valid, 500 if no key or client fails
+        assert resp.status_code in (200, 500)
+        if resp.status_code == 200:
+            assert resp.json()["ok"] is True
+
+    def test_llm_stop(self, client, admin_headers):
+        resp = client.post("/admin/service/llm/stop", headers=admin_headers)
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+
+    def test_llm_test_without_service(self, client, admin_headers):
+        # Stop LLM first, then test should return 503
+        client.post("/admin/service/llm/stop", headers=admin_headers)
+        resp = client.post("/admin/service/llm/test", headers=admin_headers)
+        assert resp.status_code == 503
+        data = resp.json()
+        assert data["ok"] is False
+
+
+# ============================================================
 # 管理端点输入校验测试
 # ============================================================
 

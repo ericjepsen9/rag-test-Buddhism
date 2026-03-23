@@ -957,6 +957,21 @@
 
     </div>
 
+    <!-- 缓存管理 -->
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>缓存管理</span>
+        <button class="btn btn-outline btn-sm" onclick="loadCacheStats()">刷新</button>
+      </div>
+      <div id="cacheStatsArea" style="font-size:13px;color:var(--text-sec);margin-bottom:10px">
+        点击"刷新"加载缓存统计
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-danger btn-sm" id="cacheClearBtn" onclick="clearCache()">清空全部缓存</button>
+      </div>
+      <pre class="out" id="cacheOut" style="display:none;margin-top:10px"></pre>
+    </div>
+
   </div>
 
   <!-- 文件编辑弹窗 -->
@@ -1025,7 +1040,7 @@
       if (name === 'knowledge') loadKnowledgeProducts();
       if (name === 'synonyms')  loadSynonyms();
       if (name === 'keywords')  { loadKeywords(); loadClarification(); _initClrOptions(); }
-      if (name === 'system')    { loadLlmConfigs(); loadServiceStatus(); }
+      if (name === 'system')    { loadLlmConfigs(); loadServiceStatus(); loadCacheStats(); }
     }
 
     /* ===== Toast ===== */
@@ -1567,6 +1582,40 @@
       } finally {
         btn.disabled = false; btn.innerHTML = '测试连接'; loadServiceStatus();
       }
+    }
+
+    /* ===== 缓存管理 ===== */
+    async function loadCacheStats() {
+      const area = document.getElementById('cacheStatsArea');
+      area.textContent = '加载中…';
+      try {
+        const r = await apiFetch('/admin/cache');
+        const d = await r.json();
+        let html = '';
+        if (d.response_cache) html += `应答缓存：${d.response_cache.size} / ${d.response_cache.max_size} 条（TTL ${d.response_cache.ttl_seconds}s）<br>`;
+        if (d.embed_cache) html += `嵌入缓存：${d.embed_cache.size} / ${d.embed_cache.max_size} 条<br>`;
+        if (d.store_cache) html += `知识库已加载：${(d.store_cache.products_loaded || []).length} 个产品<br>`;
+        area.innerHTML = html || '无缓存数据';
+      } catch(e) { area.textContent = '加载失败：' + e.message; }
+    }
+
+    async function clearCache() {
+      if (!confirm('确定要清空所有缓存吗？')) return;
+      const btn = document.getElementById('cacheClearBtn');
+      const out = document.getElementById('cacheOut');
+      btn.disabled = true;
+      btn.textContent = '清空中…';
+      try {
+        const r = await apiFetch('/admin/cache/clear', { method: 'POST' });
+        const d = await r.json();
+        out.style.display = 'block';
+        out.textContent = JSON.stringify(d.cleared, null, 2);
+        toast('缓存已清空');
+        loadCacheStats();
+      } catch(e) {
+        out.style.display = 'block';
+        out.textContent = '清空失败：' + e.message;
+      } finally { btn.disabled = false; btn.textContent = '清空全部缓存'; }
     }
 
     /* ===== URL 抓取 ===== */

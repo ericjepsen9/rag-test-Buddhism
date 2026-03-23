@@ -731,6 +731,7 @@ def start_llm_service(api_key: str = "") -> dict:
             sync_from_legacy()
         except Exception:
             pass
+        _persist_overrides({"use_openai": True})
         return {"ok": True, "message": f"LLM 服务已启动 (model={OPENAI_MODEL})"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
