@@ -406,6 +406,144 @@ class TestAdminInputValidation:
 
 
 # ============================================================
+# 知识库管理端点测试
+# ============================================================
+
+class TestKnowledgeManagement:
+    """Tests for knowledge CRUD endpoints using a temporary product."""
+
+    TEMP_PRODUCT = "_test_tmp_product"
+
+    def _ensure_clean(self, client, admin_headers):
+        """Delete temp product if it exists from a prior run."""
+        client.delete(f"/admin/knowledge/{self.TEMP_PRODUCT}", headers=admin_headers)
+
+    def test_create_product(self, client, admin_headers):
+        self._ensure_clean(client, admin_headers)
+        resp = client.post("/admin/knowledge/create_product",
+                           json={"product": self.TEMP_PRODUCT}, headers=admin_headers)
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+
+    def test_create_product_duplicate(self, client, admin_headers):
+        self._ensure_clean(client, admin_headers)
+        client.post("/admin/knowledge/create_product",
+                    json={"product": self.TEMP_PRODUCT}, headers=admin_headers)
+        resp = client.post("/admin/knowledge/create_product",
+                           json={"product": self.TEMP_PRODUCT}, headers=admin_headers)
+        assert resp.status_code == 409
+
+    def test_list_product_files(self, client, admin_headers):
+        self._ensure_clean(client, admin_headers)
+        client.post("/admin/knowledge/create_product",
+                    json={"product": self.TEMP_PRODUCT}, headers=admin_headers)
+        resp = client.get(f"/admin/knowledge/{self.TEMP_PRODUCT}", headers=admin_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "files" in data
+        assert isinstance(data["files"], list)
+
+    def test_write_and_read_file(self, client, admin_headers):
+        self._ensure_clean(client, admin_headers)
+        client.post("/admin/knowledge/create_product",
+                    json={"product": self.TEMP_PRODUCT}, headers=admin_headers)
+        # Write
+        resp = client.put(f"/admin/knowledge/{self.TEMP_PRODUCT}/test_file.txt",
+                          json={"content": "hello world"}, headers=admin_headers)
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        assert resp.json()["size"] == len("hello world")
+        # Read back
+        resp = client.get(f"/admin/knowledge/{self.TEMP_PRODUCT}/test_file.txt",
+                          headers=admin_headers)
+        assert resp.status_code == 200
+        assert resp.json()["content"] == "hello world"
+
+    def test_delete_file(self, client, admin_headers):
+        self._ensure_clean(client, admin_headers)
+        client.post("/admin/knowledge/create_product",
+                    json={"product": self.TEMP_PRODUCT}, headers=admin_headers)
+        client.put(f"/admin/knowledge/{self.TEMP_PRODUCT}/to_delete.txt",
+                   json={"content": "tmp"}, headers=admin_headers)
+        resp = client.delete(f"/admin/knowledge/{self.TEMP_PRODUCT}/to_delete.txt",
+                             headers=admin_headers)
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+
+    def test_delete_product(self, client, admin_headers):
+        self._ensure_clean(client, admin_headers)
+        client.post("/admin/knowledge/create_product",
+                    json={"product": self.TEMP_PRODUCT}, headers=admin_headers)
+        resp = client.delete(f"/admin/knowledge/{self.TEMP_PRODUCT}",
+                             headers=admin_headers)
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+
+    def test_list_nonexistent_product(self, client, admin_headers):
+        resp = client.get("/admin/knowledge/nonexistent_xyz_999", headers=admin_headers)
+        assert resp.status_code == 404
+
+
+# ============================================================
+# 同义词操作端点测试
+# ============================================================
+
+class TestSynonymOperations:
+
+    def test_synonyms_export(self, client, admin_headers):
+        resp = client.get("/admin/synonyms/export", headers=admin_headers)
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), dict)
+
+    def test_synonyms_reload(self, client, admin_headers):
+        resp = client.post("/admin/synonyms/reload", headers=admin_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert "active_count" in data
+
+    def test_synonyms_learned_add(self, client, admin_headers):
+        resp = client.post("/admin/synonyms/learned/add",
+                           json={"original": "_test_syn_orig", "mapped_to": "_test_syn_map"},
+                           headers=admin_headers)
+        assert resp.status_code == 200
+
+    def test_synonyms_learned_approve(self, client, admin_headers):
+        # Add first, then approve
+        client.post("/admin/synonyms/learned/add",
+                    json={"original": "_test_approve", "mapped_to": "_test_map"},
+                    headers=admin_headers)
+        resp = client.post("/admin/synonyms/learned/approve?original=_test_approve",
+                           headers=admin_headers)
+        assert resp.status_code in (200, 404)
+
+    def test_synonyms_batch_approve(self, client, admin_headers):
+        resp = client.post("/admin/synonyms/learned/batch-approve",
+                           json={"terms": ["_test_batch_1"]}, headers=admin_headers)
+        assert resp.status_code == 200
+
+    def test_synonyms_batch_delete(self, client, admin_headers):
+        resp = client.post("/admin/synonyms/learned/batch-delete",
+                           json={"terms": ["_test_batch_del"]}, headers=admin_headers)
+        assert resp.status_code == 200
+
+    def test_synonyms_import(self, client, admin_headers):
+        resp = client.post("/admin/synonyms/import",
+                           json={"items": [{"original": "_test_imp", "mapped_to": "_test_imp_map"}],
+                                 "auto_approve": False},
+                           headers=admin_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert "added" in data
+
+    def test_synonyms_approve_empty_rejected(self, client, admin_headers):
+        resp = client.post("/admin/synonyms/learned/approve?original=",
+                           headers=admin_headers)
+        assert resp.status_code == 400
+
+
+# ============================================================
 # 响应缓存行为测试
 # ============================================================
 

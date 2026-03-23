@@ -1321,6 +1321,33 @@ for _k, _v in _SYNONYM_MAP.items():
     _SYNONYM_EXPAND.setdefault(_k, set()).add(_v)
 
 
+# ===== 学习同义词运行时状态 =====
+_LEARNED_SYNONYM_DIRECT: Dict[str, str] = {}
+_learned_loaded: bool = False
+
+
+def reload_learned_synonyms() -> int:
+    """从 synonym_store 加载已审核的学习同义词到运行时扩展表。"""
+    global _learned_loaded
+    try:
+        from synonym_store import get_all_learned
+        learned = get_all_learned()
+    except Exception:
+        learned = []
+    _LEARNED_SYNONYM_DIRECT.clear()
+    for entry in learned:
+        if entry.get("approved"):
+            orig = entry.get("original", "")
+            mapped = entry.get("mapped_to", "")
+            if orig and mapped:
+                _LEARNED_SYNONYM_DIRECT[orig] = mapped
+                # 同步到运行时扩展表
+                _SYNONYM_EXPAND.setdefault(mapped, set()).add(orig)
+                _SYNONYM_EXPAND.setdefault(orig, set()).add(mapped)
+    _learned_loaded = True
+    return len(_LEARNED_SYNONYM_DIRECT)
+
+
 def expand_synonyms(query: str) -> str:
     """在查询中追加同义词，提升 BM25 召回率。"""
     extra = set()
@@ -1402,6 +1429,20 @@ def _cache_put(cache: dict, key: Any, value: Any, max_size: int = 0) -> None:
         except (StopIteration, RuntimeError):
             break
     cache[key] = value
+
+
+def invalidate_bm25_cache(product: str = "") -> None:
+    """清除 BM25 语料缓存。若指定 product 则尝试按 key 匹配清除，否则清空全部。"""
+    if not product:
+        _bm25_cache.clear()
+        _df_cache.clear()
+        _inverted_index_cache.clear()
+        return
+    # product 维度的 key 由 _corpus_cache_key 生成，无法精确匹配，
+    # 保守起见清空全部缓存以确保一致性
+    _bm25_cache.clear()
+    _df_cache.clear()
+    _inverted_index_cache.clear()
 
 
 def _corpus_cache_key(docs: List[Dict]) -> Tuple:

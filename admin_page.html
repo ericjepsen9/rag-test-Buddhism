@@ -972,6 +972,35 @@
       <pre class="out" id="cacheOut" style="display:none;margin-top:10px"></pre>
     </div>
 
+    <!-- 调试 & 服务器配置 -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px">
+
+      <!-- 调试开关 -->
+      <div class="card" style="margin:0">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>调试模式</span>
+          <span id="debugBadge" class="badge badge-warn">未知</span>
+        </div>
+        <p style="font-size:13px;color:var(--text-sec);margin-bottom:10px">
+          开启后日志级别切换为 DEBUG，输出详细请求信息。
+        </p>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="toggleDebug(true)">开启</button>
+          <button class="btn btn-outline btn-sm" onclick="toggleDebug(false)">关闭</button>
+        </div>
+      </div>
+
+      <!-- 服务器配置 -->
+      <div class="card" style="margin:0">
+        <div class="card-title">服务器配置</div>
+        <div id="serverCfgArea" style="font-size:13px;color:var(--text-sec);margin-bottom:10px">加载中…</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline btn-sm" onclick="loadServerConfig()">刷新</button>
+        </div>
+      </div>
+
+    </div>
+
   </div>
 
   <!-- 文件编辑弹窗 -->
@@ -1040,7 +1069,7 @@
       if (name === 'knowledge') loadKnowledgeProducts();
       if (name === 'synonyms')  loadSynonyms();
       if (name === 'keywords')  { loadKeywords(); loadClarification(); _initClrOptions(); }
-      if (name === 'system')    { loadLlmConfigs(); loadServiceStatus(); loadCacheStats(); }
+      if (name === 'system')    { loadLlmConfigs(); loadServiceStatus(); loadCacheStats(); loadServerConfig(); }
     }
 
     /* ===== Toast ===== */
@@ -1616,6 +1645,35 @@
         out.style.display = 'block';
         out.textContent = '清空失败：' + e.message;
       } finally { btn.disabled = false; btn.textContent = '清空全部缓存'; }
+    }
+
+    /* ===== 调试开关 ===== */
+    async function toggleDebug(enable) {
+      try {
+        const r = await apiFetch(`/admin/debug?enable=${enable}`, { method: 'POST' });
+        const d = await r.json();
+        const badge = document.getElementById('debugBadge');
+        badge.textContent = d.level || (enable ? 'DEBUG' : 'INFO');
+        badge.className = 'badge ' + (d.level === 'DEBUG' ? 'badge-success' : 'badge-info');
+        toast(enable ? '调试模式已开启' : '调试模式已关闭');
+      } catch(e) { toast('操作失败：' + e.message); }
+    }
+
+    /* ===== 服务器配置 ===== */
+    async function loadServerConfig() {
+      const area = document.getElementById('serverCfgArea');
+      area.textContent = '加载中…';
+      try {
+        const r = await apiFetch('/admin/config/server');
+        const d = await r.json();
+        let html = '';
+        if (d.host) html += `Host：${d.host}<br>`;
+        if (d.port) html += `Port：${d.port}<br>`;
+        if (d.domain) html += `域名：${d.domain}<br>`;
+        html += `SSL：${d.ssl_enabled ? '已启用' : '未启用'}<br>`;
+        if (d.cors_origins) html += `CORS：${d.cors_origins}<br>`;
+        area.innerHTML = html || '无配置数据';
+      } catch(e) { area.textContent = '加载失败：' + e.message; }
     }
 
     /* ===== URL 抓取 ===== */
