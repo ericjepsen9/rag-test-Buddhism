@@ -1314,38 +1314,52 @@ _SYNONYM_MAP = {
     "六祖": "慧能", "惠能": "慧能",
 }
 
-# 反向映射：同义词扩展
-_SYNONYM_EXPAND = {}
+# 反向映射：同义词扩展（基础静态映射）
+_SYNONYM_EXPAND_BASE: Dict[str, set] = {}
 for _k, _v in _SYNONYM_MAP.items():
-    _SYNONYM_EXPAND.setdefault(_v, set()).add(_k)
-    _SYNONYM_EXPAND.setdefault(_k, set()).add(_v)
+    _SYNONYM_EXPAND_BASE.setdefault(_v, set()).add(_k)
+    _SYNONYM_EXPAND_BASE.setdefault(_k, set()).add(_v)
+
+# 运行时同义词表（含学习同义词），使用 frozenset 值防止并发修改
+_SYNONYM_EXPAND: Dict[str, frozenset] = {
+    k: frozenset(v) for k, v in _SYNONYM_EXPAND_BASE.items()
+}
 
 
 # ===== 学习同义词运行时状态 =====
 _LEARNED_SYNONYM_DIRECT: Dict[str, str] = {}
+_synonym_reload_lock = threading.Lock()
 _learned_loaded: bool = False
 
 
 def reload_learned_synonyms() -> int:
     """从 synonym_store 加载已审核的学习同义词到运行时扩展表。"""
-    global _learned_loaded
+    global _learned_loaded, _SYNONYM_EXPAND
     try:
         from synonym_store import get_all_learned
         learned = get_all_learned()
     except Exception:
         learned = []
-    _LEARNED_SYNONYM_DIRECT.clear()
-    for entry in learned:
-        if entry.get("approved"):
-            orig = entry.get("original", "")
-            mapped = entry.get("mapped_to", "")
-            if orig and mapped:
-                _LEARNED_SYNONYM_DIRECT[orig] = mapped
-                # 同步到运行时扩展表
-                _SYNONYM_EXPAND.setdefault(mapped, set()).add(orig)
-                _SYNONYM_EXPAND.setdefault(orig, set()).add(mapped)
-    _learned_loaded = True
-    return len(_LEARNED_SYNONYM_DIRECT)
+    with _synonym_reload_lock:
+        # 在新 dict 上构建，完成后原子替换引用
+        new_direct: Dict[str, str] = {}
+        new_expand: Dict[str, set] = {k: set(v) for k, v in _SYNONYM_EXPAND_BASE.items()}
+        for entry in learned:
+            if entry.get("approved"):
+                orig = entry.get("original", "")
+                mapped = entry.get("mapped_to", "")
+                if orig and mapped:
+                    new_direct[orig] = mapped
+                    new_expand.setdefault(mapped, set()).add(orig)
+                    new_expand.setdefault(orig, set()).add(mapped)
+        # 冻结所有 set 值，防止并发迭代时被修改
+        frozen = {k: frozenset(v) for k, v in new_expand.items()}
+        # 原子替换
+        _LEARNED_SYNONYM_DIRECT.clear()
+        _LEARNED_SYNONYM_DIRECT.update(new_direct)
+        _SYNONYM_EXPAND = frozen
+        _learned_loaded = True
+    return len(new_direct)
 
 
 def expand_synonyms(query: str) -> str:

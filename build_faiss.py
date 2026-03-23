@@ -669,8 +669,26 @@ def build_for_product(product: str):
         for r in records:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
     _get_faiss().write_index(index, str(tmp_index))
+    # 备份旧 docs 以便回滚（如果 index replace 失败）
+    docs_backup = out_dir / "docs.jsonl.bak"
+    if docs_path.exists():
+        try:
+            os.replace(str(docs_path), str(docs_backup))
+        except OSError:
+            docs_backup = None
+    else:
+        docs_backup = None
     os.replace(str(tmp_docs), str(docs_path))
-    os.replace(str(tmp_index), str(index_path))
+    try:
+        os.replace(str(tmp_index), str(index_path))
+    except Exception:
+        # index 写入失败，回滚 docs 以保持一致性
+        if docs_backup and docs_backup.exists():
+            os.replace(str(docs_backup), str(docs_path))
+        raise
+    # 清理备份
+    if docs_backup and docs_backup.exists():
+        docs_backup.unlink(missing_ok=True)
 
     print(f"[DONE] Built store")
     print(f"       product: {product}")
@@ -708,15 +726,12 @@ def collect_shared_records():
         for inst in sorted(edir.iterdir()):
             if not inst.is_dir():
                 continue
-            for fname, stype in [("main.txt", "main"), ("faq.txt", "faq"), ("alias.txt", "alias")]:
+            for fname, stype in [("main.txt", "main"), ("faq.txt", "faq")]:
                 f = inst / fname
                 if not f.exists():
                     continue
                 text = read_text_auto(f)
-                if stype == "alias":
-                    chunks_data = [{"text": text}]
-                else:
-                    chunks_data = chunk_smart(text, CHUNK_SIZE, CHUNK_OVERLAP)
+                chunks_data = chunk_smart(text, CHUNK_SIZE, CHUNK_OVERLAP)
                 label = f"{subdir}/{inst.name}/{fname}"
                 print(f"[OK] {label}: {len(chunks_data)} chunks")
                 for i, cd in enumerate(chunks_data, 1):
@@ -764,8 +779,24 @@ def build_shared():
         for r in records:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
     _get_faiss().write_index(index, str(tmp_index))
+    # 备份旧 docs 以便回滚
+    docs_backup = out_dir / "docs.jsonl.bak"
+    if docs_path.exists():
+        try:
+            os.replace(str(docs_path), str(docs_backup))
+        except OSError:
+            docs_backup = None
+    else:
+        docs_backup = None
     os.replace(str(tmp_docs), str(docs_path))
-    os.replace(str(tmp_index), str(index_path))
+    try:
+        os.replace(str(tmp_index), str(index_path))
+    except Exception:
+        if docs_backup and docs_backup.exists():
+            os.replace(str(docs_backup), str(docs_path))
+        raise
+    if docs_backup and docs_backup.exists():
+        docs_backup.unlink(missing_ok=True)
 
     print(f"[DONE] Built shared store ({len(records)} chunks, dim={dim})")
 

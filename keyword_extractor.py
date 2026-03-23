@@ -14,6 +14,7 @@
 
 import json
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -25,6 +26,9 @@ DATA_DIR = BASE_DIR / "data"
 EXTRACTED_KEYWORDS_FILE = DATA_DIR / "extracted_keywords.json"
 JIEBA_USER_DICT_FILE = DATA_DIR / "jieba_user_dict.txt"
 ROUTE_KEYWORDS_FILE = DATA_DIR / "extracted_route_keywords.json"
+
+
+_file_write_lock = threading.Lock()
 
 
 def _ensure_dir() -> None:
@@ -370,51 +374,52 @@ def _save_jieba_words(words: List[Dict]) -> int:
 
     _ensure_dir()
 
-    # 读取已有的自定义词（容错处理损坏文件）
-    existing_words = set()
-    if JIEBA_USER_DICT_FILE.exists():
-        try:
-            for line in JIEBA_USER_DICT_FILE.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    parts = line.split()
-                    if parts:
-                        existing_words.add(parts[0])
-        except (OSError, UnicodeDecodeError) as e:
-            from rag_logger import log_error
-            log_error("keyword_extractor", f"jieba 用户词典读取失败，将重建: {e}")
-
-    # 也读取 search_utils 中的硬编码自定义词
-    try:
-        existing_words.update(_get_hardcoded_jieba_words())
-    except Exception:
-        pass
-
-    # 追加新词
-    new_lines = []
-    for item in words:
-        word = item["word"]
-        if word in existing_words:
-            continue
-        freq = item.get("freq", 5)
-        pos = item.get("pos", "n")
-        # jieba 用户词典格式: 词 频率 词性
-        new_lines.append(f"{word} {freq} {pos}")
-        existing_words.add(word)
-
-    if new_lines:
-        # 原子写入：读取现有内容 + 追加新词 → 写临时文件 → 替换
-        existing_content = ""
+    with _file_write_lock:
+        # 读取已有的自定义词（容错处理损坏文件）
+        existing_words = set()
         if JIEBA_USER_DICT_FILE.exists():
             try:
-                existing_content = JIEBA_USER_DICT_FILE.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                pass
-        if existing_content and not existing_content.endswith("\n"):
-            existing_content += "\n"
-        tmp = JIEBA_USER_DICT_FILE.with_suffix(".tmp")
-        tmp.write_text(existing_content + "\n".join(new_lines) + "\n", encoding="utf-8")
-        tmp.replace(JIEBA_USER_DICT_FILE)
+                for line in JIEBA_USER_DICT_FILE.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        parts = line.split()
+                        if parts:
+                            existing_words.add(parts[0])
+            except (OSError, UnicodeDecodeError) as e:
+                from rag_logger import log_error
+                log_error("keyword_extractor", f"jieba 用户词典读取失败，将重建: {e}")
+
+        # 也读取 search_utils 中的硬编码自定义词
+        try:
+            existing_words.update(_get_hardcoded_jieba_words())
+        except Exception:
+            pass
+
+        # 追加新词
+        new_lines = []
+        for item in words:
+            word = item["word"]
+            if word in existing_words:
+                continue
+            freq = item.get("freq", 5)
+            pos = item.get("pos", "n")
+            # jieba 用户词典格式: 词 频率 词性
+            new_lines.append(f"{word} {freq} {pos}")
+            existing_words.add(word)
+
+        if new_lines:
+            # 原子写入：读取现有内容 + 追加新词 → 写临时文件 → 替换
+            existing_content = ""
+            if JIEBA_USER_DICT_FILE.exists():
+                try:
+                    existing_content = JIEBA_USER_DICT_FILE.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    pass
+            if existing_content and not existing_content.endswith("\n"):
+                existing_content += "\n"
+            tmp = JIEBA_USER_DICT_FILE.with_suffix(".tmp")
+            tmp.write_text(existing_content + "\n".join(new_lines) + "\n", encoding="utf-8")
+            tmp.replace(JIEBA_USER_DICT_FILE)
 
     return len(new_lines)
 
@@ -449,37 +454,38 @@ def _save_route_keywords(
 
     _ensure_dir()
 
-    # 加载已有
-    existing = {}
-    if ROUTE_KEYWORDS_FILE.exists():
-        try:
-            existing = json.loads(ROUTE_KEYWORDS_FILE.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            existing = {}
+    with _file_write_lock:
+        # 加载已有
+        existing = {}
+        if ROUTE_KEYWORDS_FILE.exists():
+            try:
+                existing = json.loads(ROUTE_KEYWORDS_FILE.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                existing = {}
 
-    # 按路由名分组合并
-    added = 0
-    for item in keywords:
-        kw = item["keyword"]
-        for route in item["routes"]:
-            if route not in existing:
-                existing[route] = {}
-            if kw not in existing[route]:
-                existing[route][kw] = {
-                    "source_entities": [],
-                    "reason": item.get("reason", ""),
-                }
-                added += 1
-            # 追加来源实体
-            source_key = f"{entity_type}:{entity_id}" if entity_id else entity_type
-            if source_key not in existing[route][kw]["source_entities"]:
-                existing[route][kw]["source_entities"].append(source_key)
+        # 按路由名分组合并
+        added = 0
+        for item in keywords:
+            kw = item["keyword"]
+            for route in item["routes"]:
+                if route not in existing:
+                    existing[route] = {}
+                if kw not in existing[route]:
+                    existing[route][kw] = {
+                        "source_entities": [],
+                        "reason": item.get("reason", ""),
+                    }
+                    added += 1
+                # 追加来源实体
+                source_key = f"{entity_type}:{entity_id}" if entity_id else entity_type
+                if source_key not in existing[route][kw]["source_entities"]:
+                    existing[route][kw]["source_entities"].append(source_key)
 
-    # 原子写入
-    tmp = ROUTE_KEYWORDS_FILE.with_suffix(".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(existing, f, ensure_ascii=False, indent=2)
-    tmp.replace(ROUTE_KEYWORDS_FILE)
+        # 原子写入
+        tmp = ROUTE_KEYWORDS_FILE.with_suffix(".tmp")
+        with tmp.open("w", encoding="utf-8") as f:
+            json.dump(existing, f, ensure_ascii=False, indent=2)
+        tmp.replace(ROUTE_KEYWORDS_FILE)
 
     return added
 
