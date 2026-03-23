@@ -364,7 +364,76 @@
   </div>
 
   <div id="tab-logs" class="tab-panel">
-    <div class="card"><div class="card-title">日志</div><div class="empty">Phase 2B 将填充内容</div></div>
+    <div class="card">
+      <!-- 子 Tab 切换 + 工具栏 -->
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+        <button class="btn btn-primary btn-sm" id="logTabQa"    onclick="switchLogTab('qa')"   >问答日志</button>
+        <button class="btn btn-outline btn-sm" id="logTabMiss"  onclick="switchLogTab('miss')" >未命中</button>
+        <button class="btn btn-outline btn-sm" id="logTabError" onclick="switchLogTab('error')">错误日志</button>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <label style="margin:0;font-size:12px">条数</label>
+          <select id="logLimit" style="width:70px;padding:4px 8px;font-size:12px" onchange="loadLogs()">
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+          <button class="btn btn-outline btn-sm" onclick="loadLogs()">刷新</button>
+        </div>
+      </div>
+
+      <!-- 问答日志表格 -->
+      <div id="logPanelQa">
+        <div class="table-wrap">
+          <table id="logTableQa">
+            <thead>
+              <tr>
+                <th style="width:140px">时间</th>
+                <th>问题</th>
+                <th>改写查询</th>
+                <th style="width:60px">命中</th>
+                <th style="width:80px">耗时(ms)</th>
+                <th>摘要</th>
+              </tr>
+            </thead>
+            <tbody id="logBodyQa"><tr><td colspan="6" class="empty">点击刷新加载</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 未命中日志表格 -->
+      <div id="logPanelMiss" style="display:none">
+        <div class="table-wrap">
+          <table id="logTableMiss">
+            <thead>
+              <tr>
+                <th style="width:140px">时间</th>
+                <th>问题</th>
+                <th>改写查询</th>
+                <th>元数据</th>
+              </tr>
+            </thead>
+            <tbody id="logBodyMiss"><tr><td colspan="4" class="empty">点击刷新加载</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 错误日志表格 -->
+      <div id="logPanelError" style="display:none">
+        <div class="table-wrap">
+          <table id="logTableError">
+            <thead>
+              <tr>
+                <th style="width:140px">时间</th>
+                <th style="width:140px">阶段</th>
+                <th>错误信息</th>
+                <th>元数据</th>
+              </tr>
+            </thead>
+            <tbody id="logBodyError"><tr><td colspan="4" class="empty">点击刷新加载</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="tab-knowledge" class="tab-panel">
@@ -482,6 +551,75 @@
         _setAuthUI(false);
       }
     })();
+
+    /* ===== 日志 ===== */
+    let _curLogTab = 'qa';
+
+    function switchLogTab(kind) {
+      _curLogTab = kind;
+      ['qa','miss','error'].forEach(k => {
+        document.getElementById('logPanel' + k.charAt(0).toUpperCase() + k.slice(1)).style.display = k === kind ? '' : 'none';
+        const btn = document.getElementById('logTab' + k.charAt(0).toUpperCase() + k.slice(1));
+        btn.className = k === kind ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+      });
+      loadLogs();
+    }
+
+    function _esc(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function _shortTs(ts) {
+      return String(ts || '').replace('T', ' ');
+    }
+
+    async function loadLogs() {
+      const limit = document.getElementById('logLimit').value;
+      const kind  = _curLogTab;
+      try {
+        const r = await apiFetch(`/admin/logs/${kind}?limit=${limit}`);
+        const d = await r.json();
+        const items = d.items || [];
+        if (kind === 'qa') {
+          const tbody = document.getElementById('logBodyQa');
+          if (!items.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无问答日志</td></tr>'; return; }
+          tbody.innerHTML = items.map(it => {
+            const hit = it.hit
+              ? '<span class="badge badge-success">命中</span>'
+              : '<span class="badge badge-warn">未中</span>';
+            const ans = _esc((it.answer || '').slice(0, 60)) + (it.answer?.length > 60 ? '…' : '');
+            return `<tr>
+              <td style="white-space:nowrap;font-size:12px">${_esc(_shortTs(it.ts))}</td>
+              <td style="max-width:180px">${_esc(it.question || '')}</td>
+              <td style="font-size:12px;color:var(--text-sec)">${_esc(it.rewritten_query || '')}</td>
+              <td>${hit}</td>
+              <td>${it.latency_ms ?? '—'}</td>
+              <td style="font-size:12px;color:var(--text-sec);max-width:220px">${ans}</td>
+            </tr>`;
+          }).join('');
+        } else if (kind === 'miss') {
+          const tbody = document.getElementById('logBodyMiss');
+          if (!items.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无未命中记录</td></tr>'; return; }
+          tbody.innerHTML = items.map(it => `<tr>
+            <td style="white-space:nowrap;font-size:12px">${_esc(_shortTs(it.ts))}</td>
+            <td>${_esc(it.question || '')}</td>
+            <td style="font-size:12px;color:var(--text-sec)">${_esc(it.rewritten_query || '')}</td>
+            <td style="font-size:12px;color:var(--text-sec)">${_esc(JSON.stringify(it.meta || {}))}</td>
+          </tr>`).join('');
+        } else {
+          const tbody = document.getElementById('logBodyError');
+          if (!items.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无错误记录</td></tr>'; return; }
+          tbody.innerHTML = items.map(it => `<tr>
+            <td style="white-space:nowrap;font-size:12px">${_esc(_shortTs(it.ts))}</td>
+            <td><span class="badge badge-danger">${_esc(it.stage || '')}</span></td>
+            <td style="font-size:12px;color:var(--danger);word-break:break-all">${_esc(it.error || '')}</td>
+            <td style="font-size:12px;color:var(--text-sec)">${_esc(JSON.stringify(it.meta || {}))}</td>
+          </tr>`).join('');
+        }
+      } catch(e) {
+        if (e.message !== '403') toast('加载日志失败：' + e.message, 3000);
+      }
+    }
 
     /* ===== 索引管理 ===== */
     async function doRebuild() {
