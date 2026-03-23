@@ -691,6 +691,53 @@
       <div id="kwPageInfo" style="font-size:12px;color:var(--text-sec);margin-top:8px;text-align:right"></div>
     </div>
 
+    <!-- 消歧规则列表 -->
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>消歧规则
+          <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:6px">
+            触发词 → 引导用户选择意图
+          </span>
+        </span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span id="clrStats" style="font-size:12px;color:var(--text-sec)"></span>
+          <button class="btn btn-outline btn-sm" onclick="loadClarification()">刷新</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:120px">触发词</th>
+              <th>选项</th>
+              <th style="width:70px">来源</th>
+              <th style="width:60px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="clrBody">
+            <tr><td colspan="4" class="empty">点击刷新加载</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 新增消歧规则 -->
+    <div class="card">
+      <div class="card-title">新增消歧规则</div>
+      <div style="margin-bottom:12px">
+        <label>触发词</label>
+        <input type="text" id="clrTrigger" placeholder="例如：禅" style="max-width:300px">
+      </div>
+      <div>
+        <label style="margin-bottom:8px">选项列表（最多 10 条，label=展示文字，value=传递值）</label>
+        <div id="clrOptionsWrap"></div>
+        <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="addClrOptionRow()">＋ 添加选项</button>
+      </div>
+      <div style="margin-top:14px">
+        <button class="btn btn-primary" onclick="saveClrRule()">保存规则</button>
+      </div>
+    </div>
+
   </div>
 
   <div id="tab-import" class="tab-panel">
@@ -766,7 +813,7 @@
       event.currentTarget.classList.add('active');
       if (name === 'knowledge') loadKnowledgeProducts();
       if (name === 'synonyms')  loadSynonyms();
-      if (name === 'keywords')  loadKeywords();
+      if (name === 'keywords')  { loadKeywords(); loadClarification(); _initClrOptions(); }
     }
 
     /* ===== Toast ===== */
@@ -1018,6 +1065,117 @@
         }
       } catch(e) {
         if (e.message !== '403') toast('删除失败：' + e.message, 4000);
+      }
+    }
+
+    /* ===== 消歧规则 ===== */
+    async function loadClarification() {
+      try {
+        const r = await apiFetch('/admin/keywords/clarification');
+        const d = await r.json();
+        document.getElementById('clrStats').textContent =
+          `共 ${d.total} 条（静态 ${d.static_count}，自定义 ${d.custom_count}）`;
+        const tbody = document.getElementById('clrBody');
+        const items = d.items || [];
+        if (!items.length) {
+          tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无消歧规则</td></tr>';
+          return;
+        }
+        tbody.innerHTML = items.map(it => {
+          const srcBadge = it.source === 'custom'
+            ? '<span class="badge badge-info">自定义</span>'
+            : '<span class="badge" style="background:#f1f3f5;color:#555">静态</span>';
+          const opts = (it.options || []).map(o =>
+            `<span style="background:var(--bg);border:1px solid var(--border);border-radius:5px;
+                          padding:2px 8px;font-size:12px;margin-right:4px">${_esc(o.label || o.value || '')}</span>`
+          ).join('');
+          const editBtn = `<button class="btn btn-outline btn-sm" onclick="editClrRule('${_esc(it.trigger)}', ${_esc(JSON.stringify(it.options))})">编辑</button>`;
+          const delBtn = it.source === 'custom'
+            ? `<button class="btn btn-danger btn-sm" onclick="deleteClrRule('${_esc(it.trigger)}')">删除</button>`
+            : '';
+          return `<tr>
+            <td><strong>${_esc(it.trigger)}</strong></td>
+            <td style="line-height:2">${opts}</td>
+            <td>${srcBadge}</td>
+            <td style="display:flex;gap:4px;flex-wrap:wrap">${editBtn}${delBtn}</td>
+          </tr>`;
+        }).join('');
+      } catch(e) {
+        if (e.message !== '403') toast('加载消歧规则失败：' + e.message, 3000);
+      }
+    }
+
+    function _initClrOptions() {
+      const wrap = document.getElementById('clrOptionsWrap');
+      wrap.innerHTML = '';
+      addClrOptionRow('', '');
+    }
+
+    function addClrOptionRow(label = '', value = '') {
+      const wrap = document.getElementById('clrOptionsWrap');
+      if (wrap.children.length >= 10) { toast('最多添加 10 条选项'); return; }
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;align-items:center';
+      row.innerHTML = `
+        <input type="text" placeholder="展示文字(label)" value="${_esc(label)}" style="flex:1">
+        <input type="text" placeholder="传递值(value，留空同label)" value="${_esc(value)}" style="flex:1">
+        <button class="btn btn-outline btn-sm" onclick="this.parentElement.remove()" style="flex:0 0 auto">✕</button>`;
+      wrap.appendChild(row);
+    }
+
+    function editClrRule(trigger, options) {
+      document.getElementById('clrTrigger').value = trigger;
+      const wrap = document.getElementById('clrOptionsWrap');
+      wrap.innerHTML = '';
+      (options || []).forEach(o => addClrOptionRow(o.label || '', o.value || o.label || ''));
+      document.getElementById('clrTrigger').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById('clrTrigger').focus();
+    }
+
+    async function saveClrRule() {
+      const trigger = document.getElementById('clrTrigger').value.trim();
+      if (!trigger) { toast('请填写触发词'); return; }
+      const rows = document.getElementById('clrOptionsWrap').children;
+      const options = [];
+      for (const row of rows) {
+        const inputs = row.querySelectorAll('input');
+        const label = inputs[0].value.trim();
+        const value = (inputs[1].value.trim()) || label;
+        if (label) options.push({ label, value });
+      }
+      if (options.length < 1) { toast('请至少添加 1 条选项'); return; }
+      try {
+        const r = await apiFetch('/admin/keywords/clarification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trigger, options })
+        });
+        const d = await r.json();
+        if (d.ok) {
+          toast(`规则「${trigger}」已保存 ✓`);
+          document.getElementById('clrTrigger').value = '';
+          _initClrOptions();
+          loadClarification();
+        } else {
+          toast('保存失败：' + (d.detail || JSON.stringify(d)), 4000);
+        }
+      } catch(e) {
+        if (e.message !== '403') toast('保存失败：' + e.message, 3000);
+      }
+    }
+
+    async function deleteClrRule(trigger) {
+      if (!confirm(`确认删除消歧规则「${trigger}」？`)) return;
+      try {
+        const r = await apiFetch(
+          `/admin/keywords/clarification?trigger=${encodeURIComponent(trigger)}`,
+          { method: 'DELETE' }
+        );
+        const d = await r.json();
+        if (d.ok) { toast(`已删除「${trigger}」`); loadClarification(); }
+        else toast('删除失败：' + (d.detail || ''), 3000);
+      } catch(e) {
+        if (e.message !== '403') toast('删除失败：' + e.message, 3000);
       }
     }
 
