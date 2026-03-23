@@ -464,6 +464,7 @@ def vector_search(product: str, query: str, top_k: int) -> List[Dict]:
 
 
 _knowledge_file_cache: Dict[str, tuple] = {}
+_knowledge_file_lock = threading.Lock()
 _KNOWLEDGE_CACHE_MAX = 128
 
 
@@ -473,12 +474,14 @@ def read_knowledge_file(product: str, fname: str) -> str:
         return ""
     key = str(p)
     mtime = p.stat().st_mtime
-    cached = _knowledge_file_cache.get(key)
-    if cached and cached[0] == mtime:
-        return cached[1]
+    with _knowledge_file_lock:
+        cached = _knowledge_file_cache.get(key)
+        if cached and cached[0] == mtime:
+            return cached[1]
     content = p.read_text(encoding="utf-8", errors="replace")
-    _evict_cache(_knowledge_file_cache, _KNOWLEDGE_CACHE_MAX)
-    _knowledge_file_cache[key] = (mtime, content)
+    with _knowledge_file_lock:
+        _evict_cache(_knowledge_file_cache, _KNOWLEDGE_CACHE_MAX)
+        _knowledge_file_cache[key] = (mtime, content)
     return content
 
 
@@ -1388,7 +1391,7 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
     # Route-aware merge weights
     vw = route_cfg.get("vw", HYBRID_VECTOR_WEIGHT)
     kw = route_cfg.get("kw", HYBRID_KEYWORD_WEIGHT)
-    hits = merge_hybrid(vector_hits, keyword_hits, vw, kw, route_top_k) if (vector_hits or keyword_hits) else []
+    hits = merge_hybrid(vector_hits, keyword_hits, vw, kw, route_top_k, route=route) if (vector_hits or keyword_hits) else []
 
     # Score filtering
     hits = filter_by_score(hits, route_threshold)
@@ -1606,13 +1609,15 @@ def answer_question(question: str, mode: str, history: list = None,
 
     # Precompute rewrites and routes for sub-questions
     sub_tasks = []
-    seen_routes = set()
+    seen_questions = set()
     for subq in sub_questions:
+        # 按内容去重而非路由去重，避免丢弃同路由的不同子问题
+        subq_norm = subq.strip().lower()
+        if subq_norm in seen_questions:
+            continue
+        seen_questions.add(subq_norm)
         sub_rewrite = rewrite if subq == rewrite.get("original", q) else rewrite_query(subq)
         route = _detect_route_with_history(subq, sub_rewrite)
-        if route in seen_routes:
-            continue
-        seen_routes.add(route)
         sub_tasks.append((subq, sub_rewrite, route))
 
     # Parallel execution for multiple sub-questions

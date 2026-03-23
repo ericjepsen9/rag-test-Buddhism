@@ -1519,10 +1519,12 @@ def _get_candidate_docs(terms: List[str], inv_index: Dict[str, List[int]],
     candidate_set: set = set()
     for term in terms:
         if len(term) >= 2:
-            bg = term[:2]
-            doc_ids = inv_index.get(bg)
-            if doc_ids is not None:
-                candidate_set.update(doc_ids)
+            # 使用 term 的所有 bigram 组合查找候选文档，提升多字词召回率
+            for j in range(len(term) - 1):
+                bg = term[j:j+2]
+                doc_ids = inv_index.get(bg)
+                if doc_ids is not None:
+                    candidate_set.update(doc_ids)
         elif len(term) == 1:
             for bg_key, doc_ids in inv_index.items():
                 if term in bg_key:

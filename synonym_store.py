@@ -74,8 +74,8 @@ def save_learned(original_term: str, mapped_to: str) -> None:
             entry = data[original_term]
             entry["count"] = entry.get("count", 1) + 1
             entry["last_seen"] = now
-            # 如果映射目标变了（LLM 给出更好的映射），更新
-            if entry.get("mapped_to") != mapped_to:
+            # 仅在未审核时更新映射目标，已审核的人工映射不可被 LLM 覆盖
+            if entry.get("mapped_to") != mapped_to and not entry.get("approved"):
                 entry["mapped_to"] = mapped_to
         else:
             data[original_term] = {
