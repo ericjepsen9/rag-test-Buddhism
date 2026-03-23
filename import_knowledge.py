@@ -316,12 +316,28 @@ def _parse_json_result(text: str) -> dict:
         return json.loads(cleaned)
     except json.JSONDecodeError:
         import re
-        m = re.search(r'\{[\s\S]*\}', cleaned)
-        if m:
-            try:
-                return json.loads(m.group())
-            except json.JSONDecodeError:
-                raise ValueError(f"LLM 返回内容无法解析为 JSON：{cleaned[:500]}")
+        # 查找第一个平衡的 JSON 对象（处理嵌套大括号）
+        start = cleaned.find('{')
+        if start >= 0:
+            depth = 0
+            for i in range(start, len(cleaned)):
+                if cleaned[i] == '{':
+                    depth += 1
+                elif cleaned[i] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        candidate = cleaned[start:i+1]
+                        try:
+                            return json.loads(candidate)
+                        except json.JSONDecodeError:
+                            break
+            # Fallback: greedy match (may fail on multiple JSON objects)
+            m = re.search(r'\{[\s\S]*\}', cleaned)
+            if m:
+                try:
+                    return json.loads(m.group())
+                except json.JSONDecodeError:
+                    raise ValueError(f"LLM 返回内容无法解析为 JSON：{cleaned[:500]}")
         raise ValueError(f"LLM 返回内容中未找到 JSON：{cleaned[:500]}")
 
 

@@ -1426,20 +1426,27 @@ _CACHE_MAX_SIZE = CACHE_MAX_PRODUCTS
 _bm25_cache: Dict[Any, Tuple[List[str], int, float]] = {}
 _df_cache: Dict[Any, Dict[str, int]] = {}
 _inverted_index_cache: Dict[Any, Dict[str, List[int]]] = {}
+_bm25_cache_lock = threading.Lock()
 
 
 def _cache_put(cache: dict, key: Any, value: Any, max_size: int = 0) -> None:
     limit = max_size if max_size > 0 else _CACHE_MAX_SIZE
-    if key in cache:
+    with _bm25_cache_lock:
+        if key in cache:
+            cache[key] = value
+            return
+        while len(cache) >= limit:
+            try:
+                oldest = next(iter(cache))
+                cache.pop(oldest, None)
+            except (StopIteration, RuntimeError):
+                break
         cache[key] = value
-        return
-    while len(cache) >= limit:
-        try:
-            oldest = next(iter(cache))
-            cache.pop(oldest, None)
-        except (StopIteration, RuntimeError):
-            break
-    cache[key] = value
+
+
+def _cache_get(cache: dict, key: Any):
+    with _bm25_cache_lock:
+        return cache.get(key)
 
 
 def invalidate_bm25_cache(product: str = "") -> None:
@@ -1472,7 +1479,7 @@ def _corpus_cache_key(docs: List[Dict]) -> Tuple:
 
 def _get_bm25_corpus(docs: List[Dict]) -> Tuple[List[str], int, float, Tuple]:
     key = _corpus_cache_key(docs)
-    cached = _bm25_cache.get(key)
+    cached = _cache_get(_bm25_cache, key)
     if cached:
         return cached[0], cached[1], cached[2], key
     texts = [(d.get("text") or "").lower() for d in docs]
@@ -1483,7 +1490,7 @@ def _get_bm25_corpus(docs: List[Dict]) -> Tuple[List[str], int, float, Tuple]:
 
 
 def _batch_doc_freqs(terms: List[str], texts: List[str], corpus_key: Any) -> Dict[str, int]:
-    cached = _df_cache.get(corpus_key)
+    cached = _cache_get(_df_cache, corpus_key)
     if cached is None:
         cached = {}
         _cache_put(_df_cache, corpus_key, cached)
@@ -1494,12 +1501,13 @@ def _batch_doc_freqs(terms: List[str], texts: List[str], corpus_key: Any) -> Dic
             for t in uncached:
                 if t in doc_text:
                     counts[t] += 1
-        cached.update(counts)
+        with _bm25_cache_lock:
+            cached.update(counts)
     return {t: cached.get(t, 0) for t in terms}
 
 
 def _get_inverted_index(texts: List[str], corpus_key: Any) -> Dict[str, List[int]]:
-    cached = _inverted_index_cache.get(corpus_key)
+    cached = _cache_get(_inverted_index_cache, corpus_key)
     if cached is not None:
         return cached
     inv: Dict[str, List[int]] = {}
@@ -1782,7 +1790,7 @@ def rerank_hits(query: str, hits: List[Dict], model, top_k: int) -> List[Dict]:
     hits = [dict(h) for h in hits]
 
     cache_key = _rerank_cache_key(query, hits)
-    cached = _rerank_cache.get(cache_key)
+    cached = _cache_get(_rerank_cache, cache_key)
     if cached is not None:
         score_map = dict(cached)
         for h in hits:
@@ -1828,8 +1836,10 @@ def rerank_hits(query: str, hits: List[Dict], model, top_k: int) -> List[Dict]:
             normalized = (raw - min_s) / rng
             h["rerank_score"] = normalized
             h["hybrid_score_before_rerank"] = h.get("hybrid_score", 0.0)
-            h["hybrid_score"] = normalized
-            cache_entries.append((_hit_key(h), normalized))
+            # 混合原始 hybrid_score 与 rerank 分数，避免纯归一化丢失原始校准信息
+            orig = h.get("hybrid_score", 0.0)
+            h["hybrid_score"] = 0.3 * orig + 0.7 * normalized
+            cache_entries.append((_hit_key(h), h["hybrid_score"]))
         _cache_put(_rerank_cache, cache_key, cache_entries, max_size=_RERANK_CACHE_MAX)
 
     hits.sort(key=lambda x: x.get("hybrid_score", 0.0), reverse=True)

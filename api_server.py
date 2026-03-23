@@ -585,9 +585,10 @@ def ask(request: Request, req: AskRequest):
         except Exception:
             pass
         log_error("api_ask", repr(e), meta=error_meta)
-        return AskResponse(
-            ok=False,
-            answer="接口执行异常，请稍后重试",
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "answer": "接口执行异常，请稍后重试",
+                     "media": [], "latency_ms": latency_ms},
         )
 
 
@@ -2384,6 +2385,19 @@ def admin_fetch_url(request: Request, req: FetchUrlRequest):
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise HTTPException(status_code=400, detail="仅支持 HTTP/HTTPS 链接")
+
+    # SSRF 防护：禁止请求内网 IP
+    import ipaddress
+    import socket
+    hostname = parsed.hostname or ""
+    try:
+        resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        for _, _, _, _, addr in resolved:
+            ip = ipaddress.ip_address(addr[0])
+            if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
+                raise HTTPException(status_code=400, detail="不允许访问内网地址")
+    except socket.gaierror:
+        raise HTTPException(status_code=400, detail=f"无法解析域名: {hostname}")
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 "

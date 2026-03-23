@@ -538,16 +538,22 @@ def detect_route(question: str) -> str:
         "concept": _CONCEPT_SIGNALS, "history": _HISTORY_SIGNALS,
         "ritual": _RITUAL_SIGNALS,
     }
+    # 跟踪每个信号词被哪些路由使用，避免同一信号同时加分多个路由
+    signal_used_by: Dict[str, str] = {}
     for route, signals in _signal_map.items():
         if route not in scores:
             continue
         other_kws = [kw for r, hits in matched.items() if r != route for kw in hits]
         signal_hits = [s for s in signals if s in q]
-        # Skip boost if every signal match is a substring of a longer keyword from another route
+        # 排除其它路由更长关键词的子串
         independent = [s for s in signal_hits
                        if not any(s in okw and len(okw) > len(s) for okw in other_kws)]
+        # 排除已被更高优先级路由使用的信号词（避免 "般若" 同时加分 doctrine 和 concept）
+        independent = [s for s in independent if s not in signal_used_by]
         if independent:
             scores[route] += 5.0
+            for s in independent:
+                signal_used_by[s] = route
 
     # doctrine vs concept disambiguation
     if "doctrine" in scores and "concept" in scores:
@@ -1042,6 +1048,7 @@ def _chitchat_reply(raw: str) -> str:
 
 _openai_client = None
 _openai_client_checked = False
+_openai_client_lock = threading.Lock()
 
 
 def _get_chat_model() -> str:
@@ -1068,26 +1075,29 @@ def _get_openai_client():
                 return client
     except ImportError:
         pass
-    # Legacy fallback
+    # Legacy fallback with proper double-checked locking
     if _openai_client_checked:
         return _openai_client
-    if not USE_OPENAI:
+    with _openai_client_lock:
+        if _openai_client_checked:
+            return _openai_client
+        if not USE_OPENAI:
+            _openai_client_checked = True
+            return None
+        key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if not key:
+            _openai_client_checked = True
+            return None
+        try:
+            from openai import OpenAI
+            client_kwargs = {"api_key": key}
+            if OPENAI_API_BASE:
+                client_kwargs["base_url"] = OPENAI_API_BASE
+            _openai_client = OpenAI(**client_kwargs)
+        except Exception:
+            _openai_client = None
         _openai_client_checked = True
-        return None
-    key = os.environ.get("OPENAI_API_KEY", "").strip()
-    if not key:
-        _openai_client_checked = True
-        return None
-    try:
-        from openai import OpenAI
-        client_kwargs = {"api_key": key}
-        if OPENAI_API_BASE:
-            client_kwargs["base_url"] = OPENAI_API_BASE
-        _openai_client = OpenAI(**client_kwargs)
-    except Exception:
-        _openai_client = None
-    _openai_client_checked = True
-    return _openai_client
+        return _openai_client
 
 
 # ===================================================================
