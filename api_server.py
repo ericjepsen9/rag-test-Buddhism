@@ -943,13 +943,6 @@ def admin_synonyms_export():
     return get_all_synonyms_combined()
 
 
-@app.get("/admin/synonyms/learned")
-def admin_synonyms_learned():
-    """返回所有 LLM 学习到的同义词映射"""
-    from synonym_store import get_all_learned
-    return {"items": get_all_learned()}
-
-
 @app.post("/admin/synonyms/learned/approve")
 def admin_synonyms_approve(original: str):
     """审核通过一条学习到的同义词"""
@@ -988,22 +981,6 @@ def admin_synonyms_add(req: SynonymAddRequest):
     result = add_manual(req.original, req.mapped_to)
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("error", "添加失败"))
-    _reload_synonym_runtime()
-    return result
-
-
-class SynonymEditRequest(BaseModel):
-    original: str = Field(..., min_length=1, max_length=200)
-    mapped_to: str = Field(..., min_length=1, max_length=200)
-
-
-@app.put("/admin/synonyms/learned")
-def admin_synonyms_edit(req: SynonymEditRequest):
-    """编辑已有同义词的映射目标"""
-    from synonym_store import update_learned
-    result = update_learned(req.original, req.mapped_to)
-    if not result.get("ok"):
-        raise HTTPException(status_code=400, detail=result.get("error", "编辑失败"))
     _reload_synonym_runtime()
     return result
 
@@ -1741,22 +1718,6 @@ def admin_update_server_config(req: ServerConfigRequest):
     from rag_runtime_config import update_server_config
     changed = update_server_config(req.updates)
     return {"ok": True, "changed": changed}
-
-
-class NginxGenRequest(BaseModel):
-    domain: str = Field(..., min_length=1)
-    port: int = 0
-    ssl: bool = False
-    cert_path: str = ""
-    key_path: str = ""
-
-
-@app.post("/admin/config/nginx")
-def admin_generate_nginx(req: NginxGenRequest):
-    """生成 nginx 反向代理配置"""
-    from rag_runtime_config import generate_nginx_config
-    config = generate_nginx_config(req.domain, req.port, req.ssl, req.cert_path, req.key_path)
-    return {"ok": True, "config": config}
 
 
 # ===== BGE-M3 嵌入模型控制接口 =====

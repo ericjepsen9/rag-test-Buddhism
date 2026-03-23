@@ -285,12 +285,6 @@ class TestAdminEndpoints:
         data = resp.json()
         assert "static" in data or "learned" in data
 
-    def test_admin_synonyms_learned(self, client, admin_headers):
-        resp = client.get("/admin/synonyms/learned", headers=admin_headers)
-        assert resp.status_code == 200
-        data = resp.json()
-        assert isinstance(data, (list, dict))
-
     def test_admin_keywords_effective(self, client, admin_headers):
         resp = client.get("/admin/keywords/effective", headers=admin_headers)
         assert resp.status_code == 200
@@ -503,6 +497,9 @@ class TestSynonymOperations:
         assert "active_count" in data
 
     def test_synonyms_learned_add(self, client, admin_headers):
+        # Delete first in case it exists from a prior run
+        client.post("/admin/synonyms/learned/batch-delete",
+                    json={"terms": ["_test_syn_orig"]}, headers=admin_headers)
         resp = client.post("/admin/synonyms/learned/add",
                            json={"original": "_test_syn_orig", "mapped_to": "_test_syn_map"},
                            headers=admin_headers)

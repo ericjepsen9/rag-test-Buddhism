@@ -413,7 +413,7 @@ function loadProducts() {
     if (old) old.remove();
     document.body.appendChild(dl);
     document.getElementById('idInput').setAttribute('list', 'productList');
-  }).catch(() => {});
+  }).catch(e => { console.warn('加载产品列表失败:', e.message || e); });
 }
 
 // ===== URL 提取 =====
@@ -430,10 +430,13 @@ function doFetchUrl() {
   btn.textContent = '提取中...';
   showFetchStatus('正在提取文章内容和媒体...', 'loading');
 
+  const fetchCtrl = new AbortController();
+  const fetchTimer = setTimeout(() => fetchCtrl.abort(), 30000);
   fetch(API_BASE + '/admin/fetch_url', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-    body: JSON.stringify({ url: url })
+    body: JSON.stringify({ url: url }),
+    signal: fetchCtrl.signal
   })
   .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
   .then(({ ok, data }) => {
@@ -462,8 +465,10 @@ function doFetchUrl() {
   .catch(e => {
     btn.disabled = false;
     btn.textContent = '提取';
-    showFetchStatus('请求失败: ' + e.message, 'error');
-  });
+    const msg = e.name === 'AbortError' ? '请求超时，请稍后重试' : '请求失败: ' + e.message;
+    showFetchStatus(msg, 'error');
+  })
+  .finally(() => clearTimeout(fetchTimer));
 }
 
 // ===== 媒体审查 =====
@@ -610,10 +615,13 @@ function doSubmit() {
 
   const fullContent = title ? '\u3010' + title + '\u3011\n\n' + content : content;
 
+  const submitCtrl = new AbortController();
+  const submitTimer = setTimeout(() => submitCtrl.abort(), 60000);
   fetch(API_BASE + '/admin/import_knowledge', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-    body: JSON.stringify({ type: type, id: id, content: fullContent, build: build, dry_run: dryRun })
+    body: JSON.stringify({ type: type, id: id, content: fullContent, build: build, dry_run: dryRun }),
+    signal: submitCtrl.signal
   })
   .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
   .then(({ ok, data }) => {
@@ -632,8 +640,10 @@ function doSubmit() {
   .catch(e => {
     btn.disabled = false;
     btn.textContent = '提交导入';
-    showResult('请求失败: ' + e.message, 'error');
-  });
+    const msg = e.name === 'AbortError' ? '请求超时（60秒），LLM 处理可能仍在进行' : '请求失败: ' + e.message;
+    showResult(msg, 'error');
+  })
+  .finally(() => clearTimeout(submitTimer));
 }
 
 function showResult(msg, type) {
