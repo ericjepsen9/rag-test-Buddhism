@@ -914,8 +914,48 @@
       <div class="card" style="margin:0" id="llmCard_knowledge"></div>
     </div>
 
-    <!-- Phase 7B/7C 占位 -->
-    <div id="svcPlaceholder"></div>
+    <!-- Phase 7B: 服务管理 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+
+      <!-- Embedding 模型 -->
+      <div class="card" style="margin:0">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Embedding 模型（BGE-M3）</span>
+          <span id="embStatusBadge" class="badge badge-warn">未知</span>
+        </div>
+        <div style="font-size:13px;color:var(--text-sec);margin-bottom:10px">
+          模型：<span id="embModelName">-</span> &nbsp;|&nbsp;
+          FP16：<span id="embFp16">-</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" id="embStartBtn" onclick="svcEmbStart()">加载模型</button>
+          <button class="btn btn-danger btn-sm"  id="embStopBtn"  onclick="svcEmbStop()">卸载模型</button>
+          <button class="btn btn-outline btn-sm" onclick="loadServiceStatus()">刷新</button>
+        </div>
+        <pre class="out" id="embOut" style="display:none;margin-top:10px"></pre>
+      </div>
+
+      <!-- LLM 服务 -->
+      <div class="card" style="margin:0">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>LLM 服务</span>
+          <span id="llmSvcBadge" class="badge badge-warn">未知</span>
+        </div>
+        <div style="font-size:13px;color:var(--text-sec);margin-bottom:10px">
+          模型：<span id="llmSvcModel">-</span> &nbsp;|&nbsp;
+          API Base：<span id="llmSvcBase">-</span> &nbsp;|&nbsp;
+          Key：<span id="llmSvcKey">-</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <button class="btn btn-primary btn-sm" id="llmSvcStartBtn" onclick="svcLlmStart()">启动</button>
+          <button class="btn btn-danger btn-sm"  id="llmSvcStopBtn"  onclick="svcLlmStop()">停止</button>
+          <button class="btn btn-outline btn-sm" id="llmSvcTestBtn"  onclick="svcLlmTest()">测试连接</button>
+          <button class="btn btn-outline btn-sm" onclick="loadServiceStatus()">刷新</button>
+        </div>
+        <pre class="out" id="llmSvcOut" style="display:none;margin-top:10px"></pre>
+      </div>
+
+    </div>
 
   </div>
 
@@ -985,7 +1025,7 @@
       if (name === 'knowledge') loadKnowledgeProducts();
       if (name === 'synonyms')  loadSynonyms();
       if (name === 'keywords')  { loadKeywords(); loadClarification(); _initClrOptions(); }
-      if (name === 'system')    loadLlmConfigs();
+      if (name === 'system')    { loadLlmConfigs(); loadServiceStatus(); }
     }
 
     /* ===== Toast ===== */
@@ -1392,6 +1432,140 @@
         if (e.message !== '403') toast('测试失败：' + e.message, 3000);
       } finally {
         btn.disabled = false; btn.innerHTML = '测试连接';
+      }
+    }
+
+    /* ===== Phase 7B: 服务管理 ===== */
+
+    async function loadServiceStatus() {
+      try {
+        const [embR, llmR] = await Promise.all([
+          apiFetch('/admin/service/embedding'),
+          apiFetch('/admin/service/llm')
+        ]);
+        const emb = await embR.json();
+        const llm = await llmR.json();
+
+        // Embedding status
+        document.getElementById('embModelName').textContent = emb.model_name || '-';
+        document.getElementById('embFp16').textContent = emb.use_fp16 ? '是' : '否';
+        const embBadge = document.getElementById('embStatusBadge');
+        if (emb.loaded) {
+          embBadge.className = 'badge badge-success'; embBadge.textContent = '已加载';
+        } else {
+          embBadge.className = 'badge badge-warn'; embBadge.textContent = '未加载';
+        }
+        document.getElementById('embStartBtn').disabled = !!emb.loaded;
+        document.getElementById('embStopBtn').disabled = !emb.loaded;
+
+        // LLM status
+        document.getElementById('llmSvcModel').textContent = llm.model || '-';
+        document.getElementById('llmSvcBase').textContent = llm.api_base || '(default)';
+        document.getElementById('llmSvcKey').textContent = llm.api_key_set ? '已设置' : '未设置';
+        const llmBadge = document.getElementById('llmSvcBadge');
+        if (!llm.enabled) {
+          llmBadge.className = 'badge badge-warn'; llmBadge.textContent = '未启用';
+        } else if (llm.client_ready) {
+          llmBadge.className = 'badge badge-success'; llmBadge.textContent = '运行中';
+        } else {
+          llmBadge.className = 'badge badge-info'; llmBadge.textContent = '已启用';
+        }
+        document.getElementById('llmSvcStartBtn').disabled = !!(llm.enabled && llm.client_ready);
+        document.getElementById('llmSvcStopBtn').disabled = !llm.enabled;
+        document.getElementById('llmSvcTestBtn').disabled = !llm.enabled;
+      } catch(e) {
+        if (e.message !== '403') toast('加载服务状态失败：' + e.message, 3000);
+      }
+    }
+
+    async function svcEmbStart() {
+      const btn = document.getElementById('embStartBtn');
+      const out = document.getElementById('embOut');
+      btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 加载中…';
+      out.style.display = ''; out.textContent = '正在加载 BGE-M3 模型，请稍候…';
+      try {
+        const r = await apiFetch('/admin/service/embedding/start', { method: 'POST' });
+        const d = await r.json();
+        out.textContent = JSON.stringify(d, null, 2);
+        if (d.ok) toast('Embedding 模型已加载');
+        else toast('加载失败：' + (d.error || ''), 4000);
+      } catch(e) {
+        out.textContent = '失败：' + e.message;
+        if (e.message !== '403') toast('加载失败：' + e.message, 3000);
+      } finally {
+        btn.innerHTML = '加载模型'; loadServiceStatus();
+      }
+    }
+
+    async function svcEmbStop() {
+      const out = document.getElementById('embOut');
+      out.style.display = ''; out.textContent = '正在卸载…';
+      try {
+        const r = await apiFetch('/admin/service/embedding/stop', { method: 'POST' });
+        const d = await r.json();
+        out.textContent = JSON.stringify(d, null, 2);
+        if (d.ok) toast('Embedding 模型已卸载');
+        else toast('卸载失败：' + (d.error || ''), 4000);
+      } catch(e) {
+        out.textContent = '失败：' + e.message;
+        if (e.message !== '403') toast('卸载失败：' + e.message, 3000);
+      } finally { loadServiceStatus(); }
+    }
+
+    async function svcLlmStart() {
+      const btn = document.getElementById('llmSvcStartBtn');
+      const out = document.getElementById('llmSvcOut');
+      btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 启动中…';
+      out.style.display = ''; out.textContent = '正在启动 LLM 服务…';
+      try {
+        const r = await apiFetch('/admin/service/llm/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        const d = await r.json();
+        out.textContent = JSON.stringify(d, null, 2);
+        if (d.ok) toast('LLM 服务已启动');
+        else toast('启动失败：' + (d.error || ''), 4000);
+      } catch(e) {
+        out.textContent = '失败：' + e.message;
+        if (e.message !== '403') toast('启动失败：' + e.message, 3000);
+      } finally {
+        btn.innerHTML = '启动'; loadServiceStatus();
+      }
+    }
+
+    async function svcLlmStop() {
+      const out = document.getElementById('llmSvcOut');
+      out.style.display = ''; out.textContent = '正在停止…';
+      try {
+        const r = await apiFetch('/admin/service/llm/stop', { method: 'POST' });
+        const d = await r.json();
+        out.textContent = JSON.stringify(d, null, 2);
+        if (d.ok) toast('LLM 服务已停止');
+        else toast('停止失败：' + (d.error || ''), 4000);
+      } catch(e) {
+        out.textContent = '失败：' + e.message;
+        if (e.message !== '403') toast('停止失败：' + e.message, 3000);
+      } finally { loadServiceStatus(); }
+    }
+
+    async function svcLlmTest() {
+      const btn = document.getElementById('llmSvcTestBtn');
+      const out = document.getElementById('llmSvcOut');
+      btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+      out.style.display = ''; out.textContent = '测试中…';
+      try {
+        const r = await apiFetch('/admin/service/llm/test', { method: 'POST' });
+        const d = await r.json();
+        out.textContent = JSON.stringify(d, null, 2);
+        if (d.ok) toast(`LLM 连接正常，回复：${d.reply}，延迟 ${d.latency_ms}ms`);
+        else toast('测试失败：' + (d.error || ''), 4000);
+      } catch(e) {
+        out.textContent = '失败：' + e.message;
+        if (e.message !== '403') toast('测试失败：' + e.message, 3000);
+      } finally {
+        btn.disabled = false; btn.innerHTML = '测试连接'; loadServiceStatus();
       }
     }
 
