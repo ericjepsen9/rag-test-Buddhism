@@ -3,4 +3,5 @@ __pycache__/
 *.pyo
 stores/
 logs/
+data/
 answer.txt
