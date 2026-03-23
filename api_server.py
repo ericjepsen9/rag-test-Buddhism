@@ -479,9 +479,13 @@ def ask(request: Request, req: AskRequest):
         from rag_logger import get_trace_id, set_trace_id
         _tid = get_trace_id()
 
+        _ctx = {}  # 跨线程共享容器
+
         def _run_with_trace():
             set_trace_id(_tid)  # 传播 trace_id 到工作线程
-            return answer_question(question, req.mode, history=history, rewrite=rw)
+            ans = answer_question(question, req.mode, history=history, rewrite=rw)
+            _ctx["route"], _ctx["product"] = get_last_route_product()
+            return ans
 
         future = _search_pool.submit(_run_with_trace)
         try:
@@ -492,8 +496,8 @@ def ask(request: Request, req: AskRequest):
                       meta={"question": question[:200], "latency_ms": latency_ms})
             return AskResponse(ok=False, answer=f"查询处理超时（{_ASK_TIMEOUT_SEC}秒），请简化问题后重试")
         latency_ms = int((time.monotonic() - t0) * 1000)
-        # 复用 answer_one 中已计算的 route/product，避免重复检测
-        route, product_id = get_last_route_product()
+        route = _ctx.get("route", "")
+        product_id = _ctx.get("product", "")
         if not route or not product_id:
             from rag_answer import detect_route, detect_product
             product_id = product_id or detect_product(resolved_q)
@@ -872,9 +876,14 @@ def admin_rebuild(request: Request, req: RebuildRequest):
         log_error("admin_rebuild", repr(e), meta={"product": product})
         raise HTTPException(status_code=500, detail="索引重建失败，请查看服务器日志")
     finally:
-        # 仅在构建线程已结束时释放锁，防止并发重建同一索引
         if not t.is_alive():
             lock.release()
+        else:
+            # 线程超时仍在运行：安排后台释放锁，防止永久死锁
+            def _deferred_release():
+                t.join()
+                lock.release()
+            threading.Thread(target=_deferred_release, daemon=True).start()
 
 
 @app.post("/admin/rebuild_shared")

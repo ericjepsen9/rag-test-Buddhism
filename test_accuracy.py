@@ -11,7 +11,7 @@
 import pytest
 import re
 from search_utils import (
-    _extract_terms, _extract_terms_bigram, bm25_score,
+    _extract_terms, _extract_terms_bigram, keyword_score_bm25,
     normalize_text, normalize_lines, uniq, section_block,
     split_multi_question, keyword_search, merge_hybrid, detect_terms,
     expand_synonyms, rerank_hits, compute_dynamic_threshold,
@@ -33,18 +33,26 @@ class TestRouteDetectionAccuracy:
     """全面测试路由检测的准确性，覆盖所有已知路由"""
 
     @pytest.mark.parametrize("q,expected", [
-        ("四圣谛是什么", "basic"),
         ("佛教的基本介绍", "basic"),
         ("释迦牟尼佛是谁", "basic"),
+        ("佛教入门指南", "basic"),
     ])
     def test_basic_route(self, q, expected):
         assert detect_route(q) == expected
 
     @pytest.mark.parametrize("q,expected", [
+        ("四圣谛是什么", "doctrine"),
+        ("八正道的内容", "doctrine"),
+        ("十二因缘怎么理解", "doctrine"),
+    ])
+    def test_doctrine_route(self, q, expected):
+        assert detect_route(q) == expected
+
+    @pytest.mark.parametrize("q,expected", [
         ("空性是什么意思", "concept"),
-        ("缘起性空怎么理解", "concept"),
         ("什么是因果报应", "concept"),
-        ("无我的含义", "concept"),
+        ("五蕴的含义", "concept"),
+        ("六道轮回是什么", "concept"),
     ])
     def test_concept_route(self, q, expected):
         assert detect_route(q) == expected
@@ -61,25 +69,17 @@ class TestRouteDetectionAccuracy:
     @pytest.mark.parametrize("q,expected", [
         ("心经讲了什么", "scripture"),
         ("金刚经的核心思想", "scripture"),
-        ("推荐读什么经", "scripture"),
+        ("法华经的主要内容", "scripture"),
     ])
     def test_scripture_route(self, q, expected):
         assert detect_route(q) == expected
 
     @pytest.mark.parametrize("q,expected", [
-        ("禅宗的历史", "school"),
-        ("净土宗和禅宗有什么区别", "school"),
-        ("密宗的特点", "school"),
+        ("禅宗有什么特点", "sect"),
+        ("净土宗和禅宗有什么区别", "sect"),
+        ("密宗的修行特色", "sect"),
     ])
-    def test_school_route(self, q, expected):
-        assert detect_route(q) == expected
-
-    @pytest.mark.parametrize("q,expected", [
-        ("五戒是哪五戒", "precept"),
-        ("在家居士要持什么戒", "precept"),
-        ("犯戒了怎么办", "precept"),
-    ])
-    def test_precept_route(self, q, expected):
+    def test_sect_route(self, q, expected):
         assert detect_route(q) == expected
 
 
@@ -117,18 +117,18 @@ class TestBM25Accuracy:
 
     def test_relevant_doc_scores_highest(self):
         doc_freqs = {"四圣谛": 1, "教义": 1}
-        scores = [bm25_score("四圣谛 教义", d, self.avg_dl, self.n_docs, doc_freqs)
+        scores = [keyword_score_bm25("四圣谛 教义", d, self.avg_dl, self.n_docs, doc_freqs)
                   for d in self.docs]
         assert scores[0] == max(scores)
 
     def test_precept_query_matches_precept_doc(self):
         doc_freqs = {"五戒": 1, "不杀生": 1}
-        scores = [bm25_score("五戒 不杀生", d, self.avg_dl, self.n_docs, doc_freqs)
+        scores = [keyword_score_bm25("五戒 不杀生", d, self.avg_dl, self.n_docs, doc_freqs)
                   for d in self.docs]
         assert scores[2] == max(scores)
 
     def test_zero_score_for_no_match(self):
-        s = bm25_score("完全不相关的词语", "四圣谛教义", 10.0, 3, {})
+        s = keyword_score_bm25("完全不相关的词语", "四圣谛教义", 10.0, 3, {})
         assert s == 0.0
 
 

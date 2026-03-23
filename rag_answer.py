@@ -528,26 +528,23 @@ def detect_route(question: str) -> str:
         scores[route] = score
 
     # Buddhist disambiguation boost rules
-    if "doctrine" in scores and any(s in q for s in _DOCTRINE_SIGNALS):
-        scores["doctrine"] += 5.0
-
-    if "practice" in scores and any(s in q for s in _PRACTICE_SIGNALS):
-        scores["practice"] += 5.0
-
-    if "scripture" in scores and any(s in q for s in _SCRIPTURE_SIGNALS):
-        scores["scripture"] += 5.0
-
-    if "sect" in scores and any(s in q for s in _SECT_SIGNALS):
-        scores["sect"] += 5.0
-
-    if "concept" in scores and any(s in q for s in _CONCEPT_SIGNALS):
-        scores["concept"] += 5.0
-
-    if "history" in scores and any(s in q for s in _HISTORY_SIGNALS):
-        scores["history"] += 5.0
-
-    if "ritual" in scores and any(s in q for s in _RITUAL_SIGNALS):
-        scores["ritual"] += 5.0
+    # Collect all matched keywords from OTHER routes to avoid substring over-matching
+    _signal_map = {
+        "doctrine": _DOCTRINE_SIGNALS, "practice": _PRACTICE_SIGNALS,
+        "scripture": _SCRIPTURE_SIGNALS, "sect": _SECT_SIGNALS,
+        "concept": _CONCEPT_SIGNALS, "history": _HISTORY_SIGNALS,
+        "ritual": _RITUAL_SIGNALS,
+    }
+    for route, signals in _signal_map.items():
+        if route not in scores:
+            continue
+        other_kws = [kw for r, hits in matched.items() if r != route for kw in hits]
+        signal_hits = [s for s in signals if s in q]
+        # Skip boost if every signal match is a substring of a longer keyword from another route
+        independent = [s for s in signal_hits
+                       if not any(s in okw and len(okw) > len(s) for okw in other_kws)]
+        if independent:
+            scores[route] += 5.0
 
     # doctrine vs concept disambiguation
     if "doctrine" in scores and "concept" in scores:
@@ -937,7 +934,7 @@ def parse_bullets_from_section(main_text: str, faq_text: str, route: str, mode: 
         clean = ln.lstrip("-").strip()
         if not clean:
             continue
-        eff_len = len(re.sub(r"[\s\u3000，。、！？；：""''（）【】《》\-—·]", "", clean))
+        eff_len = len(re.sub(r"[\s\u3000，。、！？；：""''（）【】《》\x2d—·]", "", clean))
         if eff_len < 8:
             continue
         if re.match(r"^\d+[）\)]", clean):

@@ -1629,7 +1629,7 @@ def _ngram_overlap(a: str, b: str, n: int = 3) -> float:
 
 
 def split_multi_question(question: str, separators: List[str] = None) -> List[str]:
-    separators = separators or ["；", ";", "。", "，另外", "并且", "同时", "还有"]
+    separators = separators or ["？", "；", ";", "。", "，另外", "并且", "同时", "还有"]
     parts = [question]
     for sep in separators:
         next_parts = []
