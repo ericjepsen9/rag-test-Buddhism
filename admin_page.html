@@ -475,7 +475,72 @@
   </div>
 
   <div id="tab-synonyms" class="tab-panel">
-    <div class="card"><div class="card-title">同义词</div><div class="empty">Phase 4A 将填充内容</div></div>
+
+    <!-- 统计行 -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:16px">
+      <div class="card" style="margin:0;text-align:center;padding:14px">
+        <div style="font-size:24px;font-weight:700;color:var(--primary)" id="syn-static-count">—</div>
+        <div style="font-size:12px;color:var(--text-sec);margin-top:2px">静态词条</div>
+      </div>
+      <div class="card" style="margin:0;text-align:center;padding:14px">
+        <div style="font-size:24px;font-weight:700;color:var(--info)" id="syn-learned-count">—</div>
+        <div style="font-size:12px;color:var(--text-sec);margin-top:2px">学习词条</div>
+      </div>
+      <div class="card" style="margin:0;text-align:center;padding:14px">
+        <div style="font-size:24px;font-weight:700;color:var(--success)" id="syn-runtime-count">—</div>
+        <div style="font-size:12px;color:var(--text-sec);margin-top:2px">运行时激活</div>
+      </div>
+    </div>
+
+    <!-- 新增同义词 + 工具栏 -->
+    <div class="card">
+      <div class="card-title">新增同义词</div>
+      <div class="row-flex">
+        <div><label>原词</label><input type="text" id="synOriginal" placeholder="例如：禅坐"></div>
+        <div><label>映射到</label><input type="text" id="synMappedTo" placeholder="例如：禅修"
+             onkeydown="if(event.key==='Enter')addSynonym()"></div>
+        <button class="btn btn-primary" onclick="addSynonym()">添加</button>
+        <button class="btn btn-outline" onclick="reloadSynRuntime()" title="将已审核词条载入运行时">↺ 刷新运行时</button>
+      </div>
+    </div>
+
+    <!-- 已学习同义词表 -->
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>已学习同义词</span>
+        <button class="btn btn-outline btn-sm" onclick="loadSynonyms()">刷新</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>原词</th>
+              <th>映射到</th>
+              <th style="width:90px">来源</th>
+              <th style="width:80px">状态</th>
+              <th style="width:140px">操作</th>
+            </tr>
+          </thead>
+          <tbody id="synLearnedBody">
+            <tr><td colspan="5" class="empty">点击刷新加载</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 静态词库（只读） -->
+    <div class="card">
+      <div class="card-title">静态词库（只读）</div>
+      <div class="table-wrap" style="max-height:300px;overflow-y:auto">
+        <table>
+          <thead><tr><th>原词</th><th>映射到</th></tr></thead>
+          <tbody id="synStaticBody">
+            <tr><td colspan="2" class="empty">点击上方刷新加载</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 
   <div id="tab-keywords" class="tab-panel">
@@ -554,6 +619,7 @@
       document.getElementById('tab-' + name).classList.add('active');
       event.currentTarget.classList.add('active');
       if (name === 'knowledge') loadKnowledgeProducts();
+      if (name === 'synonyms')  loadSynonyms();
     }
 
     /* ===== Toast ===== */
@@ -805,6 +871,122 @@
         }
       } catch(e) {
         if (e.message !== '403') toast('删除失败：' + e.message, 4000);
+      }
+    }
+
+    /* ===== 同义词管理 ===== */
+    async function loadSynonyms() {
+      try {
+        const r = await apiFetch('/admin/synonyms/all');
+        const d = await r.json();
+
+        document.getElementById('syn-static-count').textContent  = _fmt(d.static_count);
+        document.getElementById('syn-learned-count').textContent = _fmt(d.learned_count);
+        document.getElementById('syn-runtime-count').textContent = _fmt(d.runtime_active_count);
+
+        // 已学习表
+        const learned = d.learned || [];
+        const lb = document.getElementById('synLearnedBody');
+        if (!learned.length) {
+          lb.innerHTML = '<tr><td colspan="5" class="empty">暂无学习词条</td></tr>';
+        } else {
+          lb.innerHTML = learned.map(it => {
+            const srcBadge = it.source === 'manual'
+              ? '<span class="badge badge-info">手动</span>'
+              : '<span class="badge badge-warn">LLM</span>';
+            const apvBadge = it.approved
+              ? '<span class="badge badge-success">已审核</span>'
+              : '<span class="badge badge-warn">待审核</span>';
+            const approveBtn = it.approved ? '' :
+              `<button class="btn btn-success btn-sm" onclick="approveSynonym('${_esc(it.original)}')">审核</button>`;
+            return `<tr>
+              <td><strong>${_esc(it.original)}</strong></td>
+              <td>${_esc(it.mapped_to)}</td>
+              <td>${srcBadge}</td>
+              <td>${apvBadge}</td>
+              <td style="display:flex;gap:4px">
+                ${approveBtn}
+                <button class="btn btn-danger btn-sm" onclick="deleteSynonym('${_esc(it.original)}')">删除</button>
+              </td>
+            </tr>`;
+          }).join('');
+        }
+
+        // 静态词库表
+        const staticMap = d.static || {};
+        const sb = document.getElementById('synStaticBody');
+        const staticEntries = Object.entries(staticMap);
+        if (!staticEntries.length) {
+          sb.innerHTML = '<tr><td colspan="2" class="empty">暂无静态词条</td></tr>';
+        } else {
+          sb.innerHTML = staticEntries.map(([k, v]) =>
+            `<tr><td>${_esc(k)}</td><td>${_esc(Array.isArray(v) ? v.join(', ') : v)}</td></tr>`
+          ).join('');
+        }
+      } catch(e) {
+        if (e.message !== '403') toast('加载同义词失败：' + e.message, 3000);
+      }
+    }
+
+    async function addSynonym() {
+      const original  = document.getElementById('synOriginal').value.trim();
+      const mapped_to = document.getElementById('synMappedTo').value.trim();
+      if (!original || !mapped_to) { toast('请填写原词和映射词'); return; }
+      try {
+        const r = await apiFetch('/admin/synonyms/learned/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ original, mapped_to })
+        });
+        const d = await r.json();
+        if (d.ok) {
+          toast(`已添加：${original} → ${mapped_to} ✓`);
+          document.getElementById('synOriginal').value  = '';
+          document.getElementById('synMappedTo').value = '';
+          loadSynonyms();
+        } else {
+          toast('添加失败：' + (d.detail || JSON.stringify(d)), 4000);
+        }
+      } catch(e) {
+        if (e.message !== '403') toast('添加失败：' + e.message, 4000);
+      }
+    }
+
+    async function approveSynonym(original) {
+      try {
+        const r = await apiFetch(`/admin/synonyms/learned/approve?original=${encodeURIComponent(original)}`,
+          { method: 'POST' });
+        const d = await r.json();
+        if (d.ok) { toast(`已审核：${original} ✓`); loadSynonyms(); }
+        else toast('操作失败：' + (d.detail || ''), 3000);
+      } catch(e) {
+        if (e.message !== '403') toast('操作失败：' + e.message, 3000);
+      }
+    }
+
+    async function deleteSynonym(original) {
+      if (!confirm(`确认删除同义词「${original}」？`)) return;
+      try {
+        const r = await apiFetch(`/admin/synonyms/learned?original=${encodeURIComponent(original)}`,
+          { method: 'DELETE' });
+        const d = await r.json();
+        if (d.ok) { toast(`已删除：${original}`); loadSynonyms(); }
+        else toast('删除失败：' + (d.detail || ''), 3000);
+      } catch(e) {
+        if (e.message !== '403') toast('删除失败：' + e.message, 3000);
+      }
+    }
+
+    async function reloadSynRuntime() {
+      try {
+        const r = await apiFetch('/admin/synonyms/reload', { method: 'POST' });
+        const d = await r.json();
+        if (d.ok) {
+          toast(`运行时已刷新，激活 ${d.active_count} 条 ✓`);
+          loadSynonyms();
+        }
+      } catch(e) {
+        if (e.message !== '403') toast('刷新失败：' + e.message, 3000);
       }
     }
 
