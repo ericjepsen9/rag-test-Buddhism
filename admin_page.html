@@ -331,7 +331,36 @@
   </div>
 
   <div id="tab-index" class="tab-panel">
-    <div class="card"><div class="card-title">索引管理</div><div class="empty">Phase 2A 将填充内容</div></div>
+
+    <!-- 重建产品索引 -->
+    <div class="card">
+      <div class="card-title">重建产品索引</div>
+      <div class="row-flex" style="margin-bottom:12px">
+        <div>
+          <label>产品名称</label>
+          <input type="text" id="rebuildProduct" placeholder="例如 buddhism" value="buddhism">
+        </div>
+        <div>
+          <label>超时（秒）</label>
+          <input type="number" id="rebuildTimeout" value="180" min="10" max="600" style="width:100px">
+        </div>
+        <button class="btn btn-primary" id="rebuildBtn" onclick="doRebuild()">开始重建</button>
+      </div>
+      <pre class="out" id="rebuildOut">等待执行…</pre>
+    </div>
+
+    <!-- 重建共享知识索引 -->
+    <div class="card">
+      <div class="card-title">重建共享知识索引
+        <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">（scriptures / masters / glossary）</span>
+      </div>
+      <p style="font-size:13px;color:var(--text-sec);margin-bottom:14px">
+        重建所有共享实体的统一 FAISS 索引，修改经典/祖师/术语等共享知识后需执行。
+      </p>
+      <button class="btn btn-warning" id="rebuildSharedBtn" onclick="doRebuildShared()">重建共享索引</button>
+      <pre class="out" id="rebuildSharedOut">等待执行…</pre>
+    </div>
+
   </div>
 
   <div id="tab-logs" class="tab-panel">
@@ -453,6 +482,54 @@
         _setAuthUI(false);
       }
     })();
+
+    /* ===== 索引管理 ===== */
+    async function doRebuild() {
+      const product = document.getElementById('rebuildProduct').value.trim();
+      const timeout_sec = parseInt(document.getElementById('rebuildTimeout').value) || 180;
+      const out = document.getElementById('rebuildOut');
+      const btn = document.getElementById('rebuildBtn');
+      if (!product) { toast('请输入产品名称'); return; }
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> 重建中…';
+      out.textContent = '正在重建索引，请稍候…';
+      try {
+        const r = await apiFetch('/admin/rebuild', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product, timeout_sec })
+        });
+        const d = await r.json();
+        out.textContent = JSON.stringify(d, null, 2);
+        if (d.ok) { toast('索引重建成功 ✓'); loadDashboard(); }
+        else toast('重建失败：' + (d.detail || JSON.stringify(d)), 4000);
+      } catch (e) {
+        if (e.message !== '403') out.textContent = '请求失败：' + e.message;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '开始重建';
+      }
+    }
+
+    async function doRebuildShared() {
+      const out = document.getElementById('rebuildSharedOut');
+      const btn = document.getElementById('rebuildSharedBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> 重建中…';
+      out.textContent = '正在重建共享索引，请稍候…';
+      try {
+        const r = await apiFetch('/admin/rebuild_shared', { method: 'POST' });
+        const d = await r.json();
+        out.textContent = JSON.stringify(d, null, 2);
+        if (d.ok) { toast('共享索引重建成功 ✓'); loadDashboard(); }
+        else toast('重建失败：' + (d.detail || JSON.stringify(d)), 4000);
+      } catch (e) {
+        if (e.message !== '403') out.textContent = '请求失败：' + e.message;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '重建共享索引';
+      }
+    }
 
     /* ===== 仪表盘 ===== */
     function _fmt(n) { return n == null ? '—' : n.toLocaleString(); }
