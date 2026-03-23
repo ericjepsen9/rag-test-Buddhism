@@ -4,4 +4,5 @@ __pycache__/
 stores/
 logs/
 data/
+knowledge/_test_*/
 answer.txt
