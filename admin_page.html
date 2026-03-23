@@ -786,7 +786,78 @@
   </div>
 
   <div id="tab-import" class="tab-panel">
-    <div class="card"><div class="card-title">知识导入</div><div class="empty">Phase 6A 将填充内容</div></div>
+
+    <!-- 文本导入表单 -->
+    <div class="card">
+      <div class="card-title">文本导入
+        <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
+          粘贴原始文档 → LLM 自动整理为结构化知识文件
+        </span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px">
+        <div>
+          <label>知识类型</label>
+          <select id="impType" onchange="onImpTypeChange()">
+            <optgroup label="多实例（需填 ID）">
+              <option value="scripture">scripture — 经典</option>
+              <option value="doctrine">doctrine — 教义</option>
+              <option value="practice">practice — 修行方法</option>
+              <option value="sect">sect — 宗派</option>
+              <option value="master">master — 高僧大德</option>
+            </optgroup>
+            <optgroup label="单文件（无需 ID）">
+              <option value="general">general — 通用知识</option>
+              <option value="history">history — 佛教历史</option>
+              <option value="ritual">ritual — 仪轨</option>
+              <option value="glossary">glossary — 术语解释</option>
+            </optgroup>
+          </select>
+        </div>
+        <div>
+          <label>实体 ID <span id="impIdRequired" style="color:var(--danger)">*必填</span></label>
+          <input type="text" id="impId" placeholder="例如：heart_sutra（字母/数字/下划线）">
+          <div style="font-size:11px;color:var(--text-sec);margin-top:3px" id="impIdHint">
+            单文件类型（general/history/ritual/glossary）无需填写
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <label>原始文档内容（粘贴经文、注释、介绍等原始文本）</label>
+        <textarea id="impContent" style="min-height:200px" placeholder="在此粘贴原始文档内容…"></textarea>
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label style="margin:0;font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" id="impBuild" checked> 导入后自动构建索引
+        </label>
+        <button class="btn btn-outline" id="impPreviewBtn" onclick="doImport(true)">
+          预览（不写入）
+        </button>
+        <button class="btn btn-primary" id="impImportBtn" onclick="doImport(false)">
+          开始导入
+        </button>
+      </div>
+    </div>
+
+    <!-- 结果展示 -->
+    <div class="card" id="impResultCard" style="display:none">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span id="impResultTitle">导入结果</span>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('impResultCard').style.display='none'">关闭</button>
+      </div>
+
+      <!-- 摘要信息 -->
+      <div id="impResultSummary" style="margin-bottom:14px"></div>
+
+      <!-- 预览文件 Tab -->
+      <div id="impPreviewTabs" style="display:none">
+        <div style="display:flex;gap:4px;margin-bottom:10px" id="impFileTabs"></div>
+        <pre class="out" id="impFileContent" style="max-height:500px"></pre>
+      </div>
+    </div>
+
   </div>
 
   <div id="tab-system" class="tab-panel">
@@ -1111,6 +1182,110 @@
       } catch(e) {
         if (e.message !== '403') toast('删除失败：' + e.message, 4000);
       }
+    }
+
+    /* ===== 知识导入 ===== */
+    const _IMP_SINGLE_TYPES = new Set(['general','history','ritual','glossary']);
+
+    function onImpTypeChange() {
+      const type = document.getElementById('impType').value;
+      const single = _IMP_SINGLE_TYPES.has(type);
+      document.getElementById('impId').disabled = single;
+      document.getElementById('impIdRequired').style.display = single ? 'none' : '';
+      document.getElementById('impIdHint').style.display = single ? '' : 'none';
+      if (single) document.getElementById('impId').value = '';
+    }
+
+    let _impPreviewData = null;
+
+    async function doImport(dryRun) {
+      const type    = document.getElementById('impType').value;
+      const id      = document.getElementById('impId').value.trim();
+      const content = document.getElementById('impContent').value.trim();
+      const build   = document.getElementById('impBuild').checked;
+
+      if (!content) { toast('请填写文档内容'); return; }
+      if (!_IMP_SINGLE_TYPES.has(type) && !id) { toast('该类型需要填写实体 ID'); return; }
+
+      const previewBtn = document.getElementById('impPreviewBtn');
+      const importBtn  = document.getElementById('impImportBtn');
+      previewBtn.disabled = importBtn.disabled = true;
+      previewBtn.innerHTML = dryRun ? '<span class="spin"></span> 预览中…' : previewBtn.innerHTML;
+      importBtn.innerHTML  = dryRun ? importBtn.innerHTML : '<span class="spin"></span> 导入中…';
+
+      const resultCard = document.getElementById('impResultCard');
+      resultCard.style.display = '';
+      document.getElementById('impPreviewTabs').style.display = 'none';
+      document.getElementById('impResultSummary').innerHTML =
+        `<span style="color:var(--text-sec)">${dryRun ? '正在生成预览…' : '正在导入，请稍候…'}</span>`;
+      document.getElementById('impResultTitle').textContent = dryRun ? '预览结果' : '导入结果';
+
+      try {
+        const r = await apiFetch('/admin/import_knowledge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, id, content, build, dry_run: dryRun })
+        });
+        const d = await r.json();
+
+        if (!d.ok && !dryRun) {
+          document.getElementById('impResultSummary').innerHTML =
+            `<span style="color:var(--danger)">导入失败：${_esc(d.detail || d.error || JSON.stringify(d))}</span>`;
+          toast('导入失败', 4000);
+          return;
+        }
+
+        // 摘要
+        const filesInfo = Object.entries(d.files_generated || {})
+          .map(([f, sz]) => `<span class="badge badge-info">${_esc(f)} ${_fmtSize(sz)}</span>`)
+          .join(' ');
+        const warn = d.warning
+          ? `<div style="color:var(--warning);font-size:12px;margin-top:6px">⚠ ${_esc(d.warning)}</div>` : '';
+        const built = dryRun ? '' : (d.built_index
+          ? '<span class="badge badge-success">索引已构建</span>'
+          : '<span class="badge badge-warn">索引未构建</span>');
+        document.getElementById('impResultSummary').innerHTML = `
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span class="badge badge-${d.ok ? 'success' : 'warn'}">${d.ok ? (dryRun ? '预览成功' : '导入成功') : '部分成功'}</span>
+            <span style="font-size:12px">类型: <strong>${_esc(d.type)}</strong></span>
+            ${d.id ? `<span style="font-size:12px">ID: <strong>${_esc(d.id)}</strong></span>` : ''}
+            ${filesInfo} ${built}
+          </div>${warn}`;
+
+        // 预览文件内容
+        const preview = d.preview || {};
+        const fileKeys = Object.keys(preview);
+        if (fileKeys.length) {
+          _impPreviewData = preview;
+          const tabs = document.getElementById('impFileTabs');
+          tabs.innerHTML = fileKeys.map((k, i) =>
+            `<button class="btn btn-sm ${i===0?'btn-primary':'btn-outline'}"
+                     onclick="showImpPreviewFile('${k}', this)">${_esc(k)}</button>`
+          ).join('');
+          document.getElementById('impPreviewTabs').style.display = '';
+          showImpPreviewFile(fileKeys[0], tabs.children[0]);
+        }
+
+        if (!dryRun && d.ok) {
+          toast('导入成功 ✓');
+          loadDashboard();
+        }
+      } catch(e) {
+        document.getElementById('impResultSummary').innerHTML =
+          `<span style="color:var(--danger)">请求失败：${_esc(e.message)}</span>`;
+        if (e.message !== '403') toast('请求失败：' + e.message, 4000);
+      } finally {
+        previewBtn.disabled = importBtn.disabled = false;
+        previewBtn.innerHTML = '预览（不写入）';
+        importBtn.innerHTML  = '开始导入';
+      }
+    }
+
+    function showImpPreviewFile(key, btn) {
+      if (!_impPreviewData) return;
+      document.getElementById('impFileContent').textContent = _impPreviewData[key] || '（空）';
+      document.querySelectorAll('#impFileTabs button').forEach(b =>
+        b.className = b === btn ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-outline');
     }
 
     /* ===== LLM 智能扩展 ===== */
