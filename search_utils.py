@@ -1352,11 +1352,22 @@ def expand_synonyms(query: str) -> str:
     """在查询中追加同义词，提升 BM25 召回率。"""
     extra = set()
     q_lower = query.lower()
-    for term, synonyms in _SYNONYM_EXPAND.items():
-        if term in q_lower:
-            for syn in synonyms:
-                if syn not in q_lower:
-                    extra.add(syn)
+    # 取所有 term 的 set 快照，避免迭代时被并发修改
+    items = list(_SYNONYM_EXPAND.items())
+    for term, synonyms in items:
+        if term not in q_lower:
+            continue
+        # 短词（1-2字）需边界检查：前后字符不应与 term 组成其他同义词词条
+        if len(term) <= 2:
+            idx = q_lower.find(term)
+            if idx > 0 and q_lower[idx - 1:idx + len(term)] in _SYNONYM_EXPAND:
+                continue
+            end = idx + len(term)
+            if end < len(q_lower) and q_lower[idx:end + 1] in _SYNONYM_EXPAND:
+                continue
+        for syn in synonyms:
+            if syn not in q_lower:
+                extra.add(syn)
     if extra:
         expanded = query + " " + " ".join(sorted(extra))
         return expanded[:2000]
@@ -1449,11 +1460,13 @@ def _corpus_cache_key(docs: List[Dict]) -> Tuple:
     n = len(docs)
     if n == 0:
         return (0,)
-    first = (docs[0].get("text") or "")[:64]
-    last = (docs[-1].get("text") or "")[:64]
-    mid_idx = n // 2
-    mid = (docs[mid_idx].get("text") or "")[:32] if n > 2 else ""
-    digest = hashlib.md5(f"{first}|{mid}|{last}".encode()).hexdigest()[:12]
+    # 采样更多文档片段并使用完整 SHA256 摘要，防止缓存碰撞
+    parts = []
+    sample_indices = {0, n - 1, n // 2, n // 4, n * 3 // 4}
+    for i in sorted(sample_indices):
+        if 0 <= i < n:
+            parts.append((docs[i].get("text") or "")[:128])
+    digest = hashlib.sha256("|".join(parts).encode()).hexdigest()
     return (n, digest)
 
 
@@ -1606,17 +1619,15 @@ _ROUTE_SECTION_MARKERS = {
     "ritual":    ["仪轨", "礼仪", "法会", "皈依", "上香", "供灯"],
     "basic":     ["基础", "入门", "概述", "释迦牟尼", "佛陀"],
 }
-_ROUTE_BOOST_VALUE = ROUTE_BOOST
-
-
 def _apply_route_boost(merged: Dict[str, Dict], route: str) -> None:
     markers = _ROUTE_SECTION_MARKERS.get(route, [])
     if not markers:
         return
+    from rag_runtime_config import ROUTE_BOOST as _live_boost
     for h in merged.values():
         text = (h.get("text") or "")[:800]
         if any(m in text for m in markers):
-            h["hybrid_score"] += _ROUTE_BOOST_VALUE
+            h["hybrid_score"] += _live_boost
 
 
 def _ngram_overlap(a: str, b: str, n: int = 3) -> float:

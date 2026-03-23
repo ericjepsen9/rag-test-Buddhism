@@ -481,7 +481,9 @@ def update_tunable_config(updates: dict) -> dict:
             setattr(_mod, var_name, new_val)
             changed[key] = {"old": old_val, "new": new_val}
     if changed:
-        _persist_overrides(updates)
+        # 持久化 clamped 后的值，而非原始输入
+        clamped = {k: v["new"] for k, v in changed.items()}
+        _persist_overrides(clamped)
     return changed
 
 
@@ -521,13 +523,14 @@ def load_persisted_overrides() -> dict:
 
 
 def get_model_config() -> dict:
-    """获取当前模型配置"""
+    """获取当前模型配置（读取模块级活值，而非 import 时快照）"""
+    import rag_runtime_config as _mod
     return {
-        "use_openai": USE_OPENAI,
-        "model": OPENAI_MODEL,
-        "api_base": OPENAI_API_BASE or "",
+        "use_openai": _mod.USE_OPENAI,
+        "model": _mod.OPENAI_MODEL,
+        "api_base": _mod.OPENAI_API_BASE or "",
         "api_key_set": bool(_os.environ.get("OPENAI_API_KEY", "").strip()),
-        "llm_rewrite": LLM_REWRITE_ENABLED,
+        "llm_rewrite": _mod.LLM_REWRITE_ENABLED,
         "presets": MODEL_PRESETS,
     }
 
@@ -611,17 +614,19 @@ def update_server_config(updates: dict) -> dict:
             changed[key] = {"old": old, "new": val}
     if "host" in updates:
         new_host = str(updates["host"]).strip()
-        if new_host != SERVER_HOST:
+        if new_host != _mod.SERVER_HOST:
+            old_host = _mod.SERVER_HOST
             _mod.SERVER_HOST = new_host
             data["host"] = new_host
-            changed["host"] = {"old": SERVER_HOST, "new": new_host}
+            changed["host"] = {"old": old_host, "new": new_host}
     if "port" in updates:
         try:
             new_port = int(updates["port"])
-            if 1 <= new_port <= 65535 and new_port != SERVER_PORT:
+            if 1 <= new_port <= 65535 and new_port != _mod.SERVER_PORT:
+                old_port = _mod.SERVER_PORT
                 _mod.SERVER_PORT = new_port
                 data["port"] = new_port
-                changed["port"] = {"old": SERVER_PORT, "new": new_port}
+                changed["port"] = {"old": old_port, "new": new_port}
         except (ValueError, TypeError):
             pass
     if changed:
@@ -692,25 +697,26 @@ def stop_embedding_model() -> dict:
 # ===== LLM 服务控制 =====
 
 def get_llm_status() -> dict:
+    import rag_runtime_config as _mod
     try:
         import rag_answer
         client = getattr(rag_answer, "_openai_client", None)
         checked = getattr(rag_answer, "_openai_client_checked", False)
         return {
-            "enabled": USE_OPENAI,
+            "enabled": _mod.USE_OPENAI,
             "client_ready": client is not None,
             "client_checked": checked,
-            "model": OPENAI_MODEL,
-            "api_base": OPENAI_API_BASE or "",
+            "model": _mod.OPENAI_MODEL,
+            "api_base": _mod.OPENAI_API_BASE or "",
             "api_key_set": bool(_os.environ.get("OPENAI_API_KEY", "").strip()),
-            "rewrite_enabled": LLM_REWRITE_ENABLED,
-            "temperature": LLM_TEMPERATURE,
+            "rewrite_enabled": _mod.LLM_REWRITE_ENABLED,
+            "temperature": _mod.LLM_TEMPERATURE,
         }
     except Exception:
         return {
-            "enabled": USE_OPENAI,
+            "enabled": _mod.USE_OPENAI,
             "client_ready": False,
-            "model": OPENAI_MODEL,
+            "model": _mod.OPENAI_MODEL,
         }
 
 

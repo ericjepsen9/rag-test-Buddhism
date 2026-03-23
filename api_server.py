@@ -2636,7 +2636,10 @@ def admin_save_media(request: Request, req: SaveMediaRequest):
         existing_urls.add(item["url"])
         added += 1
 
-    media_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 原子写入：先写临时文件再 rename，防止进程崩溃时数据损坏
+    tmp = media_file.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(str(tmp), str(media_file))
 
     # 清除缓存
     invalidate_media_cache(product)
