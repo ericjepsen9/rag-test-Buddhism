@@ -551,6 +551,42 @@
       </div>
     </div>
 
+    <!-- 同义词测试 -->
+    <div class="card">
+      <div class="card-title">同义词扩展测试</div>
+      <div class="row-flex">
+        <div>
+          <label>输入查询词</label>
+          <input type="text" id="synTestQuery" placeholder="例如：禅修"
+                 onkeydown="if(event.key==='Enter')testSynonym()">
+        </div>
+        <button class="btn btn-info" onclick="testSynonym()">测试扩展</button>
+      </div>
+      <div id="synTestResult" style="display:none;margin-top:14px">
+        <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px">
+          <div>
+            <span style="font-size:12px;color:var(--text-sec)">原词</span>
+            <div style="font-size:15px;font-weight:700;margin-top:2px" id="synTestOriginal"></div>
+          </div>
+          <div>
+            <span style="font-size:12px;color:var(--text-sec)">标准化</span>
+            <div style="font-size:15px;font-weight:700;margin-top:2px" id="synTestNormalized"></div>
+          </div>
+          <div>
+            <span style="font-size:12px;color:var(--text-sec)">扩展词数</span>
+            <div style="font-size:15px;font-weight:700;color:var(--success);margin-top:2px" id="synTestCount"></div>
+          </div>
+        </div>
+        <div>
+          <span style="font-size:12px;color:var(--text-sec)">扩展结果</span>
+          <div id="synTestTerms" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
+          <div id="synTestEmpty" style="display:none;font-size:13px;color:var(--text-sec);margin-top:6px">
+            无扩展词（未匹配到同义词）
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 导入 / 导出 -->
     <div class="card">
       <div class="card-title">导入 / 导出</div>
@@ -1116,6 +1152,35 @@
       } catch(e) {
         resultEl.textContent = '导入失败';
         if (e.message !== '403') toast('导入失败：' + e.message, 3000);
+      }
+    }
+
+    async function testSynonym() {
+      const query = document.getElementById('synTestQuery').value.trim();
+      if (!query) { toast('请输入查询词'); return; }
+      try {
+        const r = await apiFetch(`/admin/synonyms/test?query=${encodeURIComponent(query)}`);
+        const d = await r.json();
+        document.getElementById('synTestResult').style.display = '';
+        document.getElementById('synTestOriginal').textContent   = d.query;
+        document.getElementById('synTestNormalized').textContent = d.normalized || d.query;
+        document.getElementById('synTestCount').textContent      = d.expanded_count ?? 0;
+        const termsEl = document.getElementById('synTestTerms');
+        const emptyEl = document.getElementById('synTestEmpty');
+        const terms = d.expanded_terms || [];
+        if (terms.length) {
+          emptyEl.style.display = 'none';
+          termsEl.style.display = '';
+          termsEl.innerHTML = terms.map(t =>
+            `<span style="background:var(--bg);border:1px solid var(--border);border-radius:6px;
+                          padding:3px 10px;font-size:13px">${_esc(t)}</span>`
+          ).join('');
+        } else {
+          termsEl.style.display  = 'none';
+          emptyEl.style.display  = '';
+        }
+      } catch(e) {
+        if (e.message !== '403') toast('测试失败：' + e.message, 3000);
       }
     }
 
