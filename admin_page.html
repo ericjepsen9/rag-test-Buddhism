@@ -282,7 +282,52 @@
 
   <!-- Tab 内容区 -->
   <div id="tab-dashboard" class="tab-panel active">
-    <div class="card"><div class="card-title">仪表盘</div><div class="empty">Phase 1C 将填充内容</div></div>
+
+    <!-- 统计卡片行 -->
+    <div id="statsRow" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px;margin-bottom:20px">
+      <div class="card" style="margin:0;text-align:center">
+        <div style="font-size:28px;font-weight:700;color:var(--primary)" id="st-products">—</div>
+        <div style="font-size:12px;color:var(--text-sec);margin-top:4px">产品数</div>
+      </div>
+      <div class="card" style="margin:0;text-align:center">
+        <div style="font-size:28px;font-weight:700;color:var(--info)" id="st-docs">—</div>
+        <div style="font-size:12px;color:var(--text-sec);margin-top:4px">产品向量块</div>
+      </div>
+      <div class="card" style="margin:0;text-align:center">
+        <div style="font-size:28px;font-weight:700;color:var(--success)" id="st-shared-docs">—</div>
+        <div style="font-size:12px;color:var(--text-sec);margin-top:4px">共享向量块</div>
+      </div>
+      <div class="card" style="margin:0;text-align:center">
+        <div style="font-size:22px;font-weight:700" id="st-shared-idx">—</div>
+        <div style="font-size:12px;color:var(--text-sec);margin-top:4px">共享索引</div>
+      </div>
+    </div>
+
+    <!-- 产品详情表格 -->
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>产品列表</span>
+        <button class="btn btn-outline btn-sm" onclick="loadDashboard()">刷新</button>
+      </div>
+      <div class="table-wrap">
+        <table id="dashProductTable">
+          <thead>
+            <tr>
+              <th>产品名</th>
+              <th>文件数</th>
+              <th>文件列表</th>
+              <th>向量块数</th>
+              <th>索引状态</th>
+              <th>总大小</th>
+            </tr>
+          </thead>
+          <tbody id="dashProductBody">
+            <tr><td colspan="6" class="empty">点击刷新加载数据</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 
   <div id="tab-index" class="tab-panel">
@@ -397,16 +442,65 @@
       return r;
     }
 
-    // 页面加载时自动恢复登录态
+    // 页面加载时自动恢复登录态，登录后自动加载仪表盘
     (function _initAuth() {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         _apiKey = saved;
         _setAuthUI(true);
+        loadDashboard();
       } else {
         _setAuthUI(false);
       }
     })();
+
+    /* ===== 仪表盘 ===== */
+    function _fmt(n) { return n == null ? '—' : n.toLocaleString(); }
+    function _fmtSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1048576).toFixed(2) + ' MB';
+    }
+
+    async function loadDashboard() {
+      try {
+        const r = await apiFetch('/admin/stats');
+        const d = await r.json();
+
+        const products = d.products || [];
+        const totalDocs = products.reduce((s, p) => s + (p.docs_count || 0), 0);
+
+        document.getElementById('st-products').textContent = _fmt(products.length);
+        document.getElementById('st-docs').textContent = _fmt(totalDocs);
+        document.getElementById('st-shared-docs').textContent = _fmt(d.shared_docs);
+
+        const sharedIdxEl = document.getElementById('st-shared-idx');
+        sharedIdxEl.textContent = d.shared_indexed ? '✓ 已建立' : '✗ 未建立';
+        sharedIdxEl.style.color = d.shared_indexed ? 'var(--success)' : 'var(--danger)';
+
+        const tbody = document.getElementById('dashProductBody');
+        if (!products.length) {
+          tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无产品数据</td></tr>';
+          return;
+        }
+        tbody.innerHTML = products.map(p => {
+          const fileNames = (p.files || []).map(f => f.name).join(', ') || '—';
+          const badge = p.index_exists
+            ? '<span class="badge badge-success">已建立</span>'
+            : '<span class="badge badge-warn">未建立</span>';
+          return `<tr>
+            <td><strong>${p.name}</strong></td>
+            <td>${(p.files || []).length}</td>
+            <td style="font-size:12px;color:var(--text-sec);max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${fileNames}">${fileNames}</td>
+            <td>${_fmt(p.docs_count)}</td>
+            <td>${badge}</td>
+            <td>${_fmtSize(p.total_size || 0)}</td>
+          </tr>`;
+        }).join('');
+      } catch (e) {
+        if (e.message !== '403') toast('加载统计失败：' + e.message, 3000);
+      }
+    }
   </script>
 
 </body>
