@@ -480,6 +480,28 @@
     <div class="card"><div class="card-title">系统</div><div class="empty">Phase 7A 将填充内容</div></div>
   </div>
 
+  <!-- 文件编辑弹窗 -->
+  <div class="modal-bg" id="fileEditModal">
+    <div class="modal" style="width:min(800px,96vw)">
+      <div class="modal-title">
+        <span id="fileEditTitle">编辑文件</span>
+        <span class="modal-close" onclick="closeFileEdit()">✕</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-sec);margin-bottom:8px">
+        产品：<strong id="fileEditProduct"></strong> &nbsp;|&nbsp;
+        文件：<strong id="fileEditName"></strong> &nbsp;|&nbsp;
+        <span id="fileEditSize"></span>
+      </div>
+      <textarea id="fileEditContent" style="min-height:420px;font-family:Menlo,Consolas,monospace;font-size:13px;line-height:1.6"></textarea>
+      <div class="modal-footer">
+        <button class="btn btn-danger btn-sm" onclick="deleteFile()">删除文件</button>
+        <div style="flex:1"></div>
+        <button class="btn btn-outline" onclick="closeFileEdit()">取消</button>
+        <button class="btn btn-primary" id="fileSaveBtn" onclick="saveFile()">保存</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 登录遮罩 -->
   <div id="loginOverlay">
     <div class="login-box">
@@ -662,9 +684,99 @@
       }
     }
 
-    // 占位：Phase 3B 实现
-    function openFileEdit(filename) {
-      toast('文件编辑功能将在 Phase 3B 实现');
+    let _editMtime = null;
+
+    async function openFileEdit(filename) {
+      if (!_knProduct) return;
+      document.getElementById('fileEditTitle').textContent = '编辑文件';
+      document.getElementById('fileEditProduct').textContent = _knProduct;
+      document.getElementById('fileEditName').textContent = filename;
+      document.getElementById('fileEditSize').textContent = '';
+      document.getElementById('fileEditContent').value = '加载中…';
+      document.getElementById('fileEditContent').disabled = true;
+      document.getElementById('fileSaveBtn').disabled = true;
+      document.getElementById('fileEditModal').classList.add('open');
+      try {
+        const r = await apiFetch(
+          `/admin/knowledge/${encodeURIComponent(_knProduct)}/${encodeURIComponent(filename)}`
+        );
+        const d = await r.json();
+        _editMtime = d.mtime;
+        document.getElementById('fileEditContent').value = d.content;
+        document.getElementById('fileEditSize').textContent =
+          _fmtSize(d.size) + ' · ' + d.content.split('\n').length + ' 行';
+        document.getElementById('fileEditContent').disabled = false;
+        document.getElementById('fileSaveBtn').disabled = false;
+      } catch(e) {
+        if (e.message !== '403') {
+          document.getElementById('fileEditContent').value = '加载失败：' + e.message;
+        }
+      }
+    }
+
+    function closeFileEdit() {
+      document.getElementById('fileEditModal').classList.remove('open');
+      _editMtime = null;
+    }
+
+    async function saveFile() {
+      const product  = document.getElementById('fileEditProduct').textContent;
+      const filename = document.getElementById('fileEditName').textContent;
+      const content  = document.getElementById('fileEditContent').value;
+      const btn = document.getElementById('fileSaveBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> 保存中…';
+      try {
+        const r = await apiFetch(
+          `/admin/knowledge/${encodeURIComponent(product)}/${encodeURIComponent(filename)}`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content, expected_mtime: _editMtime })
+          }
+        );
+        if (r.status === 409) {
+          toast('文件已被其他人修改，请关闭后重新打开', 4000);
+          return;
+        }
+        const d = await r.json();
+        if (d.ok) {
+          _editMtime = d.mtime;
+          document.getElementById('fileEditSize').textContent =
+            _fmtSize(d.size) + ' · ' + content.split('\n').length + ' 行';
+          toast('已保存 ✓');
+          loadKnowledgeFiles();
+        } else {
+          toast('保存失败：' + (d.detail || JSON.stringify(d)), 4000);
+        }
+      } catch(e) {
+        if (e.message !== '403') toast('保存失败：' + e.message, 4000);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '保存';
+      }
+    }
+
+    async function deleteFile() {
+      const product  = document.getElementById('fileEditProduct').textContent;
+      const filename = document.getElementById('fileEditName').textContent;
+      if (!confirm(`确认删除文件「${filename}」？此操作不可撤销。`)) return;
+      try {
+        const r = await apiFetch(
+          `/admin/knowledge/${encodeURIComponent(product)}/${encodeURIComponent(filename)}`,
+          { method: 'DELETE' }
+        );
+        const d = await r.json();
+        if (d.ok) {
+          toast(`已删除 ${filename}`);
+          closeFileEdit();
+          loadKnowledgeFiles();
+        } else {
+          toast('删除失败：' + (d.detail || JSON.stringify(d)), 4000);
+        }
+      } catch(e) {
+        if (e.message !== '403') toast('删除失败：' + e.message, 4000);
+      }
     }
 
     /* ===== 日志 ===== */
