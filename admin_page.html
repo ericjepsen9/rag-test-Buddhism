@@ -452,10 +452,20 @@
 
       <!-- 右侧文件列表 -->
       <div class="card" style="margin:0">
-        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
           <span id="knProductTitle">请选择产品</span>
-          <button class="btn btn-outline btn-sm" id="knRefreshBtn" onclick="loadKnowledgeFiles()" style="display:none">刷新</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-outline btn-sm" onclick="openCreateProduct()">＋ 新建产品</button>
+            <button class="btn btn-outline btn-sm" id="knUploadBtn" onclick="document.getElementById('knUploadInput').click()" style="display:none">↑ 上传文件</button>
+            <button class="btn btn-outline btn-sm" id="knZipBtn"    onclick="document.getElementById('knZipInput').click()"    style="display:none">↑ 上传 ZIP</button>
+            <button class="btn btn-danger  btn-sm" id="knDeleteBtn" onclick="deleteProduct()"                                  style="display:none">删除产品</button>
+            <button class="btn btn-outline btn-sm" id="knRefreshBtn" onclick="loadKnowledgeFiles()"                            style="display:none">刷新</button>
+          </div>
         </div>
+        <!-- 隐藏 file input -->
+        <input type="file" id="knUploadInput" multiple accept=".txt,.json,.md" style="display:none" onchange="uploadFiles(this.files)">
+        <input type="file" id="knZipInput"    accept=".zip"                    style="display:none" onchange="uploadZip(this.files[0])">
+        <div id="knUploadProgress" style="display:none;font-size:12px;color:var(--primary);margin-bottom:8px"></div>
         <div id="knFileArea">
           <div class="empty">← 从左侧选择产品</div>
         </div>
@@ -498,6 +508,23 @@
         <div style="flex:1"></div>
         <button class="btn btn-outline" onclick="closeFileEdit()">取消</button>
         <button class="btn btn-primary" id="fileSaveBtn" onclick="saveFile()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新建产品弹窗 -->
+  <div class="modal-bg" id="createProductModal">
+    <div class="modal" style="width:min(400px,94vw)">
+      <div class="modal-title">
+        新建产品
+        <span class="modal-close" onclick="closeCreateProduct()">✕</span>
+      </div>
+      <label>产品名称（字母/数字/下划线/横线）</label>
+      <input type="text" id="newProductName" placeholder="例如 zen_buddhism"
+             maxlength="50" onkeydown="if(event.key==='Enter')doCreateProduct()">
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeCreateProduct()">取消</button>
+        <button class="btn btn-primary" id="createProductBtn" onclick="doCreateProduct()">创建</button>
       </div>
     </div>
   </div>
@@ -633,6 +660,8 @@
         el.style.background = el.id === 'knProd_' + product ? 'var(--bg)' : '';
         el.style.fontWeight  = el.id === 'knProd_' + product ? '700' : '';
       });
+      ['knUploadBtn','knZipBtn','knDeleteBtn','knRefreshBtn'].forEach(id =>
+        document.getElementById(id).style.display = '');
       loadKnowledgeFiles();
     }
 
@@ -777,6 +806,114 @@
       } catch(e) {
         if (e.message !== '403') toast('删除失败：' + e.message, 4000);
       }
+    }
+
+    /* ===== 新建/删除产品 + 文件上传 ===== */
+    function openCreateProduct() {
+      document.getElementById('newProductName').value = '';
+      document.getElementById('createProductModal').classList.add('open');
+      setTimeout(() => document.getElementById('newProductName').focus(), 50);
+    }
+    function closeCreateProduct() {
+      document.getElementById('createProductModal').classList.remove('open');
+    }
+
+    async function doCreateProduct() {
+      const name = document.getElementById('newProductName').value.trim();
+      if (!name) { toast('请输入产品名称'); return; }
+      const btn = document.getElementById('createProductBtn');
+      btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+      try {
+        const r = await apiFetch('/admin/knowledge/create_product', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product: name })
+        });
+        const d = await r.json();
+        if (r.status === 409) { toast('产品已存在', 3000); return; }
+        if (d.ok) {
+          toast(`产品「${name}」创建成功 ✓`);
+          closeCreateProduct();
+          loadKnowledgeProducts();
+        } else {
+          toast('创建失败：' + (d.detail || JSON.stringify(d)), 4000);
+        }
+      } catch(e) {
+        if (e.message !== '403') toast('请求失败：' + e.message, 4000);
+      } finally {
+        btn.disabled = false; btn.innerHTML = '创建';
+      }
+    }
+
+    async function deleteProduct() {
+      if (!_knProduct) return;
+      if (!confirm(`确认删除产品「${_knProduct}」及其所有文件和索引？此操作不可撤销。`)) return;
+      try {
+        const r = await apiFetch(`/admin/knowledge/${encodeURIComponent(_knProduct)}`, { method: 'DELETE' });
+        const d = await r.json();
+        if (d.ok) {
+          toast(`已删除产品「${_knProduct}」`);
+          _knProduct = '';
+          document.getElementById('knProductTitle').textContent = '请选择产品';
+          document.getElementById('knFileArea').innerHTML = '<div class="empty">← 从左侧选择产品</div>';
+          ['knUploadBtn','knZipBtn','knDeleteBtn','knRefreshBtn'].forEach(id =>
+            document.getElementById(id).style.display = 'none');
+          loadKnowledgeProducts();
+          loadDashboard();
+        } else {
+          toast('删除失败：' + (d.detail || JSON.stringify(d)), 4000);
+        }
+      } catch(e) {
+        if (e.message !== '403') toast('删除失败：' + e.message, 4000);
+      }
+    }
+
+    async function uploadFiles(files) {
+      if (!files.length || !_knProduct) return;
+      const prog = document.getElementById('knUploadProgress');
+      prog.style.display = '';
+      prog.textContent = `上传中（0/${files.length}）…`;
+      const form = new FormData();
+      form.append('product', _knProduct);
+      for (const f of files) form.append('file_' + f.name, f);
+      try {
+        const r = await apiFetch('/admin/upload', { method: 'POST', body: form });
+        const d = await r.json();
+        const ok = (d.uploaded || []).length;
+        const err = (d.errors || []).length;
+        prog.textContent = `完成：${ok} 成功${err ? '，' + err + ' 失败' : ''}`;
+        if (err) toast(d.errors.map(e => e.file + ': ' + e.error).join('\n'), 5000);
+        else toast(`上传 ${ok} 个文件成功 ✓`);
+        loadKnowledgeFiles();
+      } catch(e) {
+        prog.textContent = '上传失败';
+        if (e.message !== '403') toast('上传失败：' + e.message, 4000);
+      }
+      document.getElementById('knUploadInput').value = '';
+      setTimeout(() => { prog.style.display = 'none'; }, 3000);
+    }
+
+    async function uploadZip(file) {
+      if (!file || !_knProduct) return;
+      const prog = document.getElementById('knUploadProgress');
+      prog.style.display = '';
+      prog.textContent = `正在上传 ZIP：${file.name}…`;
+      const form = new FormData();
+      form.append('zip', file);
+      try {
+        const r = await apiFetch('/admin/upload_zip', { method: 'POST', body: form });
+        const d = await r.json();
+        const total = (d.results || []).reduce((s, p) => s + (p.files || []).length, 0);
+        prog.textContent = `ZIP 解压完成：${total} 个文件`;
+        toast(`ZIP 上传成功，共 ${total} 个文件 ✓`);
+        loadKnowledgeProducts();
+        loadKnowledgeFiles();
+      } catch(e) {
+        prog.textContent = '上传失败';
+        if (e.message !== '403') toast('上传失败：' + e.message, 4000);
+      }
+      document.getElementById('knZipInput').value = '';
+      setTimeout(() => { prog.style.display = 'none'; }, 3000);
     }
 
     /* ===== 日志 ===== */
