@@ -907,7 +907,16 @@
   </div>
 
   <div id="tab-system" class="tab-panel">
-    <div class="card"><div class="card-title">系统</div><div class="empty">Phase 7A 将填充内容</div></div>
+
+    <!-- LLM 配置：chat + knowledge 两张卡片 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <div class="card" style="margin:0" id="llmCard_chat"></div>
+      <div class="card" style="margin:0" id="llmCard_knowledge"></div>
+    </div>
+
+    <!-- Phase 7B/7C 占位 -->
+    <div id="svcPlaceholder"></div>
+
   </div>
 
   <!-- 文件编辑弹窗 -->
@@ -976,6 +985,7 @@
       if (name === 'knowledge') loadKnowledgeProducts();
       if (name === 'synonyms')  loadSynonyms();
       if (name === 'keywords')  { loadKeywords(); loadClarification(); _initClrOptions(); }
+      if (name === 'system')    loadLlmConfigs();
     }
 
     /* ===== Toast ===== */
@@ -1227,6 +1237,161 @@
         }
       } catch(e) {
         if (e.message !== '403') toast('删除失败：' + e.message, 4000);
+      }
+    }
+
+    /* ===== LLM 配置 ===== */
+    let _llmPresets = {};
+
+    async function loadLlmConfigs() {
+      try {
+        const r = await apiFetch('/admin/llm/configs');
+        const d = await r.json();
+        _llmPresets = d.presets || {};
+        ['chat','knowledge'].forEach(p => renderLlmCard(p, d.configs?.[p] || {}));
+      } catch(e) {
+        if (e.message !== '403') toast('加载 LLM 配置失败：' + e.message, 3000);
+      }
+    }
+
+    function renderLlmCard(purpose, cfg) {
+      const label = purpose === 'chat' ? '问答 LLM（chat）' : '知识整理 LLM（knowledge）';
+      const enabled = cfg.enabled ?? false;
+      const verified = cfg.connection_verified ?? false;
+      const statusBadge = !enabled
+        ? '<span class="badge badge-warn">未启用</span>'
+        : verified
+          ? '<span class="badge badge-success">已验证</span>'
+          : '<span class="badge badge-info">已启用</span>';
+
+      const presetOpts = Object.entries(_llmPresets).map(([k, v]) =>
+        `<option value="${k}" ${cfg.provider===k?'selected':''}>${_esc(v.label||k)}</option>`
+      ).join('');
+
+      // 当前 provider 的模型列表
+      const preset = _llmPresets[cfg.provider] || {};
+      const modelOpts = (preset.models || []).map(m =>
+        `<option value="${m}" ${cfg.model===m?'selected':''}>${m}</option>`
+      ).join('');
+      const customModelOpt = (preset.models||[]).includes(cfg.model) || !cfg.model
+        ? '' : `<option value="${cfg.model}" selected>${_esc(cfg.model)}</option>`;
+
+      document.getElementById('llmCard_' + purpose).innerHTML = `
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>${label}</span>
+          <span>${statusBadge}</span>
+        </div>
+        <div style="margin-bottom:10px">
+          <label>启用</label>
+          <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;font-weight:400">
+            <input type="checkbox" id="llm_${purpose}_enabled" ${enabled?'checked':''}
+                   onchange="onLlmProviderChange('${purpose}')">
+            <span style="font-size:13px" id="llm_${purpose}_enabledLabel">${enabled?'已启用':'已禁用'}</span>
+          </label>
+        </div>
+        <div style="margin-bottom:10px">
+          <label>服务商</label>
+          <select id="llm_${purpose}_provider" onchange="onLlmProviderChange('${purpose}')">
+            ${presetOpts}
+            <option value="custom" ${!_llmPresets[cfg.provider]?'selected':''}>自定义</option>
+          </select>
+        </div>
+        <div style="margin-bottom:10px">
+          <label>模型</label>
+          <select id="llm_${purpose}_model" style="display:${modelOpts?'':'none'}">
+            ${modelOpts}${customModelOpt}
+            <option value="__custom__">自定义…</option>
+          </select>
+          <input type="text" id="llm_${purpose}_model_custom" placeholder="输入模型名称"
+                 value="${_llmPresets[cfg.provider] ? '' : _esc(cfg.model||'')}"
+                 style="display:${modelOpts?'none':''}">
+        </div>
+        <div style="margin-bottom:10px">
+          <label>API Base URL <span style="font-weight:400;font-size:11px;color:var(--text-sec)">（留空使用默认）</span></label>
+          <input type="text" id="llm_${purpose}_api_base"
+                 value="${_esc(cfg.api_base||preset.api_base||'')}"
+                 placeholder="https://api.openai.com/v1">
+        </div>
+        <div style="margin-bottom:14px">
+          <label>API Key <span style="font-weight:400;font-size:11px;color:var(--text-sec)">${cfg.api_key_set?'（已设置，留空保留原值）':'（未设置）'}</span></label>
+          <input type="password" id="llm_${purpose}_api_key"
+                 placeholder="${cfg.api_key_set?'留空保留原值':'请输入 API Key'}">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="saveLlmConfig('${purpose}')">保存</button>
+          <button class="btn btn-outline btn-sm" id="llm_${purpose}_testBtn"
+                  onclick="testLlmConfig('${purpose}')" ${!enabled?'disabled':''}>测试连接</button>
+        </div>
+        <pre class="out" id="llm_${purpose}_out" style="display:none;margin-top:10px"></pre>`;
+    }
+
+    function onLlmProviderChange(purpose) {
+      const provider = document.getElementById(`llm_${purpose}_provider`).value;
+      const preset   = _llmPresets[provider] || {};
+      const models   = preset.models || [];
+      const modelSel = document.getElementById(`llm_${purpose}_model`);
+      const modelTxt = document.getElementById(`llm_${purpose}_model_custom`);
+      const apiBase  = document.getElementById(`llm_${purpose}_api_base`);
+      const enabled  = document.getElementById(`llm_${purpose}_enabled`).checked;
+      document.getElementById(`llm_${purpose}_enabledLabel`).textContent = enabled ? '已启用' : '已禁用';
+      document.getElementById(`llm_${purpose}_testBtn`).disabled = !enabled;
+      if (models.length) {
+        modelSel.innerHTML = models.map(m =>
+          `<option value="${m}">${m}</option>`).join('') +
+          '<option value="__custom__">自定义…</option>';
+        modelSel.style.display = '';
+        modelTxt.style.display = 'none';
+        if (preset.api_base !== undefined) apiBase.value = preset.api_base;
+      } else {
+        modelSel.style.display = 'none';
+        modelTxt.style.display = '';
+      }
+    }
+
+    async function saveLlmConfig(purpose) {
+      const provider  = document.getElementById(`llm_${purpose}_provider`).value;
+      const modelSel  = document.getElementById(`llm_${purpose}_model`);
+      const modelTxt  = document.getElementById(`llm_${purpose}_model_custom`);
+      const showSel   = modelSel.style.display !== 'none';
+      let model = showSel ? modelSel.value : modelTxt.value.trim();
+      if (model === '__custom__') model = modelTxt.value.trim();
+      const api_base  = document.getElementById(`llm_${purpose}_api_base`).value.trim() || null;
+      const api_key   = document.getElementById(`llm_${purpose}_api_key`).value.trim();
+      const enabled   = document.getElementById(`llm_${purpose}_enabled`).checked;
+      const out       = document.getElementById(`llm_${purpose}_out`);
+      out.style.display = ''; out.textContent = '保存中…';
+      try {
+        const r = await apiFetch('/admin/llm/configs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ purpose, provider, model, api_base, api_key, enabled })
+        });
+        const d = await r.json();
+        out.textContent = JSON.stringify(d, null, 2);
+        if (d.ok ?? true) { toast(`${purpose} LLM 配置已保存 ✓`); loadLlmConfigs(); }
+        else toast('保存失败：' + (d.error || ''), 4000);
+      } catch(e) {
+        out.textContent = '失败：' + e.message;
+        if (e.message !== '403') toast('保存失败：' + e.message, 3000);
+      }
+    }
+
+    async function testLlmConfig(purpose) {
+      const btn = document.getElementById(`llm_${purpose}_testBtn`);
+      const out = document.getElementById(`llm_${purpose}_out`);
+      btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+      out.style.display = ''; out.textContent = '测试中…';
+      try {
+        const r = await apiFetch(`/admin/llm/test?purpose=${purpose}`, { method: 'POST' });
+        const d = await r.json();
+        out.textContent = JSON.stringify(d, null, 2);
+        if (d.ok) { toast(`${purpose} LLM 连接正常，回复：${d.reply}，延迟 ${d.latency_ms}ms ✓`); loadLlmConfigs(); }
+        else toast(`${purpose} LLM 测试失败：${d.error||''}`, 4000);
+      } catch(e) {
+        out.textContent = '失败：' + e.message;
+        if (e.message !== '403') toast('测试失败：' + e.message, 3000);
+      } finally {
+        btn.disabled = false; btn.innerHTML = '测试连接';
       }
     }
 
