@@ -510,10 +510,20 @@
         <span>已学习同义词</span>
         <button class="btn btn-outline btn-sm" onclick="loadSynonyms()">刷新</button>
       </div>
+      <!-- 批量操作栏 -->
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <label style="margin:0;font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" id="synSelectAll" onchange="toggleSelectAllSyn(this.checked)"> 全选
+        </label>
+        <button class="btn btn-success btn-sm" onclick="batchApproveSyn()">批量审核</button>
+        <button class="btn btn-danger  btn-sm" onclick="batchDeleteSyn()">批量删除</button>
+        <span id="synSelCount" style="font-size:12px;color:var(--text-sec)"></span>
+      </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
+              <th style="width:36px"></th>
               <th>原词</th>
               <th>映射到</th>
               <th style="width:90px">来源</th>
@@ -522,7 +532,7 @@
             </tr>
           </thead>
           <tbody id="synLearnedBody">
-            <tr><td colspan="5" class="empty">点击刷新加载</td></tr>
+            <tr><td colspan="6" class="empty">点击刷新加载</td></tr>
           </tbody>
         </table>
       </div>
@@ -538,6 +548,36 @@
             <tr><td colspan="2" class="empty">点击上方刷新加载</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- 导入 / 导出 -->
+    <div class="card">
+      <div class="card-title">导入 / 导出</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+        <!-- 导出 -->
+        <div>
+          <p style="font-size:13px;color:var(--text-sec);margin-bottom:10px">导出全部同义词为 JSON 文件</p>
+          <button class="btn btn-outline" onclick="exportSynonyms()">↓ 导出 JSON</button>
+        </div>
+
+        <!-- 导入 -->
+        <div>
+          <p style="font-size:13px;color:var(--text-sec);margin-bottom:10px">
+            导入 JSON 数组：<code style="font-size:11px">[{"original":"…","mapped_to":"…"},…]</code>
+          </p>
+          <textarea id="synImportText" placeholder='[{"original":"禅坐","mapped_to":"禅修"}]'
+                    style="min-height:80px;font-family:monospace;font-size:12px;margin-bottom:8px"></textarea>
+          <div style="display:flex;gap:8px;align-items:center">
+            <label style="margin:0;font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
+              <input type="checkbox" id="synImportAutoApprove"> 自动审核
+            </label>
+            <button class="btn btn-primary btn-sm" onclick="importSynonyms()">导入</button>
+          </div>
+          <div id="synImportResult" style="font-size:12px;color:var(--success);margin-top:6px"></div>
+        </div>
+
       </div>
     </div>
 
@@ -899,14 +939,16 @@
               : '<span class="badge badge-warn">待审核</span>';
             const approveBtn = it.approved ? '' :
               `<button class="btn btn-success btn-sm" onclick="approveSynonym('${_esc(it.original)}')">审核</button>`;
+            const orig = _esc(it.original);
             return `<tr>
-              <td><strong>${_esc(it.original)}</strong></td>
+              <td><input type="checkbox" class="syn-chk" value="${orig}" onchange="updateSynSelCount()"></td>
+              <td><strong>${orig}</strong></td>
               <td>${_esc(it.mapped_to)}</td>
               <td>${srcBadge}</td>
               <td>${apvBadge}</td>
               <td style="display:flex;gap:4px">
                 ${approveBtn}
-                <button class="btn btn-danger btn-sm" onclick="deleteSynonym('${_esc(it.original)}')">删除</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteSynonym('${orig}')">删除</button>
               </td>
             </tr>`;
           }).join('');
@@ -987,6 +1029,93 @@
         }
       } catch(e) {
         if (e.message !== '403') toast('刷新失败：' + e.message, 3000);
+      }
+    }
+
+    function _getCheckedSyn() {
+      return [...document.querySelectorAll('.syn-chk:checked')].map(el => el.value);
+    }
+    function updateSynSelCount() {
+      const n = _getCheckedSyn().length;
+      document.getElementById('synSelCount').textContent = n ? `已选 ${n} 条` : '';
+      document.getElementById('synSelectAll').indeterminate =
+        n > 0 && n < document.querySelectorAll('.syn-chk').length;
+    }
+    function toggleSelectAllSyn(checked) {
+      document.querySelectorAll('.syn-chk').forEach(el => el.checked = checked);
+      updateSynSelCount();
+    }
+
+    async function batchApproveSyn() {
+      const terms = _getCheckedSyn();
+      if (!terms.length) { toast('请先勾选词条'); return; }
+      try {
+        const r = await apiFetch('/admin/synonyms/learned/batch-approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ terms })
+        });
+        const d = await r.json();
+        toast(`批量审核完成，共 ${d.approved_count ?? terms.length} 条 ✓`);
+        loadSynonyms();
+      } catch(e) {
+        if (e.message !== '403') toast('操作失败：' + e.message, 3000);
+      }
+    }
+
+    async function batchDeleteSyn() {
+      const terms = _getCheckedSyn();
+      if (!terms.length) { toast('请先勾选词条'); return; }
+      if (!confirm(`确认批量删除 ${terms.length} 条同义词？`)) return;
+      try {
+        const r = await apiFetch('/admin/synonyms/learned/batch-delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ terms })
+        });
+        const d = await r.json();
+        toast(`已删除 ${d.deleted_count ?? terms.length} 条`);
+        loadSynonyms();
+      } catch(e) {
+        if (e.message !== '403') toast('操作失败：' + e.message, 3000);
+      }
+    }
+
+    function exportSynonyms() {
+      const url = '/admin/synonyms/export';
+      // 用带鉴权的 fetch 拉取再触发下载
+      apiFetch(url).then(r => r.json()).then(d => {
+        const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'synonyms_export.json';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        toast('导出成功 ✓');
+      }).catch(e => { if (e.message !== '403') toast('导出失败：' + e.message, 3000); });
+    }
+
+    async function importSynonyms() {
+      const text = document.getElementById('synImportText').value.trim();
+      const autoApprove = document.getElementById('synImportAutoApprove').checked;
+      const resultEl = document.getElementById('synImportResult');
+      if (!text) { toast('请填写 JSON 内容'); return; }
+      let items;
+      try { items = JSON.parse(text); } catch { toast('JSON 格式错误，请检查', 3000); return; }
+      if (!Array.isArray(items)) { toast('格式错误：需要 JSON 数组', 3000); return; }
+      resultEl.textContent = '导入中…';
+      try {
+        const r = await apiFetch('/admin/synonyms/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items, auto_approve: autoApprove })
+        });
+        const d = await r.json();
+        resultEl.textContent = `完成：新增 ${d.added}，跳过 ${d.skipped}，共 ${d.total} 条`;
+        if (d.ok) { toast(`导入成功：${d.added} 条 ✓`); loadSynonyms(); }
+      } catch(e) {
+        resultEl.textContent = '导入失败';
+        if (e.message !== '403') toast('导入失败：' + e.message, 3000);
       }
     }
 
