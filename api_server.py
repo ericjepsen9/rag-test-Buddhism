@@ -437,23 +437,23 @@ def _response_cache_put(key: str, data):
 @limiter.limit(_ASK_RATE_LIMIT)
 def ask(request: Request, req: AskRequest):
     """RAG 问答主接口：接受用户问题，返回基于知识库的回答、相关媒体资源及调试信息"""
-    question = _sanitize_input(req.question)
-    if not question:
-        raise HTTPException(status_code=400, detail="问题不能为空")
-    logger.debug(f"ask: question={question[:200]}")
-
-    # 响应缓存：相同 question+mode+history 组合在 TTL 内直接返回
-    history_hash = hashlib.md5(str(req.history or []).encode()).hexdigest()[:8] if req.history else ""
-    cache_key = f"{question}|{req.mode}|{history_hash}"
-    cached = _response_cache_get(cache_key)
-    if cached is not None and not req.debug:
-        cached_resp = cached.copy()
-        cached_resp["_cached"] = True
-        return AskResponse(**cached_resp)
-
     t0 = time.monotonic()
     rw = None
+    question = ""
     try:
+        question = _sanitize_input(req.question)
+        if not question:
+            raise HTTPException(status_code=400, detail="问题不能为空")
+        logger.debug(f"ask: question={question[:200]}")
+
+        # 响应缓存：相同 question+mode+history 组合在 TTL 内直接返回
+        history_hash = hashlib.md5(str(req.history or []).encode()).hexdigest()[:8] if req.history else ""
+        cache_key = f"{question}|{req.mode}|{history_hash}"
+        cached = _response_cache_get(cache_key)
+        if cached is not None and not req.debug:
+            cached_resp = cached.copy()
+            cached_resp["_cached"] = True
+            return AskResponse(**cached_resp)
         history = [{"role": h.role, "content": _sanitize_input(h.content[:1000])} for h in req.history[-6:]]
         # 防御：限制历史总字符数，避免过大 payload 占用内存
         total_chars = sum(len(h.get("content", "")) for h in history)
