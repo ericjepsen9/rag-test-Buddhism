@@ -3998,17 +3998,22 @@ async def crawl_v2_progress(request: Request, job_id: str):
             while True:
                 if await request.is_disconnected():
                     break
-                while q:
+                if q:
+                    # 每次只发送一条消息，让浏览器有机会渲染中间状态
                     msg = q.pop(0)
                     yield f"data: {msg}\n\n"
                     parsed = json.loads(msg)
                     if parsed.get("event") in ("done", "failed"):
                         return
+                    # 队列中还有消息时，短暂等待以让浏览器渲染
+                    if q:
+                        await asyncio.sleep(0.05)
+                        continue
                 # 检查任务是否已在队列外终止（如线程崩溃）
                 if job.status in ("done", "failed"):
                     yield f"data: {json.dumps({'event': job.status, 'total': len(job.urls), 'completed': len(job.completed), 'failed': len(job.failed), 'built_index': job.built_index, 'detail': '任务已结束'}, ensure_ascii=False)}\n\n"
                     return
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.2)
         finally:
             job.remove_sse_listener(q)
 

@@ -2231,6 +2231,9 @@
       log.scrollTop = log.scrollHeight;
     }
 
+    let _cv2SSERetries = 0;
+    const _cv2SSEMaxRetries = 10;
+
     function cv2ConnectSSE(jobId) {
       if (_cv2EventSource) { _cv2EventSource.close(); _cv2EventSource = null; }
 
@@ -2243,6 +2246,9 @@
           const d = JSON.parse(ev.data);
           const evt = d.event;
 
+          // SSE 连接成功，重置重试计数
+          _cv2SSERetries = 0;
+
           if (evt === 'connected') {
             if (d.status === 'failed' || d.status === 'done') {
               // 任务已在 SSE 连接前结束
@@ -2253,6 +2259,7 @@
               cv2SetButtons(d.status, d.failed > 0);
               cv2UpdateBar(d.completed, d.total, d.failed, false);
               es.close();
+              _cv2EventSource = null;
               return;
             }
             document.getElementById('cv2StatusText').textContent = `任务 ${jobId.substring(0, 12)}… 运行中`;
@@ -2261,11 +2268,10 @@
           else if (evt === 'progress') {
             const idx = d.current;
             const phase = d.phase === 'llm_processing' ? 'LLM 整理中' : '抓取中';
-            document.getElementById('cv2StatusText').textContent =
-              `#${idx + 1}/${d.total} ${phase}: ${d.title || d.url.split('/').slice(-2).join('/')}`;
-            cv2UpdateBar(d.completed, d.total, 0, false);
+            document.getElementById('cv2StatusText').innerHTML =
+              `<span style="color:#2196f3;font-weight:bold">运行中</span> — 成功 ${d.completed}/${d.total}`;
 
-            // 更新表格行
+            // 更新表格行 — 标记为进行中
             if (_cv2Items[idx]) {
               _cv2Items[idx].status = d.phase; // fetching or llm_processing
               _cv2Items[idx].url = d.url || _cv2Items[idx].url;
@@ -2301,6 +2307,7 @@
             cv2SetButtons('paused', Object.keys(_cv2Items.filter(x => x.status === 'failed')).length > 0);
             cv2AppendLog('<span style="color:orange">PAUSE</span>', '任务已暂停');
             es.close();
+            _cv2EventSource = null;
           }
           else if (evt === 'done') {
             document.getElementById('cv2StatusText').innerHTML =
@@ -2313,22 +2320,71 @@
               `导入完成: ${d.completed}/${d.total} 成功` + (d.built_index ? ', 索引已更新' : ''));
             toast(`爬取导入完成：${d.completed}/${d.total} 成功`);
             es.close();
+            _cv2EventSource = null;
           }
           else if (evt === 'error' || evt === 'failed') {
             document.getElementById('cv2StatusText').innerHTML = `<span style="color:red">失败</span> — ${d.detail || ''}`;
             cv2SetButtons('failed', true);
             cv2AppendLog('<span style="color:red">ERROR</span>', d.detail || '任务失败');
             es.close();
+            _cv2EventSource = null;
           }
         } catch(err) { console.warn('SSE parse error:', err); }
       };
 
       es.onerror = function() {
-        // SSE 断开后尝试轮询最终状态
         es.close();
         _cv2EventSource = null;
-        setTimeout(() => cv2PollFinalStatus(jobId), 2000);
+        _cv2SSERetries++;
+        if (_cv2SSERetries <= _cv2SSEMaxRetries) {
+          // SSE 断连后自动重连（指数退避，最长 10s）
+          const delay = Math.min(1000 * Math.pow(1.5, _cv2SSERetries - 1), 10000);
+          console.log(`SSE 断连，${(delay/1000).toFixed(1)}s 后重连 (${_cv2SSERetries}/${_cv2SSEMaxRetries})`);
+          cv2AppendLog('<span style="color:orange">RECONNECT</span>', `连接中断，${(delay/1000).toFixed(0)}s 后重连…`);
+          setTimeout(() => cv2ConnectSSE(jobId), delay);
+        } else {
+          // 超过重试次数，切换到轮询模式
+          cv2AppendLog('<span style="color:orange">POLL</span>', 'SSE 连接失败，切换到轮询模式');
+          cv2StartPolling(jobId);
+        }
       };
+    }
+
+    /** 轮询模式：SSE 连接彻底失败时的降级方案 */
+    let _cv2PollTimer = null;
+    function cv2StartPolling(jobId) {
+      if (_cv2PollTimer) clearInterval(_cv2PollTimer);
+      _cv2PollTimer = setInterval(async () => {
+        try {
+          const r = await apiFetch(`/admin/crawl_v2/jobs/${jobId}`);
+          const d = await r.json();
+          // 更新进度条和状态
+          const completed = d.completed ?? (d.results ? d.results.filter(x => x.status === 'ok').length : 0);
+          const failed = d.failed ? Object.keys(d.failed).length : (d.results ? d.results.filter(x => x.status === 'failed').length : 0);
+          const total = d.urls ? d.urls.length : 0;
+          cv2UpdateBar(completed, total, failed, false);
+          document.getElementById('cv2StatusText').innerHTML =
+            `<span style="color:#2196f3">运行中</span> — 成功 ${completed}/${total} (轮询模式)`;
+          // 同步表格状态
+          if (d.results && d.results.length) {
+            for (const res of d.results) {
+              const idx = res.index;
+              if (_cv2Items[idx]) {
+                _cv2Items[idx].status = res.status === 'ok' ? 'ok' : 'failed';
+                _cv2Items[idx].error = res.error || '';
+                if (res.title) _cv2Items[idx].title = res.title;
+              }
+            }
+            cv2RenderTable();
+          }
+          // 任务结束时停止轮询
+          if (d.status === 'done' || d.status === 'failed' || d.status === 'paused') {
+            clearInterval(_cv2PollTimer);
+            _cv2PollTimer = null;
+            cv2PollFinalStatus(jobId);
+          }
+        } catch(e) { console.warn('Polling error:', e); }
+      }, 3000);
     }
 
     async function cv2PollFinalStatus(jobId) {
