@@ -157,20 +157,20 @@ def _read_input_file(path: str) -> str:
 
 def _llm_call(client, system_prompt: str, user_prompt: str,
               max_tokens: int = 4000,
-              timeout: int = 120, retries: int = 2) -> str:
+              timeout: int = 180, retries: int = 1) -> str:
     """调用 LLM API（带超时和重试）。
 
     Parameters
     ----------
     timeout : int
-        单次请求超时秒数，默认 120 秒。
-        当 max_tokens >= 4000 时自动提升至 300 秒。
+        单次请求超时秒数，默认 180 秒。
+        当 max_tokens >= 4000 时自动提升至 600 秒。
     retries : int
-        失败后重试次数，默认 2 次（共最多 3 次调用）。
+        失败后重试次数，默认 1 次（共最多 2 次调用）。
     """
     # 大输出自动延长超时
     if max_tokens >= 4000:
-        timeout = max(timeout, 300)
+        timeout = max(timeout, 600)
     last_err: Exception | None = None
     for attempt in range(1 + retries):
         try:
