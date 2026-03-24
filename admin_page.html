@@ -870,10 +870,12 @@
       <div id="cv2Progress" style="display:none;margin-top:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <span id="cv2StatusText" style="font-weight:600;font-size:14px"></span>
-          <span>
+          <span style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn btn-outline" id="cv2PauseBtn" onclick="cv2Pause()" style="font-size:12px;padding:4px 10px">暂停</button>
             <button class="btn btn-outline" id="cv2ResumeBtn" onclick="cv2Resume()" style="font-size:12px;padding:4px 10px;display:none">继续</button>
-            <button class="btn btn-outline" id="cv2RetryBtn" onclick="cv2RetryFailed()" style="font-size:12px;padding:4px 10px;display:none">重试失败</button>
+            <button class="btn btn-outline" id="cv2StopBtn" onclick="cv2Stop()" style="font-size:12px;padding:4px 10px;color:var(--danger,#d9534f);border-color:var(--danger,#d9534f)">终止</button>
+            <button class="btn btn-outline" id="cv2RetryBtn" onclick="cv2RetryFailed()" style="font-size:12px;padding:4px 10px;display:none">重试失败项</button>
+            <button class="btn btn-outline" id="cv2RestartBtn" onclick="cv2Restart()" style="font-size:12px;padding:4px 10px;display:none">重新开始</button>
           </span>
         </div>
 
@@ -1972,6 +1974,21 @@
       document.getElementById('cv2StartBtn').style.display = 'none';
     }
 
+    /** 统一控制按钮显隐。state: running | paused | done | failed */
+    function cv2SetButtons(state, hasFailed) {
+      const pause   = document.getElementById('cv2PauseBtn');
+      const resume  = document.getElementById('cv2ResumeBtn');
+      const stop    = document.getElementById('cv2StopBtn');
+      const retry   = document.getElementById('cv2RetryBtn');
+      const restart = document.getElementById('cv2RestartBtn');
+
+      pause.style.display   = state === 'running' ? '' : 'none';
+      resume.style.display  = state === 'paused' ? '' : 'none';
+      stop.style.display    = (state === 'running' || state === 'paused') ? '' : 'none';
+      retry.style.display   = (state !== 'running' && hasFailed) ? '' : 'none';
+      restart.style.display = (state === 'done' || state === 'failed' || state === 'paused') ? '' : 'none';
+    }
+
     /** 初始化每链接状态表格 */
     function cv2InitTable(urls) {
       _cv2Items = urls.map((u, i) => ({
@@ -2171,9 +2188,7 @@
         // 隐藏输入区和预览，显示进度面板
         document.getElementById('cv2Preview').style.display = 'none';
         document.getElementById('cv2Progress').style.display = '';
-        document.getElementById('cv2PauseBtn').style.display = '';
-        document.getElementById('cv2ResumeBtn').style.display = 'none';
-        document.getElementById('cv2RetryBtn').style.display = 'none';
+        cv2SetButtons('running', false);
         document.getElementById('cv2Log').innerHTML = '';
         cv2UpdateBar(0, d.total, 0, 0);
 
@@ -2272,8 +2287,7 @@
           }
           else if (evt === 'paused') {
             document.getElementById('cv2StatusText').textContent = '已暂停';
-            document.getElementById('cv2PauseBtn').style.display = 'none';
-            document.getElementById('cv2ResumeBtn').style.display = '';
+            cv2SetButtons('paused', Object.keys(_cv2Items.filter(x => x.status === 'failed')).length > 0);
             cv2AppendLog('<span style="color:orange">PAUSE</span>', '任务已暂停');
             es.close();
           }
@@ -2283,8 +2297,7 @@
               (d.failed > 0 ? ` · 失败 ${d.failed}` : '') +
               (d.built_index ? ' · 索引已更新' : '');
             cv2UpdateBar(d.completed, d.total, d.failed, false);
-            document.getElementById('cv2PauseBtn').style.display = 'none';
-            if (d.failed > 0) document.getElementById('cv2RetryBtn').style.display = '';
+            cv2SetButtons('done', d.failed > 0);
             cv2AppendLog('<span style="color:green">DONE</span>',
               `导入完成: ${d.completed}/${d.total} 成功` + (d.built_index ? ', 索引已更新' : ''));
             toast(`爬取导入完成：${d.completed}/${d.total} 成功`);
@@ -2292,6 +2305,7 @@
           }
           else if (evt === 'error' || evt === 'failed') {
             document.getElementById('cv2StatusText').innerHTML = `<span style="color:red">失败</span> — ${d.detail || ''}`;
+            cv2SetButtons('failed', true);
             cv2AppendLog('<span style="color:red">ERROR</span>', d.detail || '任务失败');
             es.close();
           }
@@ -2325,11 +2339,7 @@
             d.status === 'paused' ? '已暂停' :
             `<span style="color:red">失败</span>`;
           cv2UpdateBar(d.completed, d.total, d.failed, false);
-          if (d.status === 'paused') {
-            document.getElementById('cv2PauseBtn').style.display = 'none';
-            document.getElementById('cv2ResumeBtn').style.display = '';
-          }
-          if (d.failed > 0) document.getElementById('cv2RetryBtn').style.display = '';
+          cv2SetButtons(d.status, d.failed > 0);
         } else if (d.status === 'running') {
           // 还在运行中，重新尝试 SSE
           cv2ConnectSSE(jobId);
@@ -2352,15 +2362,50 @@
         const d = await r.json();
         if (d.ok) {
           toast(d.detail);
-          document.getElementById('cv2PauseBtn').style.display = '';
-          document.getElementById('cv2ResumeBtn').style.display = 'none';
-          document.getElementById('cv2RetryBtn').style.display = 'none';
-          // 将失败的项重置为 pending
+          cv2SetButtons('running', false);
           _cv2Items.forEach(it => { if (it.status === 'failed') { it.status = 'pending'; it.error = ''; it.startTime = null; it.endTime = null; } });
           cv2RenderTable();
           cv2ConnectSSE(_cv2JobId);
         } else { toast(d.detail, 4000); }
       } catch(e) { toast('恢复失败：' + e.message); }
+    }
+
+    async function cv2Stop() {
+      if (!_cv2JobId) return;
+      if (!confirm('确定要终止任务吗？已完成的项不会丢失，未处理的项将保持等待状态。')) return;
+      try {
+        const r = await apiFetch(`/admin/crawl_v2/jobs/${_cv2JobId}/stop`, { method: 'POST' });
+        const d = await r.json();
+        if (d.ok) {
+          toast(d.detail);
+          if (_cv2EventSource) { _cv2EventSource.close(); _cv2EventSource = null; }
+          document.getElementById('cv2StatusText').innerHTML =
+            `<span style="color:orange">已终止</span> — 已完成 ${d.completed}/${d.total}`;
+          cv2UpdateBar(d.completed, d.total, 0, false);
+          const hasFailed = _cv2Items.some(x => x.status === 'failed');
+          cv2SetButtons('done', hasFailed);
+        } else { toast(d.detail, 4000); }
+      } catch(e) { toast('终止失败：' + e.message); }
+    }
+
+    async function cv2Restart() {
+      if (!_cv2JobId) return;
+      if (!confirm('确定要重新开始吗？将清除所有进度，从第 1 个链接重新导入。')) return;
+      try {
+        const r = await apiFetch(`/admin/crawl_v2/jobs/${_cv2JobId}/restart`, { method: 'POST' });
+        const d = await r.json();
+        if (d.ok) {
+          toast(d.detail);
+          // 重置表格所有项为 pending
+          _cv2Items.forEach(it => { it.status = 'pending'; it.error = ''; it.startTime = null; it.endTime = null; });
+          cv2RenderTable();
+          cv2SetButtons('running', false);
+          cv2UpdateBar(0, d.total, 0, false);
+          document.getElementById('cv2StatusText').textContent = `任务重新开始，共 ${d.total} 项`;
+          document.getElementById('cv2Log').innerHTML = '';
+          cv2ConnectSSE(_cv2JobId);
+        } else { toast(d.detail, 4000); }
+      } catch(e) { toast('重新开始失败：' + e.message); }
     }
 
     async function cv2RetryFailed() {
@@ -2370,9 +2415,7 @@
         const d = await r.json();
         if (d.ok) {
           toast(d.detail);
-          document.getElementById('cv2RetryBtn').style.display = 'none';
-          document.getElementById('cv2PauseBtn').style.display = '';
-          // 将失败的项重置为 pending
+          cv2SetButtons('running', false);
           _cv2Items.forEach(it => { if (it.status === 'failed') { it.status = 'pending'; it.error = ''; it.startTime = null; it.endTime = null; } });
           cv2RenderTable();
           cv2ConnectSSE(_cv2JobId);
@@ -2400,13 +2443,19 @@
           html += `<td style="padding:4px">${st}</td>`;
           html += `<td style="padding:4px">${j.completed}/${j.total}` + (j.failed > 0 ? ` (${j.failed} 失败)` : '') + `</td>`;
           html += `<td style="padding:4px">${ts}</td>`;
-          html += `<td style="padding:4px">`;
+          html += `<td style="padding:4px;white-space:nowrap">`;
           html += `<button class="btn btn-outline" style="font-size:11px;padding:2px 6px" onclick="cv2ViewJob('${j.job_id}')">详情</button> `;
-          if (j.status === 'paused' || j.status === 'failed') {
-            html += `<button class="btn btn-outline" style="font-size:11px;padding:2px 6px" onclick="cv2ResumeJob('${j.job_id}')">继续</button> `;
-          }
           if (j.status === 'running') {
             html += `<button class="btn btn-outline" style="font-size:11px;padding:2px 6px" onclick="cv2WatchJob('${j.job_id}')">查看进度</button> `;
+          }
+          if (j.status === 'paused') {
+            html += `<button class="btn btn-outline" style="font-size:11px;padding:2px 6px" onclick="cv2ResumeJob('${j.job_id}')">继续</button> `;
+          }
+          if (j.status === 'done' || j.status === 'failed' || j.status === 'paused') {
+            html += `<button class="btn btn-outline" style="font-size:11px;padding:2px 6px" onclick="cv2RestartJob('${j.job_id}')">重新开始</button> `;
+          }
+          if (j.failed > 0 && j.status !== 'running') {
+            html += `<button class="btn btn-outline" style="font-size:11px;padding:2px 6px" onclick="cv2RetryJobFailed('${j.job_id}')">重试失败</button> `;
           }
           html += `</td></tr>`;
         }
@@ -2419,9 +2468,6 @@
     async function cv2ViewJob(jobId) {
       _cv2JobId = jobId;
       document.getElementById('cv2Progress').style.display = '';
-      document.getElementById('cv2PauseBtn').style.display = 'none';
-      document.getElementById('cv2ResumeBtn').style.display = 'none';
-      document.getElementById('cv2RetryBtn').style.display = 'none';
       document.getElementById('cv2Log').innerHTML = '';
 
       try {
@@ -2450,26 +2496,14 @@
           cv2AppendLog(icon, `#${res.index + 1} ${title}${err}`);
         }
 
-        if (d.status === 'paused' || d.status === 'failed') {
-          document.getElementById('cv2ResumeBtn').style.display = '';
-        }
-        if (d.failed > 0) {
-          document.getElementById('cv2RetryBtn').style.display = '';
-        }
+        cv2SetButtons(d.status, d.failed > 0);
         if (d.status === 'running') {
-          document.getElementById('cv2PauseBtn').style.display = '';
           cv2ConnectSSE(jobId);
         }
       } catch(e) { toast('获取任务详情失败：' + e.message); }
     }
 
     function cv2WatchJob(jobId) {
-      _cv2JobId = jobId;
-      document.getElementById('cv2Progress').style.display = '';
-      document.getElementById('cv2PauseBtn').style.display = '';
-      document.getElementById('cv2ResumeBtn').style.display = 'none';
-      document.getElementById('cv2RetryBtn').style.display = 'none';
-      document.getElementById('cv2Log').innerHTML = '';
       // 先加载已有状态，再连接 SSE
       cv2ViewJob(jobId);
     }
@@ -2477,9 +2511,6 @@
     async function cv2ResumeJob(jobId) {
       _cv2JobId = jobId;
       document.getElementById('cv2Progress').style.display = '';
-      document.getElementById('cv2PauseBtn').style.display = '';
-      document.getElementById('cv2ResumeBtn').style.display = 'none';
-      document.getElementById('cv2RetryBtn').style.display = 'none';
       document.getElementById('cv2Log').innerHTML = '';
 
       // 先加载已有数据填充表格
@@ -2500,9 +2531,25 @@
         const d = await r.json();
         if (d.ok) {
           toast(d.detail);
+          cv2SetButtons('running', false);
           cv2ConnectSSE(jobId);
         } else { toast(d.detail, 4000); }
       } catch(e) { toast('恢复失败：' + e.message); }
+    }
+
+    /** 从历史任务列表重新开始 */
+    async function cv2RestartJob(jobId) {
+      _cv2JobId = jobId;
+      // 先加载详情页再触发重新开始
+      await cv2ViewJob(jobId);
+      cv2Restart();
+    }
+
+    /** 从历史任务列表重试失败项 */
+    async function cv2RetryJobFailed(jobId) {
+      _cv2JobId = jobId;
+      await cv2ViewJob(jobId);
+      cv2RetryFailed();
     }
 
     /* ===== 批量 URL 模板导入 ===== */

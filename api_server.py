@@ -4084,6 +4084,82 @@ def crawl_v2_retry_failed(request: Request, job_id: str):
     return {"ok": True, "detail": f"正在重试 {len(failed_indices)} 个失败项", "job_id": job.job_id}
 
 
+@app.post("/admin/crawl_v2/jobs/{job_id}/stop")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+def crawl_v2_stop(request: Request, job_id: str):
+    """强制终止任务（标记为 done，不再继续处理剩余项）"""
+    from crawl_v2 import CrawlJob, get_active_job
+
+    job = get_active_job(job_id)
+    if not job:
+        try:
+            job = CrawlJob.load(job_id)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="任务不存在")
+
+    if job.status not in ("running", "paused", "pending"):
+        return {"ok": False, "detail": f"任务状态为 {job.status}，无需终止"}
+
+    job._stop_flag = True
+    job._pause_event.set()  # 唤醒暂停中的线程使其退出
+    job.status = "done"
+    job.save()
+    job.emit_sse("done", {
+        "total": len(job.urls),
+        "completed": len(job.completed),
+        "failed": len(job.failed),
+        "built_index": job.built_index,
+    })
+
+    return {
+        "ok": True,
+        "detail": f"任务已终止，已完成 {len(job.completed)}/{len(job.urls)}",
+        "completed": len(job.completed),
+        "total": len(job.urls),
+    }
+
+
+@app.post("/admin/crawl_v2/jobs/{job_id}/restart")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+def crawl_v2_restart(request: Request, job_id: str):
+    """重新开始任务：清除所有进度，从头重新处理全部 URL"""
+    from crawl_v2 import CrawlJob, get_active_job, set_active_job
+
+    job = get_active_job(job_id)
+    if not job:
+        try:
+            job = CrawlJob.load(job_id)
+            set_active_job(job)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="任务不存在")
+
+    if job.status == "running":
+        return {"ok": False, "detail": "任务正在运行中，请先暂停或终止"}
+
+    # 清除所有进度
+    total = len(job.urls)
+    job.completed.clear()
+    job.failed.clear()
+    job.results.clear()
+    job.built_index = False
+    job._stop_flag = False
+    job._pause_event.set()
+    job.save()
+
+    def _run():
+        try:
+            job.run(build=True)
+        except Exception as e:
+            job.status = "failed"
+            job.save()
+            logger.error("crawl_v2 restart failed: %s", e)
+
+    t = threading.Thread(target=_run, daemon=True, name=f"crawl_v2_restart_{job.job_id}")
+    t.start()
+
+    return {"ok": True, "detail": f"任务已重新开始，共 {total} 项", "job_id": job.job_id, "total": total}
+
+
 # ===== 静态文件（必须放在所有路由之后，避免拦截 API 路径）=====
 _web_dir = BASE_DIR / "web"
 if _web_dir.is_dir():
