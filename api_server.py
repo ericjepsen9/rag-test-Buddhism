@@ -1252,12 +1252,75 @@ def admin_logs_error(limit: int = 20):
     return {"items": get_recent_errors(limit=min(max(1, limit), 100))}
 
 
+# ===== DOC/DOCX 文本提取 =====
+
+def _extract_docx_text(file_data: bytes) -> str:
+    """从 .docx 文件提取纯文本。
+
+    提取段落文本和表格内容，保留换行结构。
+    Raises ImportError if python-docx not installed.
+    """
+    import io
+    from docx import Document
+    doc = Document(io.BytesIO(file_data))
+    parts = []
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if text:
+            parts.append(text)
+    # 提取表格内容
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if cells:
+                parts.append(" | ".join(cells))
+    return "\n".join(parts)
+
+
+def _extract_doc_text(file_data: bytes) -> str:
+    """从 .doc (旧格式) 文件提取纯文本。
+
+    尝试用 antiword 命令行工具提取；若不可用则尝试正则提取可见文本。
+    """
+    import subprocess
+    import tempfile
+    # 方法1：使用 antiword（如已安装）
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".doc", delete=False) as tmp:
+            tmp.write(file_data)
+            tmp_path = tmp.name
+        result = subprocess.run(
+            ["antiword", tmp_path],
+            capture_output=True, text=True, timeout=30,
+        )
+        os.unlink(tmp_path)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+    # 方法2：粗略提取二进制中的可见文本
+    text_parts = []
+    try:
+        raw = file_data.decode("utf-8", errors="ignore")
+        # 提取连续的中文/英文文本片段
+        import re as _re
+        for m in _re.finditer(r'[\u4e00-\u9fff\w\s，。！？、；：""''（）《》\-]{10,}', raw):
+            text_parts.append(m.group().strip())
+    except Exception:
+        pass
+    return "\n".join(text_parts)
+
+
 # ===== 知识库文件管理接口 =====
 
 # 安全校验：产品名只允许字母数字下划线横线
 _SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_\-\u4e00-\u9fff]+$")
 # 允许的文件扩展名
-_ALLOWED_EXTENSIONS = {".txt", ".json"}
+_ALLOWED_EXTENSIONS = {".txt", ".json", ".doc", ".docx"}
 
 
 def _validate_product_name(name: str) -> str:
@@ -1420,7 +1483,8 @@ def admin_delete_product(product: str):
 @app.post("/admin/upload")
 @limiter.limit(_ADMIN_RATE_LIMIT)
 async def admin_upload(request: "Request"):
-    """通用文件上传：支持上传 txt/json 文件到指定产品目录。
+    """通用文件上传：支持上传 txt/json/doc/docx 文件到指定产品目录。
+    doc/docx 文件会自动转为 txt 存储。
     Form fields: product (str), files (UploadFile[])
     """
     content_type = request.headers.get("content-type", "")
@@ -1455,7 +1519,29 @@ async def admin_upload(request: "Request"):
                     continue
                 try:
                     content = await item.read()
-                    text = content.decode("utf-8")
+                    if suffix == ".docx":
+                        try:
+                            text = _extract_docx_text(content)
+                        except ImportError:
+                            errors.append({"file": fname, "error": "服务器未安装 python-docx，无法处理 .docx"})
+                            continue
+                        except Exception as exc:
+                            errors.append({"file": fname, "error": f"解析 .docx 失败: {exc}"})
+                            continue
+                        # 转存为同名 .txt 文件
+                        fname = Path(fname).stem + ".txt"
+                    elif suffix == ".doc":
+                        try:
+                            text = _extract_doc_text(content)
+                        except Exception as exc:
+                            errors.append({"file": fname, "error": f"解析 .doc 失败: {exc}"})
+                            continue
+                        if not text.strip():
+                            errors.append({"file": fname, "error": "无法从 .doc 提取文本，建议转为 .docx 后重试"})
+                            continue
+                        fname = Path(fname).stem + ".txt"
+                    else:
+                        text = content.decode("utf-8")
                 except UnicodeDecodeError:
                     try:
                         text = content.decode("utf-8-sig")
@@ -2591,7 +2677,7 @@ async def admin_import_knowledge_file(request: "Request"):
         - id: 实体ID（product/procedure/equipment/material 必填）
         - build: "1" 导入后自动建索引（默认 "1"）
         - dry_run: "1" 仅预览（默认 "0"）
-        - file: 上传的文件（支持 .txt .md .pdf）
+        - file: 上传的文件（支持 .txt .md .pdf .doc .docx）
     """
     content_type = request.headers.get("content-type", "")
     if "multipart/form-data" not in content_type:
@@ -2634,6 +2720,20 @@ async def admin_import_knowledge_file(request: "Request"):
                 raw_text = "\n\n".join(text_parts)
             except ImportError:
                 raise HTTPException(status_code=400, detail="服务器未安装 pdfplumber，无法处理 PDF")
+        elif suffix == ".docx":
+            try:
+                raw_text = _extract_docx_text(file_data)
+            except ImportError:
+                raise HTTPException(status_code=400, detail="服务器未安装 python-docx，无法处理 .docx")
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"解析 .docx 失败: {exc}")
+        elif suffix == ".doc":
+            try:
+                raw_text = _extract_doc_text(file_data)
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"解析 .doc 失败: {exc}")
+            if not raw_text.strip():
+                raise HTTPException(status_code=400, detail="无法从 .doc 提取文本，建议转为 .docx 后重试")
         else:
             # txt / md 等文本文件
             for enc in ("utf-8-sig", "utf-8", "gbk", "gb2312"):
