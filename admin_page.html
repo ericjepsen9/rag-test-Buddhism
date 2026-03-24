@@ -811,6 +811,54 @@
       </div>
     </div>
 
+    <!-- 批量 URL 模板导入 -->
+    <div class="card">
+      <div class="card-title">批量 URL 导入
+        <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
+          用 URL 模板 + 数字范围批量抓取系列文章（如讲解第1课~第201课）
+        </span>
+      </div>
+      <div class="row-flex" style="flex-wrap:wrap;gap:10px">
+        <div style="flex:4;min-width:200px">
+          <label>URL 模板（用 <code>{n}</code> 表示序号）</label>
+          <input type="text" id="batchUrlPattern"
+                 placeholder="https://example.com/di-{n}-ke/">
+        </div>
+        <div style="flex:1;min-width:80px">
+          <label>起始</label>
+          <input type="number" id="batchStart" value="1" min="1">
+        </div>
+        <div style="flex:1;min-width:80px">
+          <label>结束</label>
+          <input type="number" id="batchEnd" value="10">
+        </div>
+      </div>
+      <div class="row-flex" style="margin-top:10px;flex-wrap:wrap;gap:10px">
+        <div style="flex:2;min-width:120px">
+          <label>知识类型</label>
+          <select id="batchType">
+            <option value="doctrine">doctrine — 教义</option>
+            <option value="scripture">scripture — 经典</option>
+            <option value="practice">practice — 修行</option>
+            <option value="master">master — 人物</option>
+            <option value="history">history — 历史</option>
+            <option value="ritual">ritual — 仪轨</option>
+            <option value="sect">sect — 宗派</option>
+            <option value="term">term — 术语</option>
+          </select>
+        </div>
+        <div style="flex:1;min-width:80px">
+          <label>抓取间隔(秒)</label>
+          <input type="number" id="batchDelay" value="2" min="0" step="0.5">
+        </div>
+        <button class="btn btn-outline" id="batchPreviewBtn" onclick="doBatchPreview()">预览 URL</button>
+        <button class="btn btn-info" id="batchImportBtn" onclick="doBatchImport()">开始批量导入</button>
+      </div>
+      <div id="batchResult" style="display:none;margin-top:12px">
+        <div id="batchResultContent" style="font-size:13px;max-height:300px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px"></div>
+      </div>
+    </div>
+
     <!-- 文件上传 -->
     <div class="card">
       <div class="card-title">文件上传
@@ -1757,6 +1805,93 @@
     }
 
     /* ===== URL 抓取 ===== */
+    /* ===== 批量 URL 模板导入 ===== */
+    async function doBatchPreview() {
+      const pattern = document.getElementById('batchUrlPattern').value.trim();
+      const start = parseInt(document.getElementById('batchStart').value) || 1;
+      const end = parseInt(document.getElementById('batchEnd').value) || 1;
+      if (!pattern || !pattern.includes('{n}')) {
+        toast('URL 模板必须包含 {n} 占位符'); return;
+      }
+      if (start > end) { toast('起始数字不能大于结束数字'); return; }
+      const btn = document.getElementById('batchPreviewBtn');
+      btn.disabled = true;
+      btn.textContent = '生成中…';
+      try {
+        const r = await apiFetch('/admin/batch_pattern_import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url_pattern: pattern, start, end, dry_run: true, type: document.getElementById('batchType').value })
+        });
+        const d = await r.json();
+        const el = document.getElementById('batchResult');
+        const content = document.getElementById('batchResultContent');
+        el.style.display = '';
+        if (d.urls && d.urls.length) {
+          content.innerHTML = `<strong>将生成 ${d.total} 个 URL：</strong><br><ol style="margin:6px 0;padding-left:20px;max-height:200px;overflow-y:auto">`
+            + d.urls.map(u => `<li style="font-size:12px;word-break:break-all;margin:2px 0">${u}</li>`).join('')
+            + '</ol>';
+        } else {
+          content.textContent = '无 URL 生成';
+        }
+        toast(`预览：共 ${d.total} 个 URL`);
+      } catch(e) {
+        if (e.message !== '403') toast('预览失败：' + e.message, 4000);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '预览 URL';
+      }
+    }
+
+    async function doBatchImport() {
+      const pattern = document.getElementById('batchUrlPattern').value.trim();
+      const start = parseInt(document.getElementById('batchStart').value) || 1;
+      const end = parseInt(document.getElementById('batchEnd').value) || 1;
+      const type = document.getElementById('batchType').value;
+      const delay = parseFloat(document.getElementById('batchDelay').value) || 2;
+      if (!pattern || !pattern.includes('{n}')) {
+        toast('URL 模板必须包含 {n} 占位符'); return;
+      }
+      if (start > end) { toast('起始数字不能大于结束数字'); return; }
+      const total = end - start + 1;
+      if (!confirm(`确认批量导入 ${total} 个 URL？\n\n类型: ${type}\n间隔: ${delay}s\n预计用时: ~${Math.ceil(total * (delay + 5))}s`)) return;
+
+      const btn = document.getElementById('batchImportBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> 批量导入中…';
+      const el = document.getElementById('batchResult');
+      const content = document.getElementById('batchResultContent');
+      el.style.display = '';
+      content.innerHTML = '<span class="spin"></span> 正在批量抓取并导入，请耐心等待…<br>（共 ' + total + ' 个 URL，预计需要较长时间）';
+
+      try {
+        const r = await apiFetch('/admin/batch_pattern_import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url_pattern: pattern, start, end, type, delay, dry_run: false, build: true })
+        });
+        const d = await r.json();
+        let html = `<strong>导入完成：成功 ${d.success}/${d.total}</strong>`;
+        if (d.built_index) html += ' <span class="badge badge-success">索引已更新</span>';
+        html += '<div style="max-height:250px;overflow-y:auto;margin-top:8px">';
+        for (const item of (d.results || [])) {
+          const icon = item.status === 'ok' ? '✅' : '❌';
+          const title = item.title ? ` — ${item.title}` : '';
+          const err = item.error ? ` <span style="color:var(--danger)">${item.error}</span>` : '';
+          html += `<div style="font-size:12px;margin:3px 0;word-break:break-all">${icon} #${item.index} ${item.url}${title}${err}</div>`;
+        }
+        html += '</div>';
+        content.innerHTML = html;
+        toast(`批量导入完成：${d.success}/${d.total} 成功`);
+      } catch(e) {
+        content.innerHTML = `<span style="color:var(--danger)">导入失败：${e.message}</span>`;
+        if (e.message !== '403') toast('批量导入失败：' + e.message, 4000);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '开始批量导入';
+      }
+    }
+
     async function doFetchUrl() {
       const url = document.getElementById('fetchUrl').value.trim();
       if (!url) { toast('请输入 URL'); return; }

@@ -3286,6 +3286,138 @@ def admin_auto_import(request: Request, req: AutoImportRequest):
     }
 
 
+class BatchPatternRequest(BaseModel):
+    """URL 模板批量导入请求"""
+    url_pattern: str = Field(..., description="URL 模板，用 {n} 表示数字变量，如 https://example.com/lesson-{n}/")
+    start: int = Field(..., description="起始数字")
+    end: int = Field(..., description="结束数字（包含）")
+    type: str = Field(default="doctrine", description="知识类型")
+    build: bool = Field(default=True, description="全部导入完成后自动构建索引")
+    dry_run: bool = Field(default=False, description="仅预览生成的 URL 列表，不实际导入")
+    delay: float = Field(default=2.0, description="每次抓取间隔秒数（避免被封）")
+
+
+@app.post("/admin/batch_pattern_import")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+def admin_batch_pattern_import(request: Request, req: BatchPatternRequest):
+    """根据 URL 模板和数字范围批量导入。
+
+    例如 url_pattern="https://example.com/di-{n}-ke/", start=1, end=201
+    会自动生成 201 个 URL 并逐一抓取导入。
+    """
+    if "{n}" not in req.url_pattern:
+        raise HTTPException(status_code=400, detail="url_pattern 必须包含 {n} 占位符")
+    if req.start > req.end:
+        raise HTTPException(status_code=400, detail="start 不能大于 end")
+    if req.end - req.start + 1 > 500:
+        raise HTTPException(status_code=400, detail="单次最多 500 个 URL")
+
+    urls = [req.url_pattern.replace("{n}", str(i)) for i in range(req.start, req.end + 1)]
+
+    if req.dry_run:
+        return {
+            "ok": True,
+            "dry_run": True,
+            "total": len(urls),
+            "urls": urls,
+        }
+
+    # 实际导入
+    from import_knowledge import (
+        _ENTITY_TYPES, _get_openai_client, _generate_knowledge,
+        _write_knowledge_files,
+    )
+    import time as _time
+
+    results = []
+    success_count = 0
+    need_build_products = set()
+
+    for idx, url in enumerate(urls):
+        entry = {"url": url, "index": idx + 1, "status": "pending", "error": None}
+        try:
+            # 抓取
+            fetched = _fetch_url_content(url)
+            entry["title"] = fetched["title"]
+            entry["content_length"] = len(fetched["content"])
+
+            # 确定类型和 ID
+            entity_type = req.type or "doctrine"
+            if entity_type not in _ENTITY_TYPES:
+                entry["status"] = "failed"
+                entry["error"] = f"不支持的类型: {entity_type}"
+                results.append(entry)
+                continue
+
+            _, is_single = _ENTITY_TYPES[entity_type]
+            entity_id = _title_to_id(fetched["title"])
+            entry["type"] = entity_type
+            entry["id"] = entity_id
+
+            # LLM 整理
+            client = _get_openai_client()
+            result = _generate_knowledge(client, fetched["content"], entity_type, entity_id)
+            entry["files_generated"] = {}
+            if result.get("main_txt"):
+                entry["files_generated"]["main.txt"] = len(result["main_txt"])
+            if result.get("faq_txt"):
+                entry["files_generated"]["faq.txt"] = len(result["faq_txt"])
+            if result.get("alias_txt"):
+                entry["files_generated"]["alias.txt"] = len(result["alias_txt"])
+
+            # 写入知识库
+            out_dir = _write_knowledge_files(result, entity_type, entity_id, dry_run=False)
+            entry["output_dir"] = str(out_dir)
+
+            if entity_type == "product":
+                need_build_products.add(entity_id)
+            else:
+                need_build_products.add("_shared")
+
+            entry["status"] = "ok"
+            success_count += 1
+
+        except Exception as e:
+            entry["status"] = "failed"
+            entry["error"] = str(e)
+            log_error("batch_pattern_import", repr(e), meta={"url": url})
+
+        results.append(entry)
+
+        # 间隔避免被封
+        if idx < len(urls) - 1 and req.delay > 0:
+            _time.sleep(req.delay)
+
+    # 统一建索引
+    built_index = False
+    if req.build and success_count > 0:
+        try:
+            if "_shared" in need_build_products:
+                from build_faiss import build_shared
+                build_shared()
+                invalidate_store_cache("_shared")
+            for pid in need_build_products:
+                if pid != "_shared":
+                    from build_faiss import build_for_product
+                    build_for_product(pid)
+                    invalidate_store_cache(pid)
+            with _health_lock:
+                global _health_cache
+                _health_cache = {}
+            built_index = True
+        except Exception as e:
+            log_error("batch_pattern_build", repr(e))
+
+    return {
+        "ok": success_count > 0,
+        "total": len(urls),
+        "success": success_count,
+        "failed": len(urls) - success_count,
+        "built_index": built_index,
+        "results": results,
+    }
+
+
 def _extract_article_media(html: str) -> list:
     """从 HTML 中提取文章的图片和视频链接。"""
     import re as _re
