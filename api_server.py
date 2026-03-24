@@ -505,7 +505,6 @@ def ask(request: Request, req: AskRequest):
         media = [MediaItem(**m) for m in find_media(resolved_q, product_id=product_id, route=route)]
         debug = None
         if req.debug:
-            from rag_answer import get_last_method
             # 查询链路信息
             debug = {
                 "trace_id": _tid,
@@ -515,7 +514,7 @@ def ask(request: Request, req: AskRequest):
                 "mode": req.mode,
                 "route": route,
                 "product": product_id,
-                "method": get_last_method() or None,
+                "method": None,
                 "expanded_query": rw["expanded"],
                 "context_resolved": rw["context_resolved"],
                 # 查询改写详情
