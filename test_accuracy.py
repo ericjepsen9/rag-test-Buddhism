@@ -235,3 +235,47 @@ class TestMultiQuestionSplitAccuracy:
         """短逗号分隔不应拆分"""
         result = split_multi_question("学佛之后，可以吃素")
         assert len(result) == 1
+
+
+# ============================================================
+# 自动导入辅助函数测试
+# ============================================================
+
+class TestAutoImportHelpers:
+    """验证自动导入的类型推断和 ID 生成逻辑"""
+
+    def test_auto_detect_scripture(self):
+        from api_server import _auto_detect_type
+        assert _auto_detect_type("心经讲解", "般若波罗蜜多心经全文") == "scripture"
+
+    def test_auto_detect_practice(self):
+        from api_server import _auto_detect_type
+        assert _auto_detect_type("禅修入门", "打坐的基本方法") == "practice"
+
+    def test_auto_detect_sect(self):
+        from api_server import _auto_detect_type
+        assert _auto_detect_type("禅宗简介", "禅宗的历史与传承") == "sect"
+
+    def test_auto_detect_master(self):
+        from api_server import _auto_detect_type
+        assert _auto_detect_type("虚云老和尚", "一代高僧的生平") == "master"
+
+    def test_auto_detect_default_doctrine(self):
+        from api_server import _auto_detect_type
+        assert _auto_detect_type("佛教基础", "四圣谛与八正道") == "doctrine"
+
+    def test_title_to_id_chinese(self):
+        from api_server import _title_to_id
+        result = _title_to_id("心经讲解")
+        assert result == "心经讲解"
+
+    def test_title_to_id_special_chars(self):
+        from api_server import _title_to_id
+        result = _title_to_id("【佛学】心经 - 完整版")
+        assert "_" not in result or result.replace("_", "")  # 不应全是下划线
+        assert len(result) <= 50
+
+    def test_title_to_id_empty(self):
+        from api_server import _title_to_id
+        result = _title_to_id("")
+        assert result.startswith("auto_")

@@ -568,3 +568,35 @@ class TestErrorHandling:
     def test_health_post_method_not_allowed(self, client):
         resp = client.post("/health")
         assert resp.status_code == 405
+
+
+# ============================================================
+# /admin/auto_import 端点测试
+# ============================================================
+
+class TestAutoImport:
+    """验证自动抓取+导入端点的输入校验和基本行为"""
+
+    def test_auto_import_requires_auth(self, client):
+        resp = client.post("/admin/auto_import", json={"urls": ["https://example.com"]})
+        assert resp.status_code in (401, 403)
+
+    def test_auto_import_empty_urls(self, client, admin_headers):
+        resp = client.post("/admin/auto_import", json={}, headers=admin_headers)
+        assert resp.status_code == 400
+
+    def test_auto_import_too_many_urls(self, client, admin_headers):
+        urls = [f"https://example.com/{i}" for i in range(25)]
+        resp = client.post("/admin/auto_import", json={"urls": urls}, headers=admin_headers)
+        assert resp.status_code == 400
+
+    def test_auto_import_dry_run(self, client, admin_headers):
+        resp = client.post("/admin/auto_import", json={
+            "urls": ["https://example.com"],
+            "dry_run": True,
+        }, headers=admin_headers)
+        # dry_run 模式下抓取可能失败（example.com 无实际内容），但不应崩溃
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "results" in data
+        assert data["total"] == 1

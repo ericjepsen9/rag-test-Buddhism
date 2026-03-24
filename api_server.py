@@ -2433,7 +2433,227 @@ def admin_fetch_url(request: Request, req: FetchUrlRequest):
     return {"title": title, "content": text, "url": url, "length": len(text), "media": media}
 
 
-def _extract_article_text(html: str) -> tuple:
+# ===== 自动抓取 + 导入一站式接口 =====
+
+class AutoImportItem(BaseModel):
+    """单个 URL 导入项"""
+    url: str = Field(..., description="要抓取的网页 URL")
+    type: str = Field(default="", description="知识类型（留空则自动推断）")
+    id: str = Field(default="", description="实体ID（留空则从标题自动生成）")
+
+
+class AutoImportRequest(BaseModel):
+    """自动抓取 + 导入请求"""
+    urls: List[str] = Field(default=[], description="URL 列表（简化用法）")
+    items: List[AutoImportItem] = Field(default=[], description="详细导入项（可指定每个 URL 的类型和 ID）")
+    type: str = Field(default="doctrine", description="全局默认知识类型")
+    build: bool = Field(default=True, description="全部导入完成后自动构建索引")
+    dry_run: bool = Field(default=False, description="仅预览，不写入文件")
+
+
+def _fetch_url_content(url: str) -> dict:
+    """抓取 URL 并提取正文（内部复用，含 SSRF 防护）。
+
+    Returns: {"title": str, "content": str, "url": str}
+    Raises: ValueError on failure.
+    """
+    import requests as http_requests
+    from urllib.parse import urlparse
+    import ipaddress
+    import socket
+
+    url = url.strip()
+    if not url.startswith(("http://", "https://")):
+        raise ValueError("URL 必须以 http:// 或 https:// 开头")
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("仅支持 HTTP/HTTPS 链接")
+
+    # SSRF 防护
+    hostname = parsed.hostname or ""
+    try:
+        resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        for _, _, _, _, addr in resolved:
+            ip = ipaddress.ip_address(addr[0])
+            if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
+                raise ValueError("不允许访问内网地址")
+    except socket.gaierror:
+        raise ValueError(f"无法解析域名: {hostname}")
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 "
+                       "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+
+    try:
+        resp = http_requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        resp.raise_for_status()
+    except http_requests.RequestException as e:
+        raise ValueError(f"抓取失败: {e}")
+
+    resp.encoding = resp.apparent_encoding or "utf-8"
+    title, text = _extract_article_text(resp.text)
+
+    if not text or len(text.strip()) < 20:
+        raise ValueError("未能提取到有效正文（可能被反爬拦截）")
+
+    return {"title": title, "content": text, "url": url}
+
+
+def _auto_detect_type(title: str, content: str) -> str:
+    """根据标题和内容自动推断知识类型。"""
+    sample = (title + " " + content[:500]).lower()
+    # 按优先级匹配
+    if any(kw in sample for kw in ("经", "论", "律", "偈", "品第")):
+        return "scripture"
+    if any(kw in sample for kw in ("禅修", "打坐", "修行", "念佛", "持咒", "观想", "止观")):
+        return "practice"
+    if any(kw in sample for kw in ("仪轨", "法会", "供养", "早课", "晚课")):
+        return "ritual"
+    if any(kw in sample for kw in ("宗派", "禅宗", "净土宗", "天台", "华严宗", "密宗", "传承")):
+        return "sect"
+    if any(kw in sample for kw in ("法师", "大师", "祖师", "高僧", "上人")):
+        return "master"
+    if any(kw in sample for kw in ("历史", "朝代", "传入", "佛教史")):
+        return "history"
+    return "doctrine"
+
+
+def _title_to_id(title: str) -> str:
+    """从标题生成安全的实体 ID。"""
+    import re as _re
+    # 提取中文/英文/数字
+    cleaned = _re.sub(r"[^\w\u4e00-\u9fff]", "_", title.strip())
+    cleaned = _re.sub(r"_+", "_", cleaned).strip("_")
+    if not cleaned:
+        import hashlib
+        cleaned = "auto_" + hashlib.md5(title.encode()).hexdigest()[:8]
+    return cleaned[:50]
+
+
+@app.post("/admin/auto_import")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+def admin_auto_import(request: Request, req: AutoImportRequest):
+    """一站式自动导入：抓取 URL → LLM 整理 → 写入知识库 → 建索引。
+
+    支持批量 URL，每个 URL 独立处理，部分失败不影响其他。
+    """
+    from import_knowledge import (
+        _ENTITY_TYPES, _get_openai_client, _generate_knowledge,
+        _write_knowledge_files,
+    )
+
+    # 合并 urls（简化用法）和 items（详细用法）
+    all_items: List[AutoImportItem] = list(req.items)
+    for u in req.urls:
+        all_items.append(AutoImportItem(url=u, type="", id=""))
+
+    if not all_items:
+        raise HTTPException(status_code=400, detail="请提供至少一个 URL")
+    if len(all_items) > 20:
+        raise HTTPException(status_code=400, detail="单次最多 20 个 URL")
+
+    results = []
+    success_count = 0
+    need_build_products = set()
+
+    for item in all_items:
+        entry = {"url": item.url, "status": "pending", "error": None}
+        try:
+            # 1. 抓取
+            fetched = _fetch_url_content(item.url)
+            entry["title"] = fetched["title"]
+            entry["content_length"] = len(fetched["content"])
+
+            # 2. 确定类型和 ID
+            entity_type = (item.type or req.type or "").strip()
+            if not entity_type:
+                entity_type = _auto_detect_type(fetched["title"], fetched["content"])
+            if entity_type not in _ENTITY_TYPES:
+                entry["status"] = "failed"
+                entry["error"] = f"不支持的类型: {entity_type}"
+                results.append(entry)
+                continue
+
+            _, is_single = _ENTITY_TYPES[entity_type]
+            entity_id = item.id.strip()
+            if not entity_id and not is_single:
+                entity_id = _title_to_id(fetched["title"])
+            # 安全校验
+            if entity_id and not _SAFE_NAME_RE.match(entity_id):
+                entity_id = _title_to_id(entity_id)
+
+            entry["type"] = entity_type
+            entry["id"] = entity_id
+
+            if req.dry_run:
+                entry["status"] = "dry_run"
+                results.append(entry)
+                continue
+
+            # 3. LLM 整理
+            client = _get_openai_client()
+            result = _generate_knowledge(client, fetched["content"], entity_type, entity_id)
+            entry["files_generated"] = {}
+            if result.get("main_txt"):
+                entry["files_generated"]["main.txt"] = len(result["main_txt"])
+            if result.get("faq_txt"):
+                entry["files_generated"]["faq.txt"] = len(result["faq_txt"])
+            if result.get("alias_txt"):
+                entry["files_generated"]["alias.txt"] = len(result["alias_txt"])
+
+            # 4. 写入知识库
+            out_dir = _write_knowledge_files(result, entity_type, entity_id, dry_run=False)
+            entry["output_dir"] = str(out_dir)
+
+            # 记录需要重建索引的产品
+            if entity_type == "product":
+                need_build_products.add(entity_id)
+            else:
+                need_build_products.add("_shared")
+
+            entry["status"] = "ok"
+            success_count += 1
+
+        except Exception as e:
+            entry["status"] = "failed"
+            entry["error"] = str(e)
+            log_error("auto_import", repr(e), meta={"url": item.url})
+
+        results.append(entry)
+
+    # 5. 统一建索引（避免每个 URL 重复构建）
+    built_index = False
+    if req.build and not req.dry_run and success_count > 0:
+        try:
+            if "_shared" in need_build_products:
+                from build_faiss import build_shared
+                build_shared()
+                invalidate_store_cache("_shared")
+            for pid in need_build_products:
+                if pid != "_shared":
+                    from build_faiss import build_for_product
+                    build_for_product(pid)
+                    invalidate_store_cache(pid)
+            with _health_lock:
+                global _health_cache
+                _health_cache = {}
+            built_index = True
+        except Exception as e:
+            log_error("auto_import_build", repr(e))
+
+    return {
+        "ok": success_count > 0,
+        "total": len(all_items),
+        "success": success_count,
+        "failed": len(all_items) - success_count,
+        "built_index": built_index,
+        "dry_run": req.dry_run,
+        "results": results,
+    }
     """从 HTML 中提取文章标题和正文纯文本。
 
     优先使用 BeautifulSoup（如已安装），否则用正则做基础提取。
