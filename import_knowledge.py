@@ -89,21 +89,26 @@ def _get_openai_client():
     try:
         from llm_client import get_client as _get_multi_client, is_enabled as _is_enabled
         if _is_enabled("knowledge"):
+            logger.info("使用 llm_client 多提供商获取 knowledge client")
             client = _get_multi_client("knowledge")
             if client is not None:
                 return client
+            logger.warning("llm_client knowledge 已启用但返回 None，回退旧版")
     except ImportError:
-        pass
+        logger.info("llm_client 不可用，回退到 OPENAI_API_KEY")
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key:
+        logger.error("LLM 未配置: OPENAI_API_KEY 未设置且 llm_client knowledge 未启用")
         raise RuntimeError("未设置 OPENAI_API_KEY 环境变量，且未配置知识库整理用 LLM")
     try:
         from openai import OpenAI
         kwargs = {"api_key": key}
         if OPENAI_API_BASE:
             kwargs["base_url"] = OPENAI_API_BASE
+        logger.info("使用 OpenAI 直连, base_url=%s", OPENAI_API_BASE or "(默认)")
         return OpenAI(**kwargs)
     except ImportError:
+        logger.error("openai 库未安装")
         raise RuntimeError("未安装 openai 库，请运行: pip install openai")
 
 
@@ -382,7 +387,7 @@ def _generate_knowledge(client, raw_text: str, entity_type: str,
 
     max_chars = 12000
     if len(raw_text) > max_chars:
-        print(f"[INFO] 原始文档较长（{len(raw_text)} 字），将分段处理")
+        logger.info("原始文档较长（%d 字），将分段处理: entity=%s", len(raw_text), entity_id)
         part1 = raw_text[:max_chars]
         part2 = raw_text[max_chars:]
 
@@ -451,32 +456,32 @@ def _write_knowledge_files(result: dict, entity_type: str, entity_id: str,
                     try:
                         existing = main_path.read_text(encoding="utf-8")
                         main_txt = existing.rstrip() + "\n\n" + main_txt
-                        print(f"[INFO] 追加内容到已有文件: {main_path}")
+                        logger.info("追加内容到已有文件: %s", main_path)
                         _atomic_write(main_path, main_txt)
                     finally:
                         fcntl.flock(lf, fcntl.LOCK_UN)
             else:
                 existing = main_path.read_text(encoding="utf-8")
                 main_txt = existing.rstrip() + "\n\n" + main_txt
-                print(f"[INFO] 追加内容到已有文件: {main_path}")
+                logger.info("追加内容到已有文件: %s", main_path)
                 _atomic_write(main_path, main_txt)
         else:
             _atomic_write(main_path, main_txt)
-        print(f"[OK] 写入 {main_path} ({len(main_txt)} 字)")
+        logger.info("写入 %s (%d 字)", main_path, len(main_txt))
 
     # faq.txt（仅经典类型）
     faq_txt = result.get("faq_txt", "")
     if faq_txt and entity_type == "scripture":
         faq_path = out_dir / "faq.txt"
         _atomic_write(faq_path, faq_txt)
-        print(f"[OK] 写入 {faq_path} ({len(faq_txt)} 字)")
+        logger.info("写入 %s (%d 字)", faq_path, len(faq_txt))
 
     # alias.txt
     alias_txt = result.get("alias_txt", "")
     if alias_txt:
         alias_path = out_dir / "alias.txt"
         _atomic_write(alias_path, alias_txt)
-        print(f"[OK] 写入 {alias_path}")
+        logger.info("写入 %s", alias_path)
 
     return out_dir
 

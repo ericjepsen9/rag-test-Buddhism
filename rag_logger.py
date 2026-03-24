@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import contextvars
 import json
+import logging
+import logging.handlers
 import os
 import re
 import threading
@@ -221,3 +223,59 @@ def get_recent_misses(limit: int = 20) -> list[Dict[str, Any]]:
 
 def get_recent_errors(limit: int = 20) -> list[Dict[str, Any]]:
     return read_recent(ERROR_LOG, limit=limit)
+
+
+# ===== 标准 Python logging 文件输出配置 =====
+SYSTEM_LOG = LOG_DIR / "system.log"
+
+_logging_initialized = False
+
+
+def setup_logging(level: int = logging.INFO) -> None:
+    """配置标准 Python logging，将所有 logger 输出同时写入文件和控制台。
+
+    - 文件输出: logs/system.log（自动轮转，单文件最大 10MB，保留 5 个备份）
+    - 控制台输出: stderr
+    - 格式: 时间 | 级别 | 模块名 | 消息
+
+    应在服务启动时调用一次。重复调用安全，不会重复添加 handler。
+    """
+    global _logging_initialized
+    if _logging_initialized:
+        return
+    _logging_initialized = True
+
+    _ensure_dir()
+
+    fmt = logging.Formatter(
+        "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # 文件 handler — 自动轮转
+    file_handler = logging.handlers.RotatingFileHandler(
+        str(SYSTEM_LOG),
+        maxBytes=LOG_MAX_BYTES,
+        backupCount=5,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(fmt)
+    file_handler.setLevel(logging.DEBUG)  # 文件记录所有级别
+
+    # 控制台 handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(fmt)
+    console_handler.setLevel(level)
+
+    # 配置 root logger
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    root.addHandler(file_handler)
+    root.addHandler(console_handler)
+
+    # 降低第三方库的日志噪音
+    for noisy in ("httpx", "httpcore", "urllib3", "uvicorn.access",
+                  "watchfiles", "multipart", "asyncio"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+    logging.getLogger("rag-api").info("系统日志已初始化 → %s", SYSTEM_LOG)

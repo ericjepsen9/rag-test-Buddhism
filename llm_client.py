@@ -6,9 +6,12 @@
 """
 import base64
 import copy
+import logging
 import os
 import threading
 from typing import Optional, Dict, Any
+
+logger = logging.getLogger("llm_client")
 
 _lock = threading.Lock()
 _persist_lock = threading.Lock()
@@ -165,11 +168,13 @@ def get_client(purpose: str = "chat"):
 
         cfg = _llm_configs[purpose]
         if not cfg["enabled"]:
+            logger.info("LLM client [%s] 未启用", purpose)
             _clients_checked[purpose] = True
             return None
 
         api_key = cfg["api_key"] or os.environ.get("OPENAI_API_KEY", "").strip()
         if not api_key:
+            logger.warning("LLM client [%s] 无 API key", purpose)
             _clients_checked[purpose] = True
             return None
 
@@ -182,9 +187,12 @@ def get_client(purpose: str = "chat"):
             _timeout = float(os.environ.get("LLM_CLIENT_TIMEOUT", "60"))
             kwargs["timeout"] = _timeout
             _clients[purpose] = OpenAI(**kwargs)
+            logger.info("LLM client [%s] 初始化成功: provider=%s model=%s",
+                        purpose, cfg["provider"], cfg["model"])
         except Exception as e:
             from rag_logger import log_error
             log_error("llm_client", f"OpenAI client ({purpose}) 初始化失败: {e}")
+            logger.error("LLM client [%s] 初始化失败: %s", purpose, e, exc_info=True)
             _clients[purpose] = None
             # 不标记 checked，允许后续重试（可能是临时网络错误）
             return None

@@ -326,12 +326,14 @@ class CrawlJob:
 
     def run(self, build: bool = True):
         """在当前线程中执行导入任务"""
+        logger.info("任务 %s 开始执行，共 %d 个URL", self.job_id, len(self.urls))
         from import_knowledge import (
             _ENTITY_TYPES, _get_openai_client, _generate_knowledge,
             _write_knowledge_files,
         )
         # 延迟导入 api_server 中的函数
         from api_server import _fetch_url_content, _title_to_id
+        logger.info("任务 %s 模块导入完成", self.job_id)
 
         self.status = "running"
         self.save()
@@ -417,7 +419,7 @@ class CrawlJob:
                 entry["status"] = "failed"
                 entry["error"] = str(e)
                 self.failed[idx] = str(e)
-                logger.warning("crawl_v2 import failed: url=%s err=%s", url, e)
+                logger.error("任务 %s 导入失败: url=%s err=%s", self.job_id, url, e, exc_info=True)
 
             self.results.append(entry)
             self.save()
@@ -451,8 +453,9 @@ class CrawlJob:
                         invalidate_store_cache(pid)
                 self.built_index = True
             except Exception as e:
-                logger.error("crawl_v2 build index failed: %s", e)
+                logger.error("任务 %s 建索引失败: %s", self.job_id, e, exc_info=True)
 
+        logger.info("任务 %s 执行完毕: 成功=%d 失败=%d", self.job_id, len(self.completed), len(self.failed))
         self.status = "done"
         self.save()
         self.emit_sse("done", {

@@ -21,8 +21,9 @@ from slowapi.errors import RateLimitExceeded
 
 from media_router import find_media, invalidate_media_cache
 from rag_answer import answer_question, invalidate_store_cache, get_last_route_product
-from rag_logger import log_error, log_event, get_recent_qa, get_recent_misses, get_recent_errors
+from rag_logger import log_error, log_event, get_recent_qa, get_recent_misses, get_recent_errors, setup_logging
 
+setup_logging()
 logger = logging.getLogger("rag-api")
 
 # ===== 请求限流 =====
@@ -1250,6 +1251,26 @@ def admin_logs_miss(limit: int = 20):
 @app.get("/admin/logs/error")
 def admin_logs_error(limit: int = 20):
     return {"items": get_recent_errors(limit=min(max(1, limit), 100))}
+
+
+@app.get("/admin/logs/system")
+def admin_logs_system(lines: int = 100):
+    """读取系统日志（logs/system.log）最近 N 行，用于排查问题"""
+    from rag_logger import SYSTEM_LOG
+    cap = min(max(1, lines), 500)
+    if not SYSTEM_LOG.exists():
+        return {"lines": [], "total": 0, "file": str(SYSTEM_LOG)}
+    try:
+        with SYSTEM_LOG.open("r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+        recent = all_lines[-cap:]
+        return {
+            "lines": [l.rstrip("\n") for l in recent],
+            "total": len(all_lines),
+            "file": str(SYSTEM_LOG),
+        }
+    except OSError as e:
+        return {"error": f"读取日志失败: {e}", "file": str(SYSTEM_LOG)}
 
 
 # ===== DOC/DOCX 文本提取 =====
@@ -3890,16 +3911,17 @@ def crawl_v2_start(request: Request, req: CrawlV2StartRequest):
 
     # 后台线程执行
     def _run():
+        logger.info("爬取后台线程启动: job_id=%s, urls=%d", job.job_id, len(job.urls))
         try:
             job.run(build=req.build)
         except Exception as e:
             job.status = "failed"
             job.save()
             job.emit_sse("failed", {"detail": f"任务异常终止: {e}"})
-            logger.error("crawl_v2 job failed: %s", e)
+            logger.error("爬取任务异常终止: job_id=%s err=%s", job.job_id, e, exc_info=True)
+            log_error("crawl_v2", f"任务异常终止: {e}", meta={"job_id": job.job_id})
         finally:
-            # 任务完成后不立即清理 active_jobs，保留供 SSE 查询
-            pass
+            logger.info("爬取后台线程退出: job_id=%s status=%s", job.job_id, job.status)
 
     t = threading.Thread(target=_run, daemon=True, name=f"crawl_v2_{job.job_id}")
     t.start()
