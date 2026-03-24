@@ -1280,39 +1280,116 @@ def _extract_docx_text(file_data: bytes) -> str:
 def _extract_doc_text(file_data: bytes) -> str:
     """从 .doc (旧格式) 文件提取纯文本。
 
-    尝试用 antiword 命令行工具提取；若不可用则尝试正则提取可见文本。
+    尝试多种方法：antiword → soffice → OLE2 Word Document 流 → 多编码正则。
     """
     import subprocess
     import tempfile
-    # 方法1：使用 antiword（如已安装）
+
+    tmp_path = None
+
+    def _write_tmp() -> str:
+        nonlocal tmp_path
+        if tmp_path is None:
+            with tempfile.NamedTemporaryFile(suffix=".doc", delete=False) as tmp:
+                tmp.write(file_data)
+                tmp_path = tmp.name
+        return tmp_path
+
+    def _cleanup_tmp():
+        nonlocal tmp_path
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+            tmp_path = None
+
     try:
-        with tempfile.NamedTemporaryFile(suffix=".doc", delete=False) as tmp:
-            tmp.write(file_data)
-            tmp_path = tmp.name
-        result = subprocess.run(
-            ["antiword", tmp_path],
-            capture_output=True, text=True, timeout=30,
-        )
-        os.unlink(tmp_path)
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        # 方法1：使用 antiword（如已安装），强制 UTF-8 输出
         try:
-            os.unlink(tmp_path)
+            p = _write_tmp()
+            result = subprocess.run(
+                ["antiword", "-m", "UTF-8", p],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+
+        # 方法2：使用 LibreOffice 转换
+        try:
+            import tempfile as _tf
+            p = _write_tmp()
+            out_dir = _tf.mkdtemp()
+            result = subprocess.run(
+                ["soffice", "--headless", "--convert-to", "txt:Text (encoded):UTF8",
+                 "--outdir", out_dir, p],
+                capture_output=True, timeout=60,
+            )
+            if result.returncode == 0:
+                txt_name = Path(p).stem + ".txt"
+                txt_path = os.path.join(out_dir, txt_name)
+                if os.path.exists(txt_path):
+                    with open(txt_path, "r", encoding="utf-8") as f:
+                        text = f.read().strip()
+                    import shutil
+                    shutil.rmtree(out_dir, ignore_errors=True)
+                    if text:
+                        return text
+                import shutil
+                shutil.rmtree(out_dir, ignore_errors=True)
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+
+        # 方法3：OLE2 解析 — 读取 WordDocument / 1Table 流中的文本
+        try:
+            import olefile
+            import io
+            ole = olefile.OleFileIO(io.BytesIO(file_data))
+            if ole.exists("WordDocument"):
+                word_stream = ole.openstream("WordDocument").read()
+                # 尝试多种编码解码 Word 二进制流中的文本
+                for enc in ("utf-16-le", "gbk", "gb2312", "gb18030", "big5"):
+                    try:
+                        decoded = word_stream.decode(enc, errors="ignore")
+                        import re as _re
+                        parts = _re.findall(
+                            r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef'
+                            r'\w\s，。！？、；：""''（）《》【】\-·]{6,}',
+                            decoded)
+                        if parts:
+                            text = "\n".join(p.strip() for p in parts if p.strip())
+                            if len(text) > 50:
+                                ole.close()
+                                return text
+                    except (UnicodeDecodeError, LookupError):
+                        continue
+            ole.close()
+        except ImportError:
+            pass
         except Exception:
             pass
 
-    # 方法2：粗略提取二进制中的可见文本
-    text_parts = []
-    try:
-        raw = file_data.decode("utf-8", errors="ignore")
-        # 提取连续的中文/英文文本片段
+        # 方法4：粗略提取二进制中的可见文本（多编码尝试）
+        text_parts: list[str] = []
         import re as _re
-        for m in _re.finditer(r'[\u4e00-\u9fff\w\s，。！？、；：""''（）《》\-]{10,}', raw):
-            text_parts.append(m.group().strip())
-    except Exception:
-        pass
-    return "\n".join(text_parts)
+        for enc in ("utf-16-le", "gbk", "gb2312", "gb18030", "utf-8"):
+            try:
+                raw = file_data.decode(enc, errors="ignore")
+                parts = _re.findall(
+                    r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef'
+                    r'\w\s，。！？、；：""''（）《》【】\-·]{10,}',
+                    raw)
+                if parts:
+                    candidate = "\n".join(p.strip() for p in parts if p.strip())
+                    if len(candidate) > len("\n".join(text_parts)):
+                        text_parts = [candidate]
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return "\n".join(text_parts)
+    finally:
+        _cleanup_tmp()
 
 
 # ===== 知识库文件管理接口 =====
