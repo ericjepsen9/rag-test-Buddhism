@@ -843,7 +843,7 @@
               <option value="history">history — 历史</option>
               <option value="ritual">ritual — 仪轨</option>
               <option value="sect">sect — 宗派</option>
-              <option value="term">term — 术语</option>
+              <option value="glossary">glossary — 术语</option>
             </select>
           </div>
           <div style="flex:1;min-width:80px">
@@ -2244,6 +2244,17 @@
           const evt = d.event;
 
           if (evt === 'connected') {
+            if (d.status === 'failed' || d.status === 'done') {
+              // 任务已在 SSE 连接前结束
+              document.getElementById('cv2StatusText').innerHTML =
+                d.status === 'failed'
+                  ? '<span style="color:red">失败</span> — 任务异常终止'
+                  : `<span style="color:green">完成</span> — 成功 ${d.completed}/${d.total}`;
+              cv2SetButtons(d.status, d.failed > 0);
+              cv2UpdateBar(d.completed, d.total, d.failed, false);
+              es.close();
+              return;
+            }
             document.getElementById('cv2StatusText').textContent = `任务 ${jobId.substring(0, 12)}… 运行中`;
             cv2UpdateBar(d.completed, d.total, d.failed, false);
           }

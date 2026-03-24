@@ -3895,6 +3895,7 @@ def crawl_v2_start(request: Request, req: CrawlV2StartRequest):
         except Exception as e:
             job.status = "failed"
             job.save()
+            job.emit_sse("failed", {"detail": f"任务异常终止: {e}"})
             logger.error("crawl_v2 job failed: %s", e)
         finally:
             # 任务完成后不立即清理 active_jobs，保留供 SSE 查询
@@ -3981,6 +3982,10 @@ async def crawl_v2_progress(request: Request, job_id: str):
                     parsed = json.loads(msg)
                     if parsed.get("event") in ("done", "failed"):
                         return
+                # 检查任务是否已在队列外终止（如线程崩溃）
+                if job.status in ("done", "failed"):
+                    yield f"data: {json.dumps({'event': job.status, 'total': len(job.urls), 'completed': len(job.completed), 'failed': len(job.failed), 'built_index': job.built_index, 'detail': '任务已结束'}, ensure_ascii=False)}\n\n"
+                    return
                 await asyncio.sleep(0.3)
         finally:
             job.remove_sse_listener(q)
@@ -4033,6 +4038,7 @@ def crawl_v2_resume(request: Request, job_id: str):
         except Exception as e:
             job.status = "failed"
             job.save()
+            job.emit_sse("failed", {"detail": f"任务异常终止: {e}"})
             logger.error("crawl_v2 resume failed: %s", e)
 
     t = threading.Thread(target=_run, daemon=True, name=f"crawl_v2_resume_{job.job_id}")
@@ -4077,6 +4083,8 @@ def crawl_v2_retry_failed(request: Request, job_id: str):
         except Exception as e:
             job.status = "failed"
             job.save()
+            job.emit_sse("failed", {"detail": f"任务异常终止: {e}"})
+            logger.error("crawl_v2 retry failed: %s", e)
 
     t = threading.Thread(target=_run, daemon=True, name=f"crawl_v2_retry_{job.job_id}")
     t.start()
@@ -4152,6 +4160,7 @@ def crawl_v2_restart(request: Request, job_id: str):
         except Exception as e:
             job.status = "failed"
             job.save()
+            job.emit_sse("failed", {"detail": f"任务异常终止: {e}"})
             logger.error("crawl_v2 restart failed: %s", e)
 
     t = threading.Thread(target=_run, daemon=True, name=f"crawl_v2_restart_{job.job_id}")
