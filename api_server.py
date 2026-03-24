@@ -2681,8 +2681,8 @@ async def admin_extract_file_text(request: Request):
 
     try:
         form = await request.form()
-    except Exception:
-        raise HTTPException(status_code=400, detail="解析表单失败")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"解析表单失败: {exc}")
 
     try:
         file_item = form.get("file")
