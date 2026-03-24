@@ -216,6 +216,7 @@ class CrawlJob:
         self.url_must_contain = ""
         self.entity_type = "doctrine"
         self.delay = 2.0
+        self.treatise_name = ""  # 论典名（lecture 类型使用）
         self.urls: list[dict] = []  # [{"url": ..., "title": ...}, ...]
         self.completed: list[int] = []  # 已完成的索引
         self.failed: dict[int, str] = {}  # 索引 -> 错误
@@ -244,6 +245,7 @@ class CrawlJob:
             "start_url": self.start_url,
             "url_must_contain": self.url_must_contain,
             "entity_type": self.entity_type,
+            "treatise_name": self.treatise_name,
             "delay": self.delay,
             "urls": self.urls,
             "completed": self.completed,
@@ -268,6 +270,7 @@ class CrawlJob:
         job.start_url = data["start_url"]
         job.url_must_contain = data.get("url_must_contain", "")
         job.entity_type = data.get("entity_type", "doctrine")
+        job.treatise_name = data.get("treatise_name", "")
         job.delay = data.get("delay", 2.0)
         job.urls = data.get("urls", [])
         job.completed = data.get("completed", [])
@@ -389,7 +392,20 @@ class CrawlJob:
 
                 # LLM 整理
                 _, is_single = _ENTITY_TYPES[entity_type]
-                entity_id = _title_to_id(fetched["title"])
+
+                # lecture 类型：从 URL/标题提取课次编号
+                if entity_type == "lecture":
+                    from import_knowledge import _extract_lesson_number
+                    treatise = self.treatise_name or _title_to_id(fetched["title"]).split("_")[0]
+                    lesson_num = _extract_lesson_number(url, fetched["title"])
+                    if lesson_num > 0:
+                        entity_id = f"{treatise}/第{lesson_num:03d}课"
+                    else:
+                        entity_id = f"{treatise}/{_title_to_id(fetched['title'])}"
+                    logger.info("讲记导入: %s (课次=%d)", entity_id, lesson_num)
+                else:
+                    entity_id = _title_to_id(fetched["title"])
+
                 entry["type"] = entity_type
                 entry["id"] = entity_id
 
@@ -404,10 +420,30 @@ class CrawlJob:
                 out_dir = _write_knowledge_files(result, entity_type, entity_id, dry_run=False)
                 entry["output_dir"] = str(out_dir)
 
-                if entity_type == "product":
-                    need_build.add(entity_id)
-                else:
-                    need_build.add("_shared")
+                # lecture 类型：第一课完成后生成论典总览
+                if entity_type == "lecture" and len(self.completed) == 0:
+                    try:
+                        from import_knowledge import generate_lecture_overview
+                        logger.info("生成论典总览: %s", treatise)
+                        overview = generate_lecture_overview(
+                            client, fetched["content"], treatise
+                        )
+                        from rag_runtime_config import KNOWLEDGE_DIR
+                        ov_dir = KNOWLEDGE_DIR / "buddhism" / treatise
+                        ov_dir.mkdir(parents=True, exist_ok=True)
+                        from import_knowledge import _atomic_write
+                        if overview.get("main_txt"):
+                            _atomic_write(ov_dir / "overview.txt", overview["main_txt"])
+                        if overview.get("faq_txt"):
+                            _atomic_write(ov_dir / f"faq_{treatise}.txt", overview["faq_txt"])
+                        if overview.get("alias_txt"):
+                            _atomic_write(ov_dir / "alias.txt", overview["alias_txt"])
+                        logger.info("论典总览已生成: %s", ov_dir)
+                    except Exception as e:
+                        logger.warning("生成论典总览失败: %s", e, exc_info=True)
+
+                # 记录需要重建索引的产品
+                need_build.add("buddhism")
 
                 entry["status"] = "ok"
                 self.completed.append(idx)

@@ -3851,6 +3851,7 @@ class CrawlV2StartRequest(BaseModel):
     start_url: str = Field(..., description="起始页 URL")
     url_must_contain: str = Field(default="", description="URL 过滤关键字")
     type: str = Field(default="doctrine", description="知识类型")
+    treatise_name: str = Field(default="", description="论典名称（lecture 类型必填，如'入行论'）")
     delay: float = Field(default=2.0, description="每次抓取间隔秒数")
     build: bool = Field(default=True, description="完成后自动构建索引")
     urls: Optional[list] = Field(default=None, description="手动指定 URL 列表（跳过发现阶段）")
@@ -3887,10 +3888,15 @@ def crawl_v2_start(request: Request, req: CrawlV2StartRequest):
 
     from crawl_v2 import CrawlJob, SiteAdapter, set_active_job
 
+    # lecture 类型必须提供论典名
+    if req.type == "lecture" and not req.treatise_name.strip():
+        raise HTTPException(status_code=400, detail="lecture 类型必须填写论典名称（treatise_name）")
+
     job = CrawlJob()
     job.start_url = req.start_url
     job.url_must_contain = req.url_must_contain
     job.entity_type = req.type
+    job.treatise_name = req.treatise_name.strip()
     job.delay = req.delay
 
     # 如果传入了 urls，直接用；否则先发现

@@ -76,6 +76,7 @@ _ENTITY_TYPES = {
     "practice":    ("practice",    False),   # 修行方法
     "sect":        ("sect",        False),   # 宗派
     "master":      ("master",      False),   # 高僧大德
+    "lecture":     ("lecture",     False),   # 论典讲记（每课独立文件）
     # 单文件知识（追加到同一文件）
     "general":     ("general",     True),    # 通用佛教知识
     "history":     ("history",     True),    # 佛教历史
@@ -162,9 +163,13 @@ def _llm_call(client, system_prompt: str, user_prompt: str,
     ----------
     timeout : int
         单次请求超时秒数，默认 120 秒。
+        当 max_tokens > 8000 时自动提升至 300 秒。
     retries : int
         失败后重试次数，默认 2 次（共最多 3 次调用）。
     """
+    # 大输出自动延长超时
+    if max_tokens > 8000:
+        timeout = max(timeout, 300)
     last_err: Exception | None = None
     for attempt in range(1 + retries):
         try:
@@ -291,11 +296,156 @@ _ENTITY_LABELS = {
     "practice":    "修行方法",
     "sect":        "佛教宗派",
     "master":      "高僧大德",
+    "lecture":     "论典讲记",
     "general":     "佛教通识",
     "history":     "佛教历史",
     "ritual":      "佛教仪轨",
     "glossary":    "佛教术语",
 }
+
+# ============================================================
+# 讲记类型专用 Prompt
+# ============================================================
+
+_SYSTEM_LECTURE = """你是佛教讲记整理专家。用户会提供一堂课的讲记原文（通常是法师讲解的录音文字整理稿）。
+
+你的任务是：对原文进行【格式化整理】，而非压缩或摘要。必须保留原文的全部教理内容。
+
+输出要求（JSON 格式）：
+{
+  "main_txt": "格式化整理后的完整讲记",
+  "faq_txt": "从本课内容提取的延伸FAQ问答对（3-5对）",
+  "lesson_meta": {
+    "lesson_number": 0,
+    "pin_name": "对应品名（如 '第一品 菩提心利益'，未提及则留空）",
+    "kepan_range": "本课科判范围简述（如 '甲一（初义）至丙二（立誓句）'）",
+    "key_verses": ["本课讲解的重要颂词原文，每个颂词一个元素"],
+    "key_concepts": ["本课涉及的核心概念/术语，如 '暇满人身'、'菩提心'"]
+  }
+}
+
+main_txt 整理规则（按优先级排序）：
+
+1. 【内容完整性 — 最高优先级】
+   - 保留原文中所有教理讲解内容，不得删减或概括
+   - 保留所有颂词/偈颂原文（一字不改）
+   - 保留所有引用的经论原文
+   - 保留所有公案故事的完整叙述
+   - 保留所有修行指导和实修建议
+   - 保留法师对颂词含义的逐句解释
+
+2. 【可以删除的内容】
+   - 纯口语化的衔接语（如 "好，我们继续"、"今天讲到这里"、"大家翻到第X页"）
+   - 重复的课堂纪律提醒（如 "手机请静音"）
+   - 与教理无关的寒暄
+   - 但如果法师用生活化语言讲解教理，必须保留
+
+3. 【格式化标注规则】
+   在正文开头加上课程信息块：
+   【课程信息】
+   论典：{从内容推断论典名}
+   课次：第{N}课
+   对应品：{品名，如能判断}
+
+   正文中使用以下标记：
+   - 科判层级保留原文格式（甲一、乙一、丙一、丁一、戊一...）
+   - 【颂词】— 标记偈颂/颂词原文（颂词文字必须一字不改地保留）
+   - 【讲解】— 标记对颂词或科判的讲解内容
+   - 【引用】— 标记引用其他经论的原文（注明出处）
+   - 【公案】— 标记佛教故事/典故
+   - 【教言】— 标记法师的重要开示/总结语
+   - 每个标记后的内容为该标记类型的正文
+
+4. 【科判处理】
+   - 保留原文中的科判编号体系（甲/乙/丙/丁/戊 + 一二三四五）
+   - 如果原文有科判标题，保留原标题
+   - 科判之间用空行分隔
+
+5. 【颂词处理】
+   - 每个颂词用【颂词】标记
+   - 颂词原文必须完整保留，不得修改任何字
+   - 颂词后紧跟【讲解】标记的释义内容
+   - 如果一个颂词有多段讲解，全部保留在同一个【讲解】块中
+
+6. 【输出格式示例】
+
+   【课程信息】
+   论典：入菩萨行论
+   课次：第1课
+   对应品：第一品 菩提心利益
+
+   甲一（初义）
+   乙一（论名）
+
+   【讲解】
+   《入菩萨行论》，梵语为 Bodhicaryāvatāra...（完整讲解）
+
+   丙一（礼赞句）
+
+   【颂词】
+   善逝法身佛子伴，及诸应敬我悉礼。
+   今当依教略宣说，佛子律仪趣入行。
+
+   【讲解】
+   这个偈颂是寂天菩萨的礼赞句...（完整讲解内容）
+
+   【引用】
+   《大圆满前行引导文》中云：...
+
+faq_txt 整理规则：
+1. 从本课讲记内容中提取 3-5 个延伸FAQ问答对
+2. 格式：【Q】问题\\n【A】回答\\n\\n（每对之间空一行）
+3. 问题类型包括：
+   - 本课出现的核心概念解释（如"什么是暇满人身？"）
+   - 本课颂词的含义（如"'善逝法身佛子伴'是什么意思？"）
+   - 本课提到的修行方法（如"如何修菩提心？"）
+   - 本课引用的其他经论相关问题
+4. 回答要基于讲记内容，具体完整，100-300 字
+
+禁止事项：
+- 禁止将讲记压缩为摘要或概述
+- 禁止用 "在此处请填入..." 等占位符替代实际内容
+- 禁止编造原文中没有的内容
+- 禁止修改颂词原文的任何字
+- 禁止省略法师的教理讲解（即使内容很长）
+"""
+
+_SYSTEM_LECTURE_OVERVIEW = """你是佛教知识整理专家。用户会提供一部论典讲记的前几课内容。
+请根据内容为这部论典生成一份总体介绍文档。
+
+输出要求（JSON 格式）：
+{
+  "main_txt": "论典总体介绍",
+  "faq_txt": "FAQ 问答对",
+  "alias_txt": "别名和关键词"
+}
+
+main_txt 整理规则：
+1. 包含以下内容（有则写，无则跳过）：
+   一、论典概述（全称、简称、梵文名、作者、所属宗派、成书年代）
+   二、作者介绍（生平、重要事迹）
+   三、全论结构（品名和各品要义概述）
+   四、核心思想
+   五、讲解者/传承（讲解的法师、传承背景）
+   六、学习建议（学习次第、注意事项）
+2. 内容限于原文明确提及的信息，不要编造
+
+faq_txt 整理规则：
+1. 生成 30-50 个 FAQ 问答对
+2. 格式：【Q】问题\\n【A】回答\\n\\n（每对之间空一行）
+3. 覆盖以下类型：
+   - 论典介绍类（"入行论是什么？"、"入行论的作者是谁？"）
+   - 各品要义类（每品至少一个："入行论第X品讲什么？"）
+   - 核心概念类（"什么是菩提心？"、"什么是自他交换？"、"什么是暇满人身？"）
+   - 修行方法类（"如何修安忍？"、"如何修菩提心？"）
+   - 关联类（"入行论引用了哪些经论？"、"入行论属于哪个宗派？"）
+   - 学习指导类（"学习入行论有什么次第？"）
+4. 回答要具体，50-300 字
+
+alias_txt 整理规则：
+1. 每行一组同义词（空格分隔）
+2. 包含：论典全名、简称、梵文名、英文名、作者名、核心术语
+3. 不超过 30 行"""
 
 
 def refine_knowledge(client, current: dict, feedback: str,
@@ -376,40 +526,88 @@ def _generate_knowledge(client, raw_text: str, entity_type: str,
     label = _ENTITY_LABELS.get(entity_type, entity_type)
     _, is_single = _ENTITY_TYPES[entity_type]
 
-    if entity_type == "scripture":
+    if entity_type == "lecture":
+        system = _SYSTEM_LECTURE
+    elif entity_type == "scripture":
         system = _SYSTEM_SCRIPTURE
     elif is_single:
         system = _SYSTEM_SINGLE_FILE.format(entity_label=label)
     else:
         system = _SYSTEM_MULTI.format(entity_label=label)
 
+    # 根据类型设置处理参数
+    if entity_type == "lecture":
+        max_chars = 50000       # 讲记单课最长约 10000 字，留足余量
+        max_output_tokens = 16000  # 确保不截断讲记输出
+    else:
+        max_chars = 12000
+        max_output_tokens = 4000
+
     user_prompt = f"以下是关于「{entity_id or label}」的原始文档，请整理为结构化知识库内容：\n\n{raw_text}"
 
-    max_chars = 12000
     if len(raw_text) > max_chars:
         logger.info("原始文档较长（%d 字），将分段处理: entity=%s", len(raw_text), entity_id)
-        part1 = raw_text[:max_chars]
-        part2 = raw_text[max_chars:]
+        # 按段落边界分段，避免切断句子
+        parts = _split_text_by_paragraphs(raw_text, max_chars)
+        logger.info("分为 %d 段处理", len(parts))
 
-        user_prompt_1 = (
-            f"以下是关于「{entity_id or label}」的原始文档（第1部分，共2部分）。"
-            f"请先整理这部分内容：\n\n{part1}"
-        )
-        result_text = _llm_call(client, system, user_prompt_1, max_tokens=4000)
+        if len(parts) == 1:
+            result_text = _llm_call(client, system, user_prompt, max_tokens=max_output_tokens)
+        else:
+            # 第一段
+            user_prompt_1 = (
+                f"以下是关于「{entity_id or label}」的原始文档"
+                f"（第1部分，共{len(parts)}部分）。"
+                f"请先整理这部分内容：\n\n{parts[0]}"
+            )
+            result_text = _llm_call(client, system, user_prompt_1, max_tokens=max_output_tokens)
 
-        if len(part2) > max_chars:
-            print(f"[WARN] 文档第2部分仍超长（{len(part2)} 字），截断至 {max_chars} 字")
-        user_prompt_2 = (
-            f"以下是文档的第2部分，请整理并补充到之前的结果中。"
-            f"输出完整的最终 JSON（合并两部分内容）：\n\n"
-            f"第1部分整理结果：\n{result_text}\n\n"
-            f"第2部分原文：\n{part2[:max_chars]}"
-        )
-        result_text = _llm_call(client, system, user_prompt_2, max_tokens=4000)
+            # 后续各段：合并到已有结果中
+            for i, part in enumerate(parts[1:], 2):
+                user_prompt_n = (
+                    f"以下是文档的第{i}部分（共{len(parts)}部分），"
+                    f"请整理并补充到之前的结果中。"
+                    f"输出完整的最终 JSON（合并所有部分内容）：\n\n"
+                    f"前几部分整理结果：\n{result_text}\n\n"
+                    f"第{i}部分原文：\n{part}"
+                )
+                result_text = _llm_call(client, system, user_prompt_n, max_tokens=max_output_tokens)
     else:
-        result_text = _llm_call(client, system, user_prompt, max_tokens=4000)
+        result_text = _llm_call(client, system, user_prompt, max_tokens=max_output_tokens)
 
     return _parse_json_result(result_text)
+
+
+def _split_text_by_paragraphs(text: str, max_chars: int) -> list:
+    """将长文本按段落边界分段，每段不超过 max_chars 字符。"""
+    if len(text) <= max_chars:
+        return [text]
+
+    paragraphs = text.split("\n\n")
+    parts = []
+    current = ""
+
+    for para in paragraphs:
+        candidate = (current + "\n\n" + para) if current else para
+        if len(candidate) > max_chars and current:
+            parts.append(current)
+            current = para
+        else:
+            current = candidate
+
+    if current:
+        parts.append(current)
+
+    # 如果某段仍然超长（一个段落就超过 max_chars），强制按字符切分
+    final = []
+    for part in parts:
+        if len(part) <= max_chars:
+            final.append(part)
+        else:
+            for i in range(0, len(part), max_chars):
+                final.append(part[i:i + max_chars])
+
+    return final if final else [text]
 
 
 def _write_knowledge_files(result: dict, entity_type: str, entity_id: str,
@@ -417,7 +615,13 @@ def _write_knowledge_files(result: dict, entity_type: str, entity_id: str,
     """将 LLM 整理结果写入知识库文件"""
     _, is_single = _ENTITY_TYPES[entity_type]
 
-    if is_single:
+    if entity_type == "lecture":
+        # 讲记类型：entity_id 格式为 "入行论/第001课"
+        parts = entity_id.split("/", 1)
+        treatise_id = parts[0]
+        lesson_id = parts[1] if len(parts) > 1 else ""
+        out_dir = KNOWLEDGE_DIR / "buddhism" / treatise_id
+    elif is_single:
         dir_name = _ENTITY_TYPES[entity_type][0]
         out_dir = KNOWLEDGE_DIR / "buddhism" / dir_name
     else:
@@ -442,6 +646,26 @@ def _write_knowledge_files(result: dict, entity_type: str, entity_id: str,
         return out_dir
 
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    if entity_type == "lecture":
+        # 讲记类型：每课写入独立文件 (如 第001课.txt)
+        main_txt = result.get("main_txt", "")
+        if main_txt and lesson_id:
+            lesson_path = out_dir / f"{lesson_id}.txt"
+            _atomic_write(lesson_path, main_txt)
+            logger.info("写入讲记 %s (%d 字)", lesson_path, len(main_txt))
+
+        # 每课的延伸 FAQ 追加到论典级 faq 文件
+        faq_txt = result.get("faq_txt", "")
+        if faq_txt:
+            faq_path = out_dir / f"faq_{treatise_id}.txt"
+            if faq_path.exists():
+                existing = faq_path.read_text(encoding="utf-8")
+                faq_txt = existing.rstrip() + "\n\n" + faq_txt
+            _atomic_write(faq_path, faq_txt)
+            logger.info("追加 FAQ 到 %s", faq_path)
+
+        return out_dir
 
     # main.txt
     main_txt = result.get("main_txt", "")
@@ -469,9 +693,9 @@ def _write_knowledge_files(result: dict, entity_type: str, entity_id: str,
             _atomic_write(main_path, main_txt)
         logger.info("写入 %s (%d 字)", main_path, len(main_txt))
 
-    # faq.txt（仅经典类型）
+    # faq.txt（经典和讲记总览类型）
     faq_txt = result.get("faq_txt", "")
-    if faq_txt and entity_type == "scripture":
+    if faq_txt and entity_type in ("scripture", "lecture_overview"):
         faq_path = out_dir / "faq.txt"
         _atomic_write(faq_path, faq_txt)
         logger.info("写入 %s (%d 字)", faq_path, len(faq_txt))
@@ -484,6 +708,40 @@ def _write_knowledge_files(result: dict, entity_type: str, entity_id: str,
         logger.info("写入 %s", alias_path)
 
     return out_dir
+
+
+def generate_lecture_overview(client, first_lesson_text: str,
+                              treatise_name: str) -> dict:
+    """根据讲记第一课内容生成论典总览（overview + FAQ + alias）。"""
+    user_prompt = (
+        f"以下是「{treatise_name}」讲记第一课的完整内容。"
+        f"请为这部论典生成总体介绍文档：\n\n{first_lesson_text[:30000]}"
+    )
+    result_text = _llm_call(
+        client, _SYSTEM_LECTURE_OVERVIEW, user_prompt, max_tokens=8000
+    )
+    return _parse_json_result(result_text)
+
+
+def _extract_lesson_number(url: str, title: str = "") -> int:
+    """从 URL 或标题中提取课次编号。
+
+    支持的 URL 模式：di-1-ke, di-100-ke (拼音), lesson-1, lesson-100
+    支持的标题模式：第1课, 第100课, Lesson 1
+    """
+    import re as _re
+    # 从 URL 提取
+    m = _re.search(r'di-(\d+)-ke', url)
+    if m:
+        return int(m.group(1))
+    m = _re.search(r'lesson[- _]?(\d+)', url, _re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    # 从标题提取
+    m = _re.search(r'第\s*(\d+)\s*课', title)
+    if m:
+        return int(m.group(1))
+    return 0
 
 
 def _print_registration_hint(result: dict, entity_type: str, entity_id: str):

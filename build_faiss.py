@@ -587,6 +587,8 @@ def collect_product_records(product: str):
                 }
                 # 保存结构元数据（科判/品/内容类型）
                 _attach_buddhist_meta(meta, cd)
+                # 讲记课次元数据：从文件名提取课次信息
+                _attach_lesson_meta(meta, display_name)
                 records.append({
                     "text": cd["text"],
                     "meta": meta,
@@ -628,6 +630,17 @@ def _attach_buddhist_meta(meta: dict, cd: dict):
         meta["content_type"] = cd["content_type"]
     if "section_title" in cd:
         meta["section_title"] = cd["section_title"]
+
+
+def _attach_lesson_meta(meta: dict, display_name: str):
+    """从文件名提取讲记课次元数据。
+
+    匹配 '入行论/第001课.txt' 等格式，提取 treatise 和 lesson_number。
+    """
+    m = re.match(r'^(.+)/第(\d+)课\.txt$', display_name)
+    if m:
+        meta["treatise"] = m.group(1)
+        meta["lesson_number"] = int(m.group(2))
 
 
 # ====== FAISS 索引创建 ======

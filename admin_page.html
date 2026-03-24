@@ -835,9 +835,10 @@
         <div class="row-flex" style="margin-top:10px;flex-wrap:wrap;gap:10px;align-items:flex-end">
           <div style="flex:2;min-width:120px">
             <label>知识类型</label>
-            <select id="cv2Type">
+            <select id="cv2Type" onchange="cv2TypeChanged()">
               <option value="doctrine">doctrine — 教义</option>
               <option value="scripture">scripture — 经典</option>
+              <option value="lecture">lecture — 论典讲记</option>
               <option value="practice">practice — 修行</option>
               <option value="master">master — 人物</option>
               <option value="history">history — 历史</option>
@@ -845,6 +846,10 @@
               <option value="sect">sect — 宗派</option>
               <option value="glossary">glossary — 术语</option>
             </select>
+          </div>
+          <div id="cv2TreatiseNameBox" style="flex:2;min-width:120px;display:none">
+            <label>论典名称 <span style="color:red">*</span></label>
+            <input type="text" id="cv2TreatiseName" placeholder="如：入行论" style="width:100%">
           </div>
           <div style="flex:1;min-width:80px">
             <label>间隔(秒)</label>
@@ -2159,6 +2164,11 @@
       cv2RenderTable();
     }
 
+    function cv2TypeChanged() {
+      const isLecture = document.getElementById('cv2Type').value === 'lecture';
+      document.getElementById('cv2TreatiseNameBox').style.display = isLecture ? '' : 'none';
+    }
+
     async function cv2Start() {
       const url = document.getElementById('cv2Url').value.trim();
       const filter = document.getElementById('cv2Filter').value.trim();
@@ -2166,7 +2176,14 @@
       const delay = parseFloat(document.getElementById('cv2Delay').value) || 2;
       if (!url) { toast('请输入起始页 URL'); return; }
 
+      // lecture 类型必须填写论典名称
+      const treatiseName = (document.getElementById('cv2TreatiseName').value || '').trim();
+      if (type === 'lecture' && !treatiseName) {
+        toast('lecture 类型必须填写论典名称'); return;
+      }
+
       const payload = { start_url: url, url_must_contain: filter, type, delay, build: true };
+      if (treatiseName) payload.treatise_name = treatiseName;
       if (_cv2Urls) payload.urls = _cv2Urls;
 
       const btn = document.getElementById('cv2StartBtn');
