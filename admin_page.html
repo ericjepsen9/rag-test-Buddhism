@@ -811,48 +811,90 @@
       </div>
     </div>
 
-    <!-- 自动爬取导入 -->
-    <div class="card">
+    <!-- 自动爬取导入 v2 -->
+    <div class="card" id="crawlV2Card">
       <div class="card-title">自动爬取导入
         <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
-          输入任意一课的链接，自动发现同系列全部文章并批量导入
+          输入任意一课的链接，自动发现全部文章 → 后台导入 → 实时进度
         </span>
       </div>
-      <div class="row-flex" style="flex-wrap:wrap;gap:10px">
-        <div style="flex:4;min-width:200px">
-          <label>起始页 URL（任意一课的链接）</label>
-          <input type="url" id="crawlStartUrl"
-                 placeholder="https://mingguang.im/r/ru-xing-lun-jiang-jie-2006-nian-ban-di-1-ke/">
+
+      <!-- 输入区 -->
+      <div id="crawlV2Input">
+        <div class="row-flex" style="flex-wrap:wrap;gap:10px">
+          <div style="flex:4;min-width:200px">
+            <label>起始页 URL（任意一课的链接）</label>
+            <input type="url" id="cv2Url"
+                   placeholder="https://mingguang.im/r/ru-xing-lun-jiang-jie-2006-nian-ban-di-1-ke/">
+          </div>
+          <div style="flex:2;min-width:150px">
+            <label>URL 过滤关键字</label>
+            <input type="text" id="cv2Filter" placeholder="ru-xing-lun-jiang-jie">
+          </div>
         </div>
-        <div style="flex:2;min-width:150px">
-          <label>URL 过滤关键字（只导入包含该关键字的链接）</label>
-          <input type="text" id="crawlFilter"
-                 placeholder="ru-xing-lun-jiang-jie">
+        <div class="row-flex" style="margin-top:10px;flex-wrap:wrap;gap:10px;align-items:flex-end">
+          <div style="flex:2;min-width:120px">
+            <label>知识类型</label>
+            <select id="cv2Type">
+              <option value="doctrine">doctrine — 教义</option>
+              <option value="scripture">scripture — 经典</option>
+              <option value="practice">practice — 修行</option>
+              <option value="master">master — 人物</option>
+              <option value="history">history — 历史</option>
+              <option value="ritual">ritual — 仪轨</option>
+              <option value="sect">sect — 宗派</option>
+              <option value="term">term — 术语</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:80px">
+            <label>间隔(秒)</label>
+            <input type="number" id="cv2Delay" value="2" min="0" step="0.5">
+          </div>
+          <button class="btn btn-outline" id="cv2DiscoverBtn" onclick="cv2Discover()">发现链接</button>
+          <button class="btn btn-info" id="cv2StartBtn" onclick="cv2Start()" style="display:none">开始导入</button>
         </div>
       </div>
-      <div class="row-flex" style="margin-top:10px;flex-wrap:wrap;gap:10px">
-        <div style="flex:2;min-width:120px">
-          <label>知识类型</label>
-          <select id="crawlType">
-            <option value="doctrine">doctrine — 教义</option>
-            <option value="scripture">scripture — 经典</option>
-            <option value="practice">practice — 修行</option>
-            <option value="master">master — 人物</option>
-            <option value="history">history — 历史</option>
-            <option value="ritual">ritual — 仪轨</option>
-            <option value="sect">sect — 宗派</option>
-            <option value="term">term — 术语</option>
-          </select>
+
+      <!-- 发现结果预览 -->
+      <div id="cv2Preview" style="display:none;margin-top:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span id="cv2PreviewTitle" style="font-weight:600;font-size:14px"></span>
+          <span>
+            <button class="btn btn-outline" onclick="cv2ClearPreview()" style="font-size:12px;padding:4px 10px">清除</button>
+          </span>
         </div>
-        <div style="flex:1;min-width:80px">
-          <label>抓取间隔(秒)</label>
-          <input type="number" id="crawlDelay" value="2" min="0" step="0.5">
-        </div>
-        <button class="btn btn-outline" id="crawlDiscoverBtn" onclick="doCrawlDiscover()">发现链接</button>
-        <button class="btn btn-info" id="crawlImportBtn" onclick="doCrawlImport()">自动爬取并导入</button>
+        <div id="cv2PreviewList" style="font-size:12px;max-height:200px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px"></div>
       </div>
-      <div id="crawlResult" style="display:none;margin-top:12px">
-        <div id="crawlResultContent" style="font-size:13px;max-height:300px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px"></div>
+
+      <!-- 运行中的进度面板 -->
+      <div id="cv2Progress" style="display:none;margin-top:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span id="cv2StatusText" style="font-weight:600;font-size:14px"></span>
+          <span>
+            <button class="btn btn-outline" id="cv2PauseBtn" onclick="cv2Pause()" style="font-size:12px;padding:4px 10px">暂停</button>
+            <button class="btn btn-outline" id="cv2ResumeBtn" onclick="cv2Resume()" style="font-size:12px;padding:4px 10px;display:none">继续</button>
+            <button class="btn btn-outline" id="cv2RetryBtn" onclick="cv2RetryFailed()" style="font-size:12px;padding:4px 10px;display:none">重试失败</button>
+          </span>
+        </div>
+
+        <!-- 进度条 -->
+        <div style="background:var(--border);border-radius:6px;height:20px;overflow:hidden;margin-bottom:8px">
+          <div id="cv2Bar" style="height:100%;background:var(--primary);border-radius:6px;transition:width 0.3s;width:0%;display:flex;align-items:center;justify-content:center">
+            <span id="cv2BarText" style="font-size:11px;color:#fff;font-weight:600"></span>
+          </div>
+        </div>
+
+        <!-- 统计 -->
+        <div id="cv2Stats" style="font-size:12px;color:var(--text-sec);margin-bottom:8px"></div>
+
+        <!-- 滚动日志 -->
+        <div id="cv2Log" style="font-size:12px;max-height:300px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px;font-family:monospace"></div>
+      </div>
+
+      <!-- 历史任务 -->
+      <div style="margin-top:12px">
+        <button class="btn btn-outline" onclick="cv2LoadJobs()" style="font-size:12px;padding:4px 10px">查看历史任务</button>
+        <div id="cv2Jobs" style="display:none;margin-top:8px"></div>
       </div>
     </div>
 
@@ -1850,90 +1892,308 @@
     }
 
     /* ===== URL 抓取 ===== */
-    /* ===== 自动爬取导入 ===== */
-    async function doCrawlDiscover() {
-      const startUrl = document.getElementById('crawlStartUrl').value.trim();
-      const filter = document.getElementById('crawlFilter').value.trim();
-      if (!startUrl) { toast('请输入起始页 URL'); return; }
-      const btn = document.getElementById('crawlDiscoverBtn');
+    /* ===== 自动爬取导入 v2 ===== */
+    let _cv2JobId = null;
+    let _cv2Urls = null;
+    let _cv2EventSource = null;
+
+    async function cv2Discover() {
+      const url = document.getElementById('cv2Url').value.trim();
+      const filter = document.getElementById('cv2Filter').value.trim();
+      if (!url) { toast('请输入起始页 URL'); return; }
+
+      const btn = document.getElementById('cv2DiscoverBtn');
       btn.disabled = true;
       btn.innerHTML = '<span class="spin"></span> 发现中…';
-      const el = document.getElementById('crawlResult');
-      const content = document.getElementById('crawlResultContent');
-      el.style.display = '';
-      content.innerHTML = '<span class="spin"></span> 正在爬取网站目录，发现同系列链接…';
+
       try {
-        const r = await apiFetch('/admin/crawl_import', {
+        const r = await apiFetch('/admin/crawl_v2/discover', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ start_url: startUrl, url_must_contain: filter, dry_run: true,
-            type: document.getElementById('crawlType').value, delay: 1 })
+          body: JSON.stringify({ start_url: url, url_must_contain: filter, delay: 1 })
         });
         const d = await r.json();
-        if (!d.ok && d.detail) {
-          content.innerHTML = `<span style="color:var(--danger)">${d.detail}</span>`;
-          toast(d.detail, 4000); return;
-        }
-        if (d.urls && d.urls.length) {
-          content.innerHTML = `<strong>发现 ${d.total} 个链接：</strong><br>`
-            + `<ol style="margin:6px 0;padding-left:20px">`
-            + d.urls.map(u => `<li style="font-size:12px;word-break:break-all;margin:2px 0">${u}</li>`).join('')
-            + '</ol>';
-          toast(`发现 ${d.total} 个链接，确认后点"自动爬取并导入"`);
-        } else {
-          content.innerHTML = '未发现匹配的链接。请调整过滤关键字再试。';
-        }
+        if (!d.ok) { toast(d.detail || '发现失败', 4000); return; }
+        if (!d.urls || !d.urls.length) { toast('未发现匹配链接，请调整过滤关键字'); return; }
+
+        _cv2Urls = d.urls;
+        document.getElementById('cv2Preview').style.display = '';
+        document.getElementById('cv2PreviewTitle').textContent = `发现 ${d.total} 个链接`;
+        document.getElementById('cv2PreviewList').innerHTML =
+          '<ol style="margin:4px 0;padding-left:20px">' +
+          d.urls.map((u, i) => {
+            const title = u.title ? ` — ${u.title}` : '';
+            return `<li style="margin:2px 0;word-break:break-all">${u.url}${title}</li>`;
+          }).join('') + '</ol>';
+        document.getElementById('cv2StartBtn').style.display = '';
+        toast(`发现 ${d.total} 个链接，确认后点"开始导入"`);
       } catch(e) {
-        content.innerHTML = `<span style="color:var(--danger)">发现失败：${e.message}</span>`;
-        if (e.message !== '403') toast('发现失败：' + e.message, 4000);
+        toast('发现失败：' + e.message, 4000);
       } finally {
         btn.disabled = false;
         btn.innerHTML = '发现链接';
       }
     }
 
-    async function doCrawlImport() {
-      const startUrl = document.getElementById('crawlStartUrl').value.trim();
-      const filter = document.getElementById('crawlFilter').value.trim();
-      const type = document.getElementById('crawlType').value;
-      const delay = parseFloat(document.getElementById('crawlDelay').value) || 2;
-      if (!startUrl) { toast('请输入起始页 URL'); return; }
-      if (!confirm('确认开始自动爬取并导入？\n系统将自动发现所有链接并逐一导入知识库。\n\n此操作可能需要较长时间，请耐心等待。')) return;
+    function cv2ClearPreview() {
+      _cv2Urls = null;
+      document.getElementById('cv2Preview').style.display = 'none';
+      document.getElementById('cv2StartBtn').style.display = 'none';
+    }
 
-      const btn = document.getElementById('crawlImportBtn');
+    async function cv2Start() {
+      const url = document.getElementById('cv2Url').value.trim();
+      const filter = document.getElementById('cv2Filter').value.trim();
+      const type = document.getElementById('cv2Type').value;
+      const delay = parseFloat(document.getElementById('cv2Delay').value) || 2;
+      if (!url) { toast('请输入起始页 URL'); return; }
+
+      const payload = { start_url: url, url_must_contain: filter, type, delay, build: true };
+      if (_cv2Urls) payload.urls = _cv2Urls;
+
+      const btn = document.getElementById('cv2StartBtn');
       btn.disabled = true;
-      btn.innerHTML = '<span class="spin"></span> 爬取导入中…';
-      const el = document.getElementById('crawlResult');
-      const content = document.getElementById('crawlResultContent');
-      el.style.display = '';
-      content.innerHTML = '<span class="spin"></span> 正在自动爬取、抓取正文、LLM 整理并导入知识库…<br>请耐心等待，不要关闭页面。';
+      btn.innerHTML = '<span class="spin"></span> 启动中…';
 
       try {
-        const r = await apiFetch('/admin/crawl_import', {
+        const r = await apiFetch('/admin/crawl_v2/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ start_url: startUrl, url_must_contain: filter, type, delay, dry_run: false, build: true })
+          body: JSON.stringify(payload)
         });
         const d = await r.json();
-        let html = `<strong>导入完成：成功 ${d.success}/${d.total}</strong>`;
-        if (d.built_index) html += ' <span class="badge badge-success">索引已更新</span>';
-        html += '<div style="max-height:250px;overflow-y:auto;margin-top:8px">';
-        for (const item of (d.results || [])) {
-          const icon = item.status === 'ok' ? '✅' : '❌';
-          const title = item.title ? ` — ${item.title}` : '';
-          const err = item.error ? ` <span style="color:var(--danger)">${item.error}</span>` : '';
-          html += `<div style="font-size:12px;margin:3px 0;word-break:break-all">${icon} #${item.index} ${item.url}${title}${err}</div>`;
-        }
-        html += '</div>';
-        content.innerHTML = html;
-        toast(`爬取导入完成：${d.success}/${d.total} 成功`);
+        if (!d.ok) { toast(d.detail || '启动失败', 4000); btn.disabled = false; btn.innerHTML = '开始导入'; return; }
+
+        _cv2JobId = d.job_id;
+        toast(`任务已启动: ${d.total} 个链接`);
+
+        // 隐藏输入区和预览，显示进度面板
+        document.getElementById('cv2Preview').style.display = 'none';
+        document.getElementById('cv2Progress').style.display = '';
+        document.getElementById('cv2PauseBtn').style.display = '';
+        document.getElementById('cv2ResumeBtn').style.display = 'none';
+        document.getElementById('cv2RetryBtn').style.display = 'none';
+        document.getElementById('cv2Log').innerHTML = '';
+        cv2UpdateBar(0, d.total, 0, 0);
+
+        // 连接 SSE
+        cv2ConnectSSE(d.job_id);
       } catch(e) {
-        content.innerHTML = `<span style="color:var(--danger)">导入失败：${e.message}</span>`;
-        if (e.message !== '403') toast('爬取导入失败：' + e.message, 4000);
+        toast('启动失败：' + e.message, 4000);
       } finally {
         btn.disabled = false;
-        btn.innerHTML = '自动爬取并导入';
+        btn.innerHTML = '开始导入';
       }
+    }
+
+    function cv2UpdateBar(completed, total, failed, building) {
+      const pct = total > 0 ? Math.round(completed / total * 100) : 0;
+      const bar = document.getElementById('cv2Bar');
+      const barText = document.getElementById('cv2BarText');
+      bar.style.width = pct + '%';
+      if (bar.style.width === '0%') bar.style.width = '2%';
+      barText.textContent = `${completed}/${total} (${pct}%)`;
+      if (building) bar.style.background = 'var(--warning, #f0ad4e)';
+      else if (failed > 0) bar.style.background = 'linear-gradient(90deg, var(--primary) ' + pct + '%, var(--danger, #d9534f) 100%)';
+      else bar.style.background = 'var(--primary)';
+
+      document.getElementById('cv2Stats').textContent =
+        `已完成 ${completed} / ${total}` + (failed > 0 ? ` · 失败 ${failed}` : '') + (building ? ' · 正在构建索引…' : '');
+    }
+
+    function cv2AppendLog(icon, text) {
+      const log = document.getElementById('cv2Log');
+      const line = document.createElement('div');
+      line.style.cssText = 'margin:2px 0;word-break:break-all';
+      line.innerHTML = `${icon} ${text}`;
+      log.appendChild(line);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function cv2ConnectSSE(jobId) {
+      if (_cv2EventSource) { _cv2EventSource.close(); _cv2EventSource = null; }
+
+      const baseUrl = window._apiBase || '';
+      const es = new EventSource(baseUrl + `/admin/crawl_v2/jobs/${jobId}/progress`);
+      _cv2EventSource = es;
+
+      es.onmessage = function(ev) {
+        try {
+          const d = JSON.parse(ev.data);
+          const evt = d.event;
+
+          if (evt === 'connected') {
+            document.getElementById('cv2StatusText').textContent = `任务 ${jobId.substring(0, 12)}… 运行中`;
+            cv2UpdateBar(d.completed, d.total, d.failed, false);
+          }
+          else if (evt === 'progress') {
+            const phase = d.phase === 'llm_processing' ? 'LLM 整理中' : '抓取中';
+            document.getElementById('cv2StatusText').textContent =
+              `#${d.current + 1}/${d.total} ${phase}: ${d.title || d.url.split('/').slice(-2).join('/')}`;
+            cv2UpdateBar(d.completed, d.total, 0, false);
+          }
+          else if (evt === 'item_done') {
+            const icon = d.status === 'ok' ? '<span style="color:green">OK</span>' : '<span style="color:red">FAIL</span>';
+            const title = d.title || d.url.split('/').slice(-2).join('/');
+            const err = d.error ? ` — ${d.error}` : '';
+            cv2AppendLog(icon, `#${d.current + 1} ${title}${err}`);
+            cv2UpdateBar(d.completed, d.total, d.failed, false);
+          }
+          else if (evt === 'building_index') {
+            cv2AppendLog('<span style="color:orange">BUILD</span>', '正在构建 FAISS 索引…');
+            cv2UpdateBar(d.completed, d.total, 0, true);
+          }
+          else if (evt === 'paused') {
+            document.getElementById('cv2StatusText').textContent = '已暂停';
+            document.getElementById('cv2PauseBtn').style.display = 'none';
+            document.getElementById('cv2ResumeBtn').style.display = '';
+            cv2AppendLog('<span style="color:orange">PAUSE</span>', '任务已暂停');
+            es.close();
+          }
+          else if (evt === 'done') {
+            document.getElementById('cv2StatusText').innerHTML =
+              `<span style="color:green">完成</span> — 成功 ${d.completed}/${d.total}` +
+              (d.failed > 0 ? ` · 失败 ${d.failed}` : '') +
+              (d.built_index ? ' · 索引已更新' : '');
+            cv2UpdateBar(d.completed, d.total, d.failed, false);
+            document.getElementById('cv2PauseBtn').style.display = 'none';
+            if (d.failed > 0) document.getElementById('cv2RetryBtn').style.display = '';
+            cv2AppendLog('<span style="color:green">DONE</span>',
+              `导入完成: ${d.completed}/${d.total} 成功` + (d.built_index ? ', 索引已更新' : ''));
+            toast(`爬取导入完成：${d.completed}/${d.total} 成功`);
+            es.close();
+          }
+          else if (evt === 'error' || evt === 'failed') {
+            document.getElementById('cv2StatusText').innerHTML = `<span style="color:red">失败</span> — ${d.detail || ''}`;
+            cv2AppendLog('<span style="color:red">ERROR</span>', d.detail || '任务失败');
+            es.close();
+          }
+        } catch(err) { console.warn('SSE parse error:', err); }
+      };
+
+      es.onerror = function() {
+        // SSE 断开后尝试轮询最终状态
+        es.close();
+        _cv2EventSource = null;
+        setTimeout(() => cv2PollFinalStatus(jobId), 2000);
+      };
+    }
+
+    async function cv2PollFinalStatus(jobId) {
+      try {
+        const r = await apiFetch(`/admin/crawl_v2/jobs/${jobId}`);
+        const d = await r.json();
+        if (d.status === 'done' || d.status === 'failed' || d.status === 'paused') {
+          document.getElementById('cv2StatusText').innerHTML =
+            d.status === 'done' ? `<span style="color:green">完成</span> — 成功 ${d.completed}/${d.total}` :
+            d.status === 'paused' ? '已暂停' :
+            `<span style="color:red">失败</span>`;
+          cv2UpdateBar(d.completed, d.total, d.failed, false);
+          if (d.status === 'paused') {
+            document.getElementById('cv2PauseBtn').style.display = 'none';
+            document.getElementById('cv2ResumeBtn').style.display = '';
+          }
+          if (d.failed > 0) document.getElementById('cv2RetryBtn').style.display = '';
+        }
+      } catch(e) { /* ignore */ }
+    }
+
+    async function cv2Pause() {
+      if (!_cv2JobId) return;
+      try {
+        await apiFetch(`/admin/crawl_v2/jobs/${_cv2JobId}/pause`, { method: 'POST' });
+        toast('暂停信号已发送');
+      } catch(e) { toast('暂停失败：' + e.message); }
+    }
+
+    async function cv2Resume() {
+      if (!_cv2JobId) return;
+      try {
+        const r = await apiFetch(`/admin/crawl_v2/jobs/${_cv2JobId}/resume`, { method: 'POST' });
+        const d = await r.json();
+        if (d.ok) {
+          toast(d.detail);
+          document.getElementById('cv2PauseBtn').style.display = '';
+          document.getElementById('cv2ResumeBtn').style.display = 'none';
+          document.getElementById('cv2RetryBtn').style.display = 'none';
+          cv2ConnectSSE(_cv2JobId);
+        } else { toast(d.detail, 4000); }
+      } catch(e) { toast('恢复失败：' + e.message); }
+    }
+
+    async function cv2RetryFailed() {
+      if (!_cv2JobId) return;
+      try {
+        const r = await apiFetch(`/admin/crawl_v2/jobs/${_cv2JobId}/retry_failed`, { method: 'POST' });
+        const d = await r.json();
+        if (d.ok) {
+          toast(d.detail);
+          document.getElementById('cv2RetryBtn').style.display = 'none';
+          document.getElementById('cv2PauseBtn').style.display = '';
+          cv2ConnectSSE(_cv2JobId);
+        } else { toast(d.detail, 4000); }
+      } catch(e) { toast('重试失败：' + e.message); }
+    }
+
+    async function cv2LoadJobs() {
+      const el = document.getElementById('cv2Jobs');
+      el.style.display = '';
+      el.innerHTML = '<span class="spin"></span> 加载中…';
+      try {
+        const r = await apiFetch('/admin/crawl_v2/jobs');
+        const d = await r.json();
+        if (!d.jobs || !d.jobs.length) { el.innerHTML = '暂无历史任务'; return; }
+        let html = '<table style="width:100%;font-size:12px;border-collapse:collapse">';
+        html += '<tr style="border-bottom:1px solid var(--border)"><th>任务ID</th><th>状态</th><th>进度</th><th>时间</th><th>操作</th></tr>';
+        for (const j of d.jobs) {
+          const st = { done: '<span style="color:green">完成</span>', running: '<span style="color:blue">运行中</span>',
+                       paused: '<span style="color:orange">暂停</span>', failed: '<span style="color:red">失败</span>',
+                       pending: '等待' }[j.status] || j.status;
+          const ts = j.created_at ? new Date(j.created_at * 1000).toLocaleString() : '';
+          html += `<tr style="border-bottom:1px solid var(--border)">`;
+          html += `<td style="padding:4px">${j.job_id.substring(0, 16)}…</td>`;
+          html += `<td style="padding:4px">${st}</td>`;
+          html += `<td style="padding:4px">${j.completed}/${j.total}` + (j.failed > 0 ? ` (${j.failed} 失败)` : '') + `</td>`;
+          html += `<td style="padding:4px">${ts}</td>`;
+          html += `<td style="padding:4px">`;
+          if (j.status === 'paused' || j.status === 'failed') {
+            html += `<button class="btn btn-outline" style="font-size:11px;padding:2px 6px" onclick="cv2ResumeJob('${j.job_id}')">继续</button> `;
+          }
+          if (j.status === 'running') {
+            html += `<button class="btn btn-outline" style="font-size:11px;padding:2px 6px" onclick="cv2WatchJob('${j.job_id}')">查看进度</button> `;
+          }
+          html += `</td></tr>`;
+        }
+        html += '</table>';
+        el.innerHTML = html;
+      } catch(e) { el.innerHTML = '加载失败：' + e.message; }
+    }
+
+    function cv2WatchJob(jobId) {
+      _cv2JobId = jobId;
+      document.getElementById('cv2Progress').style.display = '';
+      document.getElementById('cv2PauseBtn').style.display = '';
+      document.getElementById('cv2ResumeBtn').style.display = 'none';
+      document.getElementById('cv2RetryBtn').style.display = 'none';
+      document.getElementById('cv2Log').innerHTML = '';
+      cv2ConnectSSE(jobId);
+    }
+
+    async function cv2ResumeJob(jobId) {
+      _cv2JobId = jobId;
+      document.getElementById('cv2Progress').style.display = '';
+      document.getElementById('cv2PauseBtn').style.display = '';
+      document.getElementById('cv2ResumeBtn').style.display = 'none';
+      document.getElementById('cv2RetryBtn').style.display = 'none';
+      document.getElementById('cv2Log').innerHTML = '';
+      try {
+        const r = await apiFetch(`/admin/crawl_v2/jobs/${jobId}/resume`, { method: 'POST' });
+        const d = await r.json();
+        if (d.ok) {
+          toast(d.detail);
+          cv2ConnectSSE(jobId);
+        } else { toast(d.detail, 4000); }
+      } catch(e) { toast('恢复失败：' + e.message); }
     }
 
     /* ===== 批量 URL 模板导入 ===== */

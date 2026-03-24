@@ -3817,6 +3817,273 @@ def admin_save_media(request: Request, req: SaveMediaRequest):
     return {"ok": True, "added": added, "total": len(existing)}
 
 
+# ==================== crawl_v2 API ====================
+
+class CrawlV2DiscoverRequest(BaseModel):
+    start_url: str = Field(..., description="起始页 URL")
+    url_must_contain: str = Field(default="", description="URL 过滤关键字")
+    max_discovery_pages: int = Field(default=30, description="最多爬取几个页面来发现链接")
+    delay: float = Field(default=1.0, description="发现阶段抓取间隔秒数")
+
+
+class CrawlV2StartRequest(BaseModel):
+    start_url: str = Field(..., description="起始页 URL")
+    url_must_contain: str = Field(default="", description="URL 过滤关键字")
+    type: str = Field(default="doctrine", description="知识类型")
+    delay: float = Field(default=2.0, description="每次抓取间隔秒数")
+    build: bool = Field(default=True, description="完成后自动构建索引")
+    urls: Optional[list] = Field(default=None, description="手动指定 URL 列表（跳过发现阶段）")
+
+
+@app.post("/admin/crawl_v2/discover")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+def crawl_v2_discover(request: Request, req: CrawlV2DiscoverRequest):
+    """发现链接（预览，不实际导入）"""
+    if not req.start_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="请提供完整 URL")
+
+    from crawl_v2 import SiteAdapter
+    adapter = SiteAdapter(
+        req.start_url,
+        url_must_contain=req.url_must_contain,
+        max_discovery_pages=req.max_discovery_pages,
+        delay=req.delay,
+    )
+    try:
+        found = adapter.discover()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"链接发现失败: {e}")
+
+    return {"ok": True, "total": len(found), "urls": found}
+
+
+@app.post("/admin/crawl_v2/start")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+def crawl_v2_start(request: Request, req: CrawlV2StartRequest):
+    """启动爬取导入任务（后台运行，返回 job_id）"""
+    if not req.start_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="请提供完整 URL")
+
+    from crawl_v2 import CrawlJob, SiteAdapter, set_active_job
+
+    job = CrawlJob()
+    job.start_url = req.start_url
+    job.url_must_contain = req.url_must_contain
+    job.entity_type = req.type
+    job.delay = req.delay
+
+    # 如果传入了 urls，直接用；否则先发现
+    if req.urls:
+        job.urls = [u if isinstance(u, dict) else {"url": u, "title": ""} for u in req.urls]
+    else:
+        adapter = SiteAdapter(req.start_url, url_must_contain=req.url_must_contain)
+        try:
+            job.urls = adapter.discover()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"链接发现失败: {e}")
+
+    if not job.urls:
+        return {"ok": False, "detail": "未发现任何链接"}
+
+    job.save()
+    set_active_job(job)
+
+    # 后台线程执行
+    def _run():
+        try:
+            job.run(build=req.build)
+        except Exception as e:
+            job.status = "failed"
+            job.save()
+            logger.error("crawl_v2 job failed: %s", e)
+        finally:
+            # 任务完成后不立即清理 active_jobs，保留供 SSE 查询
+            pass
+
+    t = threading.Thread(target=_run, daemon=True, name=f"crawl_v2_{job.job_id}")
+    t.start()
+
+    return {
+        "ok": True,
+        "job_id": job.job_id,
+        "total": len(job.urls),
+        "urls": job.urls,
+    }
+
+
+@app.get("/admin/crawl_v2/jobs")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+def crawl_v2_list_jobs(request: Request):
+    """列出所有爬取任务"""
+    from crawl_v2 import CrawlJob
+    return {"ok": True, "jobs": CrawlJob.list_all()}
+
+
+@app.get("/admin/crawl_v2/jobs/{job_id}")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+def crawl_v2_get_job(request: Request, job_id: str):
+    """获取任务详情"""
+    from crawl_v2 import CrawlJob, get_active_job
+    # 优先从活跃任务取（有实时状态）
+    job = get_active_job(job_id)
+    if not job:
+        try:
+            job = CrawlJob.load(job_id)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="任务不存在")
+
+    return {
+        "ok": True,
+        "job_id": job.job_id,
+        "status": job.status,
+        "total": len(job.urls),
+        "completed": len(job.completed),
+        "failed": len(job.failed),
+        "urls": job.urls,
+        "results": job.results,
+        "built_index": job.built_index,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+    }
+
+
+@app.get("/admin/crawl_v2/jobs/{job_id}/progress")
+async def crawl_v2_progress(request: Request, job_id: str):
+    """SSE 实时进度推送"""
+    from crawl_v2 import get_active_job, CrawlJob
+    import asyncio
+
+    job = get_active_job(job_id)
+    if not job:
+        # 尝试加载已完成的任务
+        try:
+            finished = CrawlJob.load(job_id)
+            # 直接返回最终状态
+            async def _done_gen():
+                yield f"data: {json.dumps({'event': 'done', 'total': len(finished.urls), 'completed': len(finished.completed), 'failed': len(finished.failed), 'built_index': finished.built_index}, ensure_ascii=False)}\n\n"
+            return StreamingResponse(_done_gen(), media_type="text/event-stream")
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="任务不存在")
+
+    q = job.add_sse_listener()
+
+    async def _generate():
+        try:
+            # 先推送当前状态摘要
+            yield f"data: {json.dumps({'event': 'connected', 'job_id': job_id, 'status': job.status, 'total': len(job.urls), 'completed': len(job.completed), 'failed': len(job.failed)}, ensure_ascii=False)}\n\n"
+
+            while True:
+                if await request.is_disconnected():
+                    break
+                while q:
+                    msg = q.pop(0)
+                    yield f"data: {msg}\n\n"
+                    parsed = json.loads(msg)
+                    if parsed.get("event") in ("done", "failed"):
+                        return
+                await asyncio.sleep(0.3)
+        finally:
+            job.remove_sse_listener(q)
+
+    return StreamingResponse(_generate(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.post("/admin/crawl_v2/jobs/{job_id}/pause")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+def crawl_v2_pause(request: Request, job_id: str):
+    """暂停任务"""
+    from crawl_v2 import get_active_job
+    job = get_active_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="活跃任务不存在")
+    if job.status != "running":
+        return {"ok": False, "detail": f"任务状态为 {job.status}，无法暂停"}
+    job._stop_flag = True
+    job._pause_event.clear()
+    return {"ok": True, "detail": "暂停信号已发送"}
+
+
+@app.post("/admin/crawl_v2/jobs/{job_id}/resume")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+def crawl_v2_resume(request: Request, job_id: str):
+    """断点续传：继续执行暂停/中断的任务"""
+    from crawl_v2 import CrawlJob, get_active_job, set_active_job
+
+    job = get_active_job(job_id)
+    if not job:
+        try:
+            job = CrawlJob.load(job_id)
+            set_active_job(job)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="任务不存在")
+
+    if job.status == "running":
+        return {"ok": False, "detail": "任务正在运行中"}
+
+    # 重置暂停状态
+    job._stop_flag = False
+    job._pause_event.set()
+    job.status = "running"
+    job.save()
+
+    def _run():
+        try:
+            job.run(build=True)
+        except Exception as e:
+            job.status = "failed"
+            job.save()
+            logger.error("crawl_v2 resume failed: %s", e)
+
+    t = threading.Thread(target=_run, daemon=True, name=f"crawl_v2_resume_{job.job_id}")
+    t.start()
+
+    remaining = len(job.urls) - len(job.completed)
+    return {"ok": True, "detail": f"已恢复，剩余 {remaining} 项", "job_id": job.job_id}
+
+
+@app.post("/admin/crawl_v2/jobs/{job_id}/retry_failed")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+def crawl_v2_retry_failed(request: Request, job_id: str):
+    """重试所有失败项"""
+    from crawl_v2 import CrawlJob, get_active_job, set_active_job
+
+    job = get_active_job(job_id)
+    if not job:
+        try:
+            job = CrawlJob.load(job_id)
+            set_active_job(job)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="任务不存在")
+
+    if job.status == "running":
+        return {"ok": False, "detail": "任务正在运行中"}
+
+    if not job.failed:
+        return {"ok": False, "detail": "没有失败项需要重试"}
+
+    # 清除失败记录，让 run() 重新处理这些索引
+    failed_indices = list(job.failed.keys())
+    job.failed.clear()
+    # 清除对应的 results
+    job.results = [r for r in job.results if r.get("index") not in failed_indices]
+    job._stop_flag = False
+    job._pause_event.set()
+    job.save()
+
+    def _run():
+        try:
+            job.run(build=True)
+        except Exception as e:
+            job.status = "failed"
+            job.save()
+
+    t = threading.Thread(target=_run, daemon=True, name=f"crawl_v2_retry_{job.job_id}")
+    t.start()
+
+    return {"ok": True, "detail": f"正在重试 {len(failed_indices)} 个失败项", "job_id": job.job_id}
+
+
 # ===== 静态文件（必须放在所有路由之后，避免拦截 API 路径）=====
 _web_dir = BASE_DIR / "web"
 if _web_dir.is_dir():
