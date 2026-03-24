@@ -811,11 +811,32 @@
       </div>
     </div>
 
+    <!-- 文件上传 -->
+    <div class="card">
+      <div class="card-title">文件上传
+        <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
+          支持 .txt .md .pdf .doc .docx，提取文本后可预览编辑再导入
+        </span>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <input type="file" id="impFileInput" accept=".txt,.md,.pdf,.doc,.docx"
+               style="display:none" onchange="onImpFileSelected(this)">
+        <button class="btn btn-outline" onclick="document.getElementById('impFileInput').click()">
+          选择文件
+        </button>
+        <span id="impFileName" style="font-size:13px;color:var(--text-sec)">未选择文件</span>
+        <button class="btn btn-info" id="impFileUploadBtn" onclick="doFileExtract()" style="display:none">
+          提取文本
+        </button>
+      </div>
+      <div id="impFileStatus" style="display:none;margin-top:10px;font-size:13px"></div>
+    </div>
+
     <!-- 文本导入表单 -->
     <div class="card">
       <div class="card-title">文本导入
         <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
-          粘贴原始文档 → LLM 自动整理为结构化知识文件
+          粘贴原始文档 / 上传文件提取 → LLM 自动整理为结构化知识文件
         </span>
       </div>
 
@@ -1776,6 +1797,85 @@
       } finally {
         btn.disabled = false;
         btn.innerHTML = '抓取正文';
+      }
+    }
+
+    /* ===== 文件上传提取 ===== */
+    let _impSelectedFile = null;
+
+    function onImpFileSelected(input) {
+      const file = input.files[0];
+      _impSelectedFile = file || null;
+      const nameEl = document.getElementById('impFileName');
+      const uploadBtn = document.getElementById('impFileUploadBtn');
+      if (file) {
+        const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+        nameEl.textContent = `${file.name}（${sizeMB} MB）`;
+        nameEl.style.color = 'var(--text)';
+        // txt/md 可以前端直接读取
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (ext === 'txt' || ext === 'md') {
+          uploadBtn.style.display = 'none';
+          readLocalTextFile(file);
+        } else {
+          uploadBtn.style.display = '';
+        }
+      } else {
+        nameEl.textContent = '未选择文件';
+        nameEl.style.color = 'var(--text-sec)';
+        uploadBtn.style.display = 'none';
+      }
+    }
+
+    function readLocalTextFile(file) {
+      const status = document.getElementById('impFileStatus');
+      status.style.display = '';
+      status.innerHTML = '<span style="color:var(--text-sec)">读取中…</span>';
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const text = e.target.result;
+        document.getElementById('impContent').value = text;
+        status.innerHTML = `<span style="color:var(--success)">✓ 已读取 ${text.length.toLocaleString()} 字，内容已填入下方编辑框，可修改后导入。</span>`;
+        document.getElementById('impContent').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        toast(`文件读取成功，共 ${text.length.toLocaleString()} 字 ✓`);
+      };
+      reader.onerror = function() {
+        status.innerHTML = '<span style="color:var(--danger)">读取失败</span>';
+      };
+      reader.readAsText(file, 'utf-8');
+    }
+
+    async function doFileExtract() {
+      if (!_impSelectedFile) { toast('请先选择文件'); return; }
+      const btn = document.getElementById('impFileUploadBtn');
+      const status = document.getElementById('impFileStatus');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> 提取中…';
+      status.style.display = '';
+      status.innerHTML = '<span style="color:var(--text-sec)">正在上传并提取文本，PDF/Word 文件可能需要几秒…</span>';
+      try {
+        const formData = new FormData();
+        formData.append('file', _impSelectedFile);
+        const r = await apiFetch('/admin/extract_file_text', {
+          method: 'POST',
+          body: formData,
+        });
+        const d = await r.json();
+        if (d.ok) {
+          document.getElementById('impContent').value = d.text;
+          status.innerHTML = `<span style="color:var(--success)">✓ 从 <strong>${_esc(d.filename)}</strong> 提取了 ${d.length.toLocaleString()} 字，内容已填入下方编辑框。可修改后导入。</span>`;
+          document.getElementById('impContent').scrollIntoView({ behavior: 'smooth', block: 'center' });
+          toast(`提取成功，共 ${d.length.toLocaleString()} 字 ✓`);
+        } else {
+          status.innerHTML = `<span style="color:var(--danger)">提取失败：${_esc(d.detail || d.error || '')}</span>`;
+          toast('提取失败', 4000);
+        }
+      } catch(e) {
+        status.innerHTML = `<span style="color:var(--danger)">请求失败：${_esc(e.message)}</span>`;
+        if (e.message !== '403') toast('提取失败：' + e.message, 4000);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '提取文本';
       }
     }
 

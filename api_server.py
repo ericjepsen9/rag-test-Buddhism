@@ -2668,6 +2668,92 @@ def admin_import_knowledge_commit(request: Request, req: CommitKnowledgeRequest)
         lock.release()
 
 
+@app.post("/admin/extract_file_text")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+async def admin_extract_file_text(request: Request):
+    """从上传文件中提取纯文本（不导入，仅提取）。
+
+    支持 .txt .md .pdf .doc .docx，返回提取后的文本供前端预览编辑。
+    """
+    content_type = request.headers.get("content-type", "")
+    if "multipart/form-data" not in content_type:
+        raise HTTPException(status_code=400, detail="需要 multipart/form-data 格式")
+
+    try:
+        form = await request.form()
+    except Exception:
+        raise HTTPException(status_code=400, detail="解析表单失败")
+
+    try:
+        file_item = form.get("file")
+        if not file_item or not hasattr(file_item, "read"):
+            raise HTTPException(status_code=400, detail="缺少 file 文件")
+
+        fname = getattr(file_item, "filename", "") or "upload.txt"
+        suffix = Path(fname).suffix.lower()
+        allowed = {".txt", ".md", ".pdf", ".doc", ".docx"}
+        if suffix not in allowed:
+            return JSONResponse(content={
+                "ok": False, "detail": f"不支持的文件类型: {suffix}，支持: {', '.join(sorted(allowed))}"
+            })
+
+        file_data = await file_item.read()
+        if not file_data:
+            return JSONResponse(content={"ok": False, "detail": "文件内容为空"})
+
+        raw_text = ""
+        if suffix == ".pdf":
+            try:
+                import pdfplumber
+                import io
+                text_parts = []
+                with pdfplumber.open(io.BytesIO(file_data)) as pdf:
+                    for page in pdf.pages:
+                        t = page.extract_text()
+                        if t:
+                            text_parts.append(t)
+                raw_text = "\n\n".join(text_parts)
+            except ImportError:
+                return JSONResponse(content={"ok": False, "detail": "服务器未安装 pdfplumber，无法处理 PDF"})
+        elif suffix == ".docx":
+            try:
+                raw_text = _extract_docx_text(file_data)
+            except ImportError:
+                return JSONResponse(content={"ok": False, "detail": "服务器未安装 python-docx，无法处理 .docx"})
+            except Exception as exc:
+                return JSONResponse(content={"ok": False, "detail": f"解析 .docx 失败: {exc}"})
+        elif suffix == ".doc":
+            try:
+                raw_text = _extract_doc_text(file_data)
+            except Exception as exc:
+                return JSONResponse(content={"ok": False, "detail": f"解析 .doc 失败: {exc}"})
+            if not raw_text.strip():
+                return JSONResponse(content={"ok": False, "detail": "无法从 .doc 提取文本，建议转为 .docx 后重试"})
+        else:
+            # txt / md
+            for enc in ("utf-8-sig", "utf-8", "gbk", "gb2312"):
+                try:
+                    raw_text = file_data.decode(enc)
+                    break
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            else:
+                raw_text = file_data.decode("utf-8", errors="replace")
+
+        if not raw_text.strip():
+            return JSONResponse(content={"ok": False, "detail": "提取到的文本内容为空"})
+
+        return {
+            "ok": True,
+            "filename": fname,
+            "format": suffix,
+            "text": raw_text,
+            "length": len(raw_text),
+        }
+    finally:
+        await form.close()
+
+
 @app.post("/admin/import_knowledge_file")
 async def admin_import_knowledge_file(request: "Request"):
     """通过文件上传导入知识库（LLM 自动整理）。
