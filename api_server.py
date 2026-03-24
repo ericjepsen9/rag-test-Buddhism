@@ -589,9 +589,15 @@ def ask(request: Request, req: AskRequest):
         except Exception:
             pass
         log_error("api_ask", repr(e), meta=error_meta)
+        # 根据异常类型返回更具体的错误信息
+        err_msg = "接口执行异常，请稍后重试"
+        if "model" in str(e).lower() or "sentence" in str(e).lower():
+            err_msg = "嵌入模型未加载，请等待模型初始化完成后重试"
+        elif "openai" in str(e).lower() or "api_key" in str(e).lower():
+            err_msg = "LLM 服务未配置，请先在管理后台配置 LLM 模型"
         return JSONResponse(
             status_code=500,
-            content={"ok": False, "answer": "接口执行异常，请稍后重试",
+            content={"ok": False, "answer": err_msg,
                      "media": [], "latency_ms": latency_ms},
         )
 

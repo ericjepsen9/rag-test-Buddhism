@@ -727,8 +727,9 @@ def start_llm_service(api_key: str = "") -> dict:
     _mod.USE_OPENAI = True
     try:
         import rag_answer
-        rag_answer._openai_client = None
-        rag_answer._openai_client_checked = False
+        with rag_answer._openai_client_lock:
+            rag_answer._openai_client = None
+            rag_answer._openai_client_checked = False
         client = rag_answer._get_openai_client()
         if client is None:
             return {"ok": False, "error": "LLM client 创建失败，请检查 API Key 和 API Base"}
@@ -748,8 +749,9 @@ def stop_llm_service() -> dict:
     _mod.USE_OPENAI = False
     try:
         import rag_answer
-        rag_answer._openai_client = None
-        rag_answer._openai_client_checked = False
+        with rag_answer._openai_client_lock:
+            rag_answer._openai_client = None
+            rag_answer._openai_client_checked = False
     except Exception:
         pass
     try:
