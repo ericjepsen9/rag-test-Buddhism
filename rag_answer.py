@@ -606,6 +606,31 @@ def detect_route(question: str) -> str:
     return best
 
 
+def detect_secondary_routes(question: str, primary_route: str) -> list:
+    """检测次要路由：当问题同时涉及多个维度时返回次要路由列表。
+    例如"入行论怎么处理家庭矛盾" → primary=scripture, secondary=[life]"""
+    q = (question or "").lower()
+    secondary = []
+
+    # 检查所有路由的信号词
+    _signal_map = {
+        "life": _LIFE_SIGNALS,
+        "scripture": _SCRIPTURE_SIGNALS,
+        "doctrine": _DOCTRINE_SIGNALS,
+        "practice": _PRACTICE_SIGNALS,
+        "concept": _CONCEPT_SIGNALS,
+    }
+
+    for route, signals in _signal_map.items():
+        if route == primary_route:
+            continue
+        if any(s in q for s in signals):
+            secondary.append(route)
+
+    # 限制最多2个次要路由
+    return secondary[:2]
+
+
 # ===================================================================
 # Route config helpers
 # ===================================================================
@@ -1272,6 +1297,8 @@ def _build_knowledge_topics() -> str:
     prod_hint = "、".join(prod_names) if prod_names else "佛学主题"
     return (
         f"{prod_hint}等相关的佛教教义（四圣谛、八正道、十二因缘、缘起性空等）、"
+        "佛法与日常生活应用（情绪管理、人际关系、工作压力、家庭矛盾等）、"
+        "法师开示与演讲、"
         "修行方法（禅修、念佛、持咒、止观等）、"
         "佛教经典（心经、金刚经、法华经、入行论等）、"
         "宗派传承（禅宗、净土宗、天台宗、藏传佛教等）、"
@@ -1433,6 +1460,12 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
     futures["v_prod"] = _search_pool.submit(_do_vector, product)
     futures["k_prod"] = _search_pool.submit(_do_keyword, product)
 
+    # 同时搜索共享索引（scripture, master, glossary）
+    _shared_store = STORE_ROOT / "_shared"
+    if _shared_store.exists() and (_shared_store / "index.faiss").exists():
+        futures["v_shared"] = _search_pool.submit(_do_vector, "_shared")
+        futures["k_shared"] = _search_pool.submit(_do_keyword, "_shared")
+
     vector_hits, keyword_hits = [], []
     for key, fut in futures.items():
         try:
@@ -1446,10 +1479,12 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
         else:
             keyword_hits.extend(result)
 
-    # Route-aware merge weights
+    # Route-aware merge weights with secondary route support
     vw = route_cfg.get("vw", HYBRID_VECTOR_WEIGHT)
     kw = route_cfg.get("kw", HYBRID_KEYWORD_WEIGHT)
-    hits = merge_hybrid(vector_hits, keyword_hits, vw, kw, route_top_k, route=route) if (vector_hits or keyword_hits) else []
+    secondary_routes = detect_secondary_routes(question, route)
+    hits = merge_hybrid(vector_hits, keyword_hits, vw, kw, route_top_k,
+                         route=route, secondary_routes=secondary_routes) if (vector_hits or keyword_hits) else []
 
     # Score filtering
     hits = filter_by_score(hits, route_threshold)

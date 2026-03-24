@@ -77,6 +77,7 @@ _ENTITY_TYPES = {
     "sect":        ("sect",        False),   # 宗派
     "master":      ("master",      False),   # 高僧大德
     "lecture":     ("lecture",     False),   # 论典讲记（每课独立文件）
+    "talk":        ("talk",        False),   # 法师开示/演讲/佛法与生活专题
     # 单文件知识（追加到同一文件）
     "general":     ("general",     True),    # 通用佛教知识
     "history":     ("history",     True),    # 佛教历史
@@ -297,6 +298,7 @@ _ENTITY_LABELS = {
     "sect":        "佛教宗派",
     "master":      "高僧大德",
     "lecture":     "论典讲记",
+    "talk":        "法师开示/演讲",
     "general":     "佛教通识",
     "history":     "佛教历史",
     "ritual":      "佛教仪轨",
@@ -437,6 +439,68 @@ alias_txt 整理规则：
 - 禁止编造原文中没有的内容
 - 禁止修改颂词原文的任何字
 - 禁止省略法师的教理讲解（即使内容很长）
+"""
+
+_SYSTEM_TALK = """你是佛教知识整理专家。用户会提供一篇法师开示、演讲或佛法与生活专题文章的原文。
+
+与论典讲记（lecture）不同，开示/演讲通常：
+- 没有固定的颂词和科判结构
+- 围绕一个或多个主题自由展开
+- 可能涉及多部经论的内容
+- 更侧重实际应用和生活指导
+
+你的任务是：保留原文的核心内容和结构，进行格式化整理。
+
+输出要求（JSON 格式）：
+{
+  "main_txt": "格式化整理后的完整开示/演讲内容",
+  "faq_txt": "从内容提取的教理FAQ问答对（5-10对）",
+  "life_faq_txt": "从内容提取的佛法与生活应用FAQ问答对（5-10对）",
+  "alias_txt": "核心术语的别名和关键词",
+  "talk_meta": {
+    "title": "开示/演讲标题",
+    "speaker": "法师/讲者名（如能判断）",
+    "topics": ["涉及的主要话题"],
+    "related_treatises": ["引用或涉及的经论名称"],
+    "key_concepts": ["核心概念/术语"]
+  }
+}
+
+main_txt 整理规则：
+1. 保留原文中所有教理讲解、故事、比喻和实修建议
+2. 可以删除纯口语化的衔接语和与主题无关的寒暄
+3. 按主题或原文自然段落组织，用标题标注各部分
+4. 使用以下标记：
+   - 【主题】— 标记主题/段落标题
+   - 【引用】— 标记引用经论的原文（注明出处）
+   - 【公案】— 标记佛教故事/典故
+   - 【教言】— 标记法师的重要开示/金句
+   - 【生活应用】— 标记与日常生活相关的具体建议
+5. 如果开示中引用了其他经论（如入行论、心经等），保留引用并标注出处
+
+faq_txt 整理规则：
+1. 从开示内容中提取 5-10 个教理FAQ问答对
+2. 格式：【Q】问题\\n【A】回答\\n\\n
+3. 涵盖开示中讨论的核心教义和概念
+4. 回答基于原文内容，100-300字
+
+life_faq_txt 整理规则：
+1. 从开示内容中提取 5-10 个生活应用FAQ问答对
+2. 格式：【Q】问题\\n【A】回答\\n\\n
+3. 问题用生活化语言描述具体场景
+4. 回答包含：法师的观点/教言 + 具体可操作的建议
+5. 面向普通人，语气亲切实用，150-300字
+
+alias_txt 整理规则：
+1. 每行一组同义词（空格分隔）
+2. 包含：开示中涉及的核心术语及其生活化表述
+3. 包含：涉及的经论名称及其别名
+4. 不超过20行
+
+禁止事项：
+- 禁止将开示压缩为摘要
+- 禁止编造原文中没有的内容
+- 禁止修改引用经论原文的任何字
 """
 
 _SYSTEM_LECTURE_OVERVIEW = """你是佛教知识整理专家。用户会提供一部论典讲记的前几课内容。
@@ -581,6 +645,8 @@ def _generate_knowledge(client, raw_text: str, entity_type: str,
 
     if entity_type == "lecture":
         system = _SYSTEM_LECTURE
+    elif entity_type == "talk":
+        system = _SYSTEM_TALK
     elif entity_type == "scripture":
         system = _SYSTEM_SCRIPTURE
     elif is_single:
@@ -589,9 +655,9 @@ def _generate_knowledge(client, raw_text: str, entity_type: str,
         system = _SYSTEM_MULTI.format(entity_label=label)
 
     # 根据类型设置处理参数
-    if entity_type == "lecture":
-        max_chars = 50000       # 讲记单课最长约 10000 字，留足余量
-        max_output_tokens = 16000  # 确保不截断讲记输出
+    if entity_type in ("lecture", "talk"):
+        max_chars = 50000       # 讲记/开示单篇最长约 10000 字，留足余量
+        max_output_tokens = 16000  # 确保不截断输出
     else:
         max_chars = 12000
         max_output_tokens = 4000
@@ -787,12 +853,19 @@ def _write_knowledge_files(result: dict, entity_type: str, entity_id: str,
             _atomic_write(main_path, main_txt)
         logger.info("写入 %s (%d 字)", main_path, len(main_txt))
 
-    # faq.txt（经典和讲记总览类型）
+    # faq.txt（经典、讲记总览、开示类型）
     faq_txt = result.get("faq_txt", "")
-    if faq_txt and entity_type in ("scripture", "lecture_overview"):
+    if faq_txt and entity_type in ("scripture", "lecture_overview", "talk"):
         faq_path = out_dir / "faq.txt"
         _atomic_write(faq_path, faq_txt)
         logger.info("写入 %s (%d 字)", faq_path, len(faq_txt))
+
+    # life_faq.txt（开示类型生成的生活应用FAQ）
+    life_faq_txt = result.get("life_faq_txt", "")
+    if life_faq_txt and entity_type == "talk":
+        life_faq_path = out_dir / "faq_life.txt"
+        _atomic_write(life_faq_path, life_faq_txt)
+        logger.info("写入 %s (%d 字)", life_faq_path, len(life_faq_txt))
 
     # alias.txt
     alias_txt = result.get("alias_txt", "")

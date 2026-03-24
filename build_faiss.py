@@ -486,6 +486,15 @@ def _collect_txt_files(pdir):
                 display_name = f"{subdir.name}/{sub2.name}/{fp.name}"
                 results.append((fp, stype, display_name))
 
+            # 4. 三级子目录（如 lecture/入行论/第一品_菩提心利益/第001课.txt）
+            for sub3 in sorted(sub2.iterdir()):
+                if not sub3.is_dir() or sub3.name.startswith("."):
+                    continue
+                for fp in sorted(sub3.glob("*.txt")):
+                    stype = _infer_source_type(fp.name)
+                    display_name = f"{subdir.name}/{sub2.name}/{sub3.name}/{fp.name}"
+                    results.append((fp, stype, display_name))
+
     return results
 
 

@@ -1613,7 +1613,7 @@ def _hit_key(h: Dict) -> str:
 
 
 def merge_hybrid(vector_hits: List[Dict], keyword_hits: List[Dict], vw: float, kw: float, top_k: int,
-                  route: str = "") -> List[Dict]:
+                  route: str = "", secondary_routes: List[str] = None) -> List[Dict]:
     merged = {}
     for h in vector_hits:
         key = _hit_key(h)
@@ -1634,9 +1634,9 @@ def merge_hybrid(vector_hits: List[Dict], keyword_hits: List[Dict], vw: float, k
             merged[key]["hybrid_score"] += kw_contribution - current_kw
             merged[key]["_kw_contribution"] = kw_contribution
 
-    # 路由感知加分
+    # 路由感知加分（支持多路由融合）
     if route:
-        _apply_route_boost(merged, route)
+        _apply_route_boost(merged, route, secondary_routes=secondary_routes)
 
     out = list(merged.values())
     for h in out:
@@ -1658,20 +1658,35 @@ _ROUTE_SECTION_MARKERS = {
     "life":      ["生活", "日常", "应用", "情绪", "压力", "家庭", "工作",
                   "安忍", "忍辱", "正念", "精进", "自他交换", "怎么办"],
 }
-def _apply_route_boost(merged: Dict[str, Dict], route: str) -> None:
+def _apply_route_boost(merged: Dict[str, Dict], route: str,
+                       secondary_routes: List[str] = None) -> None:
     markers = _ROUTE_SECTION_MARKERS.get(route, [])
-    if not markers:
+    # 合并主路由和次要路由的 markers
+    all_markers = set(markers)
+    for sr in (secondary_routes or []):
+        all_markers.update(_ROUTE_SECTION_MARKERS.get(sr, []))
+    if not all_markers:
         return
     from rag_runtime_config import ROUTE_BOOST as _live_boost
     for h in merged.values():
         text = (h.get("text") or "")[:800]
-        if any(m in text for m in markers):
+        source = h.get("meta", {}).get("source_file", "")
+        # 主路由 markers boost
+        if markers and any(m in text for m in markers):
             h["hybrid_score"] += _live_boost
-        # life 路由下，faq_life 来源的内容获得额外 boost
-        if route == "life":
-            source = h.get("meta", {}).get("source_file", "")
+        # 次要路由 markers boost（稍弱）
+        for sr in (secondary_routes or []):
+            sr_markers = _ROUTE_SECTION_MARKERS.get(sr, [])
+            if sr_markers and any(m in text for m in sr_markers):
+                h["hybrid_score"] += _live_boost * 0.7
+        # faq_life 来源在 life 路由或次要路由含 life 时获得 boost
+        if route == "life" or (secondary_routes and "life" in secondary_routes):
             if "faq_life" in source:
                 h["hybrid_score"] += _live_boost * 1.5
+        # 开示/演讲内容在 life 路由下获得 boost
+        if route == "life" or (secondary_routes and "life" in secondary_routes):
+            if "talk/" in source:
+                h["hybrid_score"] += _live_boost * 0.8
 
 
 def _ngram_overlap(a: str, b: str, n: int = 3) -> float:
