@@ -4010,7 +4010,7 @@ def crawl_v2_get_job(request: Request, job_id: str):
 async def crawl_v2_progress(request: Request, job_id: str):
     """SSE 实时进度推送"""
     from crawl_v2 import get_active_job, CrawlJob
-    import asyncio
+    import asyncio, json
 
     job = get_active_job(job_id)
     if not job:
