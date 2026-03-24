@@ -63,7 +63,7 @@ def _safe_int(key: str, default: str) -> int:
     try:
         return int(raw)
     except (ValueError, TypeError):
-        print(f"[WARN] 环境变量 {key}='{raw}' 无法转为 int，使用默认值 {default}")
+        print(f"[WARN] Env var {key}='{raw}' cannot convert to int, using default {default}")
         return int(default)
 
 
@@ -125,7 +125,7 @@ def _safe_float(key: str, default: str) -> float:
     try:
         return float(raw)
     except (ValueError, TypeError):
-        print(f"[WARN] 环境变量 {key}='{raw}' 无法转为 float，使用默认值 {default}")
+        print(f"[WARN] Env var {key}='{raw}' cannot convert to float, using default {default}")
         return float(default)
 
 
@@ -515,10 +515,10 @@ def load_persisted_overrides() -> dict:
         if data:
             changed = update_tunable_config(data)
             if changed:
-                print(f"[INFO] 加载了 {len(changed)} 个运行时配置覆盖: {list(changed.keys())}")
+                print(f"[INFO] Loaded {len(changed)} runtime config overrides: {list(changed.keys())}")
             return changed
     except Exception as e:
-        print(f"[WARN] 加载运行时配置覆盖失败: {e}")
+        print(f"[WARN] Failed to load runtime config overrides: {e}")
     return {}
 
 
