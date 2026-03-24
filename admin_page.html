@@ -887,8 +887,36 @@
         <!-- 统计 -->
         <div id="cv2Stats" style="font-size:12px;color:var(--text-sec);margin-bottom:8px"></div>
 
-        <!-- 滚动日志 -->
-        <div id="cv2Log" style="font-size:12px;max-height:300px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px;font-family:monospace"></div>
+        <!-- 筛选按钮 -->
+        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+          <button class="btn btn-outline cv2-filter-btn active" data-filter="all" onclick="cv2FilterTable('all')" style="font-size:11px;padding:3px 8px">全部</button>
+          <button class="btn btn-outline cv2-filter-btn" data-filter="pending" onclick="cv2FilterTable('pending')" style="font-size:11px;padding:3px 8px">等待中</button>
+          <button class="btn btn-outline cv2-filter-btn" data-filter="running" onclick="cv2FilterTable('running')" style="font-size:11px;padding:3px 8px">进行中</button>
+          <button class="btn btn-outline cv2-filter-btn" data-filter="ok" onclick="cv2FilterTable('ok')" style="font-size:11px;padding:3px 8px">成功</button>
+          <button class="btn btn-outline cv2-filter-btn" data-filter="failed" onclick="cv2FilterTable('failed')" style="font-size:11px;padding:3px 8px">失败</button>
+        </div>
+
+        <!-- 每链接进度表格 -->
+        <div id="cv2TableWrap" style="max-height:420px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg-card)">
+          <table id="cv2Table" style="width:100%;font-size:12px;border-collapse:collapse">
+            <thead style="position:sticky;top:0;background:var(--bg-card);z-index:1">
+              <tr style="border-bottom:2px solid var(--border);text-align:left">
+                <th style="padding:6px 8px;width:40px">#</th>
+                <th style="padding:6px 8px">标题 / URL</th>
+                <th style="padding:6px 8px;width:100px">状态</th>
+                <th style="padding:6px 8px;width:160px">阶段</th>
+                <th style="padding:6px 8px;width:100px">耗时</th>
+              </tr>
+            </thead>
+            <tbody id="cv2TableBody"></tbody>
+          </table>
+        </div>
+
+        <!-- 滚动日志（折叠） -->
+        <details style="margin-top:8px">
+          <summary style="font-size:12px;color:var(--text-sec);cursor:pointer;user-select:none">原始日志</summary>
+          <div id="cv2Log" style="font-size:12px;max-height:200px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px;font-family:monospace;margin-top:4px"></div>
+        </details>
       </div>
 
       <!-- 历史任务 -->
@@ -1896,6 +1924,9 @@
     let _cv2JobId = null;
     let _cv2Urls = null;
     let _cv2EventSource = null;
+    // 每链接状态追踪: { status, title, url, phase, error, startTime, endTime }
+    let _cv2Items = [];
+    let _cv2Filter = 'all';
 
     async function cv2Discover() {
       const url = document.getElementById('cv2Url').value.trim();
@@ -1941,6 +1972,176 @@
       document.getElementById('cv2StartBtn').style.display = 'none';
     }
 
+    /** 初始化每链接状态表格 */
+    function cv2InitTable(urls) {
+      _cv2Items = urls.map((u, i) => ({
+        index: i,
+        url: u.url || u,
+        title: u.title || '',
+        status: 'pending',  // pending | fetching | llm_processing | ok | failed
+        phase: '',
+        error: '',
+        startTime: null,
+        endTime: null,
+      }));
+      _cv2Filter = 'all';
+      cv2RenderTable();
+    }
+
+    /** 从已有任务数据恢复表格状态 */
+    function cv2RestoreTable(urls, results, completedSet, failedMap) {
+      _cv2Items = urls.map((u, i) => {
+        const r = results.find(x => x.index === i);
+        let status = 'pending';
+        let error = '';
+        let title = u.title || '';
+        if (completedSet.has(i)) { status = 'ok'; }
+        if (failedMap[i] !== undefined) { status = 'failed'; error = failedMap[i]; }
+        if (r) {
+          title = r.title || title;
+          error = r.error || error;
+        }
+        return { index: i, url: u.url || u, title, status, phase: '', error, startTime: null, endTime: null };
+      });
+      _cv2Filter = 'all';
+      cv2RenderTable();
+    }
+
+    function _cv2StatusBadge(status) {
+      const map = {
+        pending:        '<span style="color:var(--text-sec)">&#9679; 等待</span>',
+        fetching:       '<span style="color:#2196f3">&#9679; 抓取中</span>',
+        llm_processing: '<span style="color:#ff9800">&#9679; LLM 整理</span>',
+        ok:             '<span style="color:#4caf50">&#10003; 成功</span>',
+        failed:         '<span style="color:#f44336">&#10007; 失败</span>',
+      };
+      return map[status] || status;
+    }
+
+    function _cv2Duration(item) {
+      if (!item.startTime) return '';
+      const end = item.endTime || Date.now();
+      const sec = ((end - item.startTime) / 1000).toFixed(1);
+      return sec + 's';
+    }
+
+    function _cv2ShortUrl(url) {
+      try { return new URL(url).pathname.split('/').filter(Boolean).slice(-2).join('/'); }
+      catch { return url.substring(0, 40); }
+    }
+
+    /** 渲染/刷新表格 */
+    function cv2RenderTable() {
+      const tbody = document.getElementById('cv2TableBody');
+      if (!tbody) return;
+      const filtered = _cv2Filter === 'all' ? _cv2Items :
+        _cv2Filter === 'running' ? _cv2Items.filter(x => x.status === 'fetching' || x.status === 'llm_processing') :
+        _cv2Items.filter(x => x.status === _cv2Filter);
+
+      // 更新筛选按钮计数
+      const counts = { all: _cv2Items.length, pending: 0, running: 0, ok: 0, failed: 0 };
+      for (const it of _cv2Items) {
+        if (it.status === 'pending') counts.pending++;
+        else if (it.status === 'fetching' || it.status === 'llm_processing') counts.running++;
+        else if (it.status === 'ok') counts.ok++;
+        else if (it.status === 'failed') counts.failed++;
+      }
+      document.querySelectorAll('.cv2-filter-btn').forEach(btn => {
+        const f = btn.dataset.filter;
+        const c = counts[f] ?? 0;
+        const labels = { all: '全部', pending: '等待中', running: '进行中', ok: '成功', failed: '失败' };
+        btn.textContent = `${labels[f]} (${c})`;
+        btn.classList.toggle('active', f === _cv2Filter);
+        if (f === _cv2Filter) {
+          btn.style.background = 'var(--primary)';
+          btn.style.color = '#fff';
+          btn.style.borderColor = 'var(--primary)';
+        } else {
+          btn.style.background = '';
+          btn.style.color = '';
+          btn.style.borderColor = '';
+        }
+      });
+
+      tbody.innerHTML = filtered.map(it => {
+        const label = it.title || _cv2ShortUrl(it.url);
+        const errTip = it.error ? `<div style="color:#f44336;font-size:11px;margin-top:2px">${it.error}</div>` : '';
+        const rowBg = it.status === 'fetching' || it.status === 'llm_processing'
+          ? 'background:rgba(33,150,243,0.06)' : '';
+        const phase = it.status === 'fetching' ? '抓取网页…'
+          : it.status === 'llm_processing' ? 'LLM 整理中…'
+          : it.status === 'ok' ? '完成' : it.status === 'failed' ? '失败' : '—';
+        return `<tr style="border-bottom:1px solid var(--border);${rowBg}" data-cv2-idx="${it.index}">
+          <td style="padding:5px 8px;color:var(--text-sec)">${it.index + 1}</td>
+          <td style="padding:5px 8px;word-break:break-all">
+            <div>${label}</div>
+            <div style="font-size:11px;color:var(--text-sec)">${it.url}</div>
+            ${errTip}
+          </td>
+          <td style="padding:5px 8px">${_cv2StatusBadge(it.status)}</td>
+          <td style="padding:5px 8px;font-size:11px;color:var(--text-sec)">${phase}</td>
+          <td style="padding:5px 8px;font-size:11px;color:var(--text-sec)">${_cv2Duration(it)}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    /** 更新单行（不重绘整个表格，性能优化） */
+    function cv2UpdateRow(idx) {
+      const it = _cv2Items[idx];
+      if (!it) return;
+      // 如果当前筛选不匹配，完整重绘
+      if (_cv2Filter !== 'all') {
+        const match = _cv2Filter === 'running'
+          ? (it.status === 'fetching' || it.status === 'llm_processing')
+          : it.status === _cv2Filter;
+        cv2RenderTable();
+        return;
+      }
+      const row = document.querySelector(`tr[data-cv2-idx="${idx}"]`);
+      if (!row) { cv2RenderTable(); return; }
+      const label = it.title || _cv2ShortUrl(it.url);
+      const errTip = it.error ? `<div style="color:#f44336;font-size:11px;margin-top:2px">${it.error}</div>` : '';
+      const phase = it.status === 'fetching' ? '抓取网页…'
+        : it.status === 'llm_processing' ? 'LLM 整理中…'
+        : it.status === 'ok' ? '完成' : it.status === 'failed' ? '失败' : '—';
+      row.style.background = (it.status === 'fetching' || it.status === 'llm_processing')
+        ? 'rgba(33,150,243,0.06)' : '';
+      row.innerHTML = `
+        <td style="padding:5px 8px;color:var(--text-sec)">${it.index + 1}</td>
+        <td style="padding:5px 8px;word-break:break-all">
+          <div>${label}</div>
+          <div style="font-size:11px;color:var(--text-sec)">${it.url}</div>
+          ${errTip}
+        </td>
+        <td style="padding:5px 8px">${_cv2StatusBadge(it.status)}</td>
+        <td style="padding:5px 8px;font-size:11px;color:var(--text-sec)">${phase}</td>
+        <td style="padding:5px 8px;font-size:11px;color:var(--text-sec)">${_cv2Duration(it)}</td>`;
+      // 更新筛选按钮计数
+      const counts = { all: _cv2Items.length, pending: 0, running: 0, ok: 0, failed: 0 };
+      for (const x of _cv2Items) {
+        if (x.status === 'pending') counts.pending++;
+        else if (x.status === 'fetching' || x.status === 'llm_processing') counts.running++;
+        else if (x.status === 'ok') counts.ok++;
+        else if (x.status === 'failed') counts.failed++;
+      }
+      document.querySelectorAll('.cv2-filter-btn').forEach(btn => {
+        const f = btn.dataset.filter;
+        const labels = { all: '全部', pending: '等待中', running: '进行中', ok: '成功', failed: '失败' };
+        btn.textContent = `${labels[f]} (${counts[f] ?? 0})`;
+      });
+    }
+
+    /** 滚动表格到当前正在处理的行 */
+    function cv2ScrollToRow(idx) {
+      const row = document.querySelector(`tr[data-cv2-idx="${idx}"]`);
+      if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
+    function cv2FilterTable(filter) {
+      _cv2Filter = filter;
+      cv2RenderTable();
+    }
+
     async function cv2Start() {
       const url = document.getElementById('cv2Url').value.trim();
       const filter = document.getElementById('cv2Filter').value.trim();
@@ -1976,6 +2177,10 @@
         document.getElementById('cv2Log').innerHTML = '';
         cv2UpdateBar(0, d.total, 0, 0);
 
+        // 初始化表格
+        const tableUrls = _cv2Urls || Array.from({ length: d.total }, (_, i) => ({ url: `#${i + 1}`, title: '' }));
+        cv2InitTable(tableUrls);
+
         // 连接 SSE
         cv2ConnectSSE(d.job_id);
       } catch(e) {
@@ -2003,6 +2208,7 @@
 
     function cv2AppendLog(icon, text) {
       const log = document.getElementById('cv2Log');
+      if (!log) return;
       const line = document.createElement('div');
       line.style.cssText = 'margin:2px 0;word-break:break-all';
       line.innerHTML = `${icon} ${text}`;
@@ -2027,17 +2233,38 @@
             cv2UpdateBar(d.completed, d.total, d.failed, false);
           }
           else if (evt === 'progress') {
+            const idx = d.current;
             const phase = d.phase === 'llm_processing' ? 'LLM 整理中' : '抓取中';
             document.getElementById('cv2StatusText').textContent =
-              `#${d.current + 1}/${d.total} ${phase}: ${d.title || d.url.split('/').slice(-2).join('/')}`;
+              `#${idx + 1}/${d.total} ${phase}: ${d.title || d.url.split('/').slice(-2).join('/')}`;
             cv2UpdateBar(d.completed, d.total, 0, false);
+
+            // 更新表格行
+            if (_cv2Items[idx]) {
+              _cv2Items[idx].status = d.phase; // fetching or llm_processing
+              _cv2Items[idx].url = d.url || _cv2Items[idx].url;
+              if (d.title) _cv2Items[idx].title = d.title;
+              if (!_cv2Items[idx].startTime) _cv2Items[idx].startTime = Date.now();
+              cv2UpdateRow(idx);
+              cv2ScrollToRow(idx);
+            }
           }
           else if (evt === 'item_done') {
+            const idx = d.current;
             const icon = d.status === 'ok' ? '<span style="color:green">OK</span>' : '<span style="color:red">FAIL</span>';
             const title = d.title || d.url.split('/').slice(-2).join('/');
             const err = d.error ? ` — ${d.error}` : '';
-            cv2AppendLog(icon, `#${d.current + 1} ${title}${err}`);
+            cv2AppendLog(icon, `#${idx + 1} ${title}${err}`);
             cv2UpdateBar(d.completed, d.total, d.failed, false);
+
+            // 更新表格行
+            if (_cv2Items[idx]) {
+              _cv2Items[idx].status = d.status === 'ok' ? 'ok' : 'failed';
+              _cv2Items[idx].error = d.error || '';
+              if (d.title) _cv2Items[idx].title = d.title;
+              _cv2Items[idx].endTime = Date.now();
+              cv2UpdateRow(idx);
+            }
           }
           else if (evt === 'building_index') {
             cv2AppendLog('<span style="color:orange">BUILD</span>', '正在构建 FAISS 索引…');
@@ -2083,6 +2310,15 @@
       try {
         const r = await apiFetch(`/admin/crawl_v2/jobs/${jobId}`);
         const d = await r.json();
+
+        // 恢复表格（如果是从 SSE 断线恢复的）
+        if (d.urls && d.urls.length && (!_cv2Items.length || _cv2Items.length !== d.urls.length)) {
+          const completedSet = new Set(d.results.filter(x => x.status === 'ok').map(x => x.index));
+          const failedMap = {};
+          d.results.filter(x => x.status === 'failed').forEach(x => { failedMap[x.index] = x.error || ''; });
+          cv2RestoreTable(d.urls, d.results, completedSet, failedMap);
+        }
+
         if (d.status === 'done' || d.status === 'failed' || d.status === 'paused') {
           document.getElementById('cv2StatusText').innerHTML =
             d.status === 'done' ? `<span style="color:green">完成</span> — 成功 ${d.completed}/${d.total}` :
@@ -2094,6 +2330,9 @@
             document.getElementById('cv2ResumeBtn').style.display = '';
           }
           if (d.failed > 0) document.getElementById('cv2RetryBtn').style.display = '';
+        } else if (d.status === 'running') {
+          // 还在运行中，重新尝试 SSE
+          cv2ConnectSSE(jobId);
         }
       } catch(e) { /* ignore */ }
     }
@@ -2116,6 +2355,9 @@
           document.getElementById('cv2PauseBtn').style.display = '';
           document.getElementById('cv2ResumeBtn').style.display = 'none';
           document.getElementById('cv2RetryBtn').style.display = 'none';
+          // 将失败的项重置为 pending
+          _cv2Items.forEach(it => { if (it.status === 'failed') { it.status = 'pending'; it.error = ''; it.startTime = null; it.endTime = null; } });
+          cv2RenderTable();
           cv2ConnectSSE(_cv2JobId);
         } else { toast(d.detail, 4000); }
       } catch(e) { toast('恢复失败：' + e.message); }
@@ -2130,6 +2372,9 @@
           toast(d.detail);
           document.getElementById('cv2RetryBtn').style.display = 'none';
           document.getElementById('cv2PauseBtn').style.display = '';
+          // 将失败的项重置为 pending
+          _cv2Items.forEach(it => { if (it.status === 'failed') { it.status = 'pending'; it.error = ''; it.startTime = null; it.endTime = null; } });
+          cv2RenderTable();
           cv2ConnectSSE(_cv2JobId);
         } else { toast(d.detail, 4000); }
       } catch(e) { toast('重试失败：' + e.message); }
@@ -2156,6 +2401,7 @@
           html += `<td style="padding:4px">${j.completed}/${j.total}` + (j.failed > 0 ? ` (${j.failed} 失败)` : '') + `</td>`;
           html += `<td style="padding:4px">${ts}</td>`;
           html += `<td style="padding:4px">`;
+          html += `<button class="btn btn-outline" style="font-size:11px;padding:2px 6px" onclick="cv2ViewJob('${j.job_id}')">详情</button> `;
           if (j.status === 'paused' || j.status === 'failed') {
             html += `<button class="btn btn-outline" style="font-size:11px;padding:2px 6px" onclick="cv2ResumeJob('${j.job_id}')">继续</button> `;
           }
@@ -2169,6 +2415,54 @@
       } catch(e) { el.innerHTML = '加载失败：' + e.message; }
     }
 
+    /** 查看历史任务详情（加载完整链接列表） */
+    async function cv2ViewJob(jobId) {
+      _cv2JobId = jobId;
+      document.getElementById('cv2Progress').style.display = '';
+      document.getElementById('cv2PauseBtn').style.display = 'none';
+      document.getElementById('cv2ResumeBtn').style.display = 'none';
+      document.getElementById('cv2RetryBtn').style.display = 'none';
+      document.getElementById('cv2Log').innerHTML = '';
+
+      try {
+        const r = await apiFetch(`/admin/crawl_v2/jobs/${jobId}`);
+        const d = await r.json();
+        if (!d.ok) { toast(d.detail || '获取任务失败'); return; }
+
+        cv2UpdateBar(d.completed, d.total, d.failed, false);
+        const stLabel = { done: '完成', running: '运行中', paused: '已暂停', failed: '失败' }[d.status] || d.status;
+        const stColor = { done: 'green', running: 'blue', paused: 'orange', failed: 'red' }[d.status] || '';
+        document.getElementById('cv2StatusText').innerHTML =
+          `<span style="color:${stColor}">${stLabel}</span> — 成功 ${d.completed}/${d.total}` +
+          (d.failed > 0 ? ` · 失败 ${d.failed}` : '');
+
+        // 构建表格
+        const completedSet = new Set(d.results.filter(x => x.status === 'ok').map(x => x.index));
+        const failedMap = {};
+        d.results.filter(x => x.status === 'failed').forEach(x => { failedMap[x.index] = x.error || ''; });
+        cv2RestoreTable(d.urls, d.results, completedSet, failedMap);
+
+        // 恢复日志
+        for (const res of d.results) {
+          const icon = res.status === 'ok' ? '<span style="color:green">OK</span>' : '<span style="color:red">FAIL</span>';
+          const title = res.title || _cv2ShortUrl(res.url);
+          const err = res.error ? ` — ${res.error}` : '';
+          cv2AppendLog(icon, `#${res.index + 1} ${title}${err}`);
+        }
+
+        if (d.status === 'paused' || d.status === 'failed') {
+          document.getElementById('cv2ResumeBtn').style.display = '';
+        }
+        if (d.failed > 0) {
+          document.getElementById('cv2RetryBtn').style.display = '';
+        }
+        if (d.status === 'running') {
+          document.getElementById('cv2PauseBtn').style.display = '';
+          cv2ConnectSSE(jobId);
+        }
+      } catch(e) { toast('获取任务详情失败：' + e.message); }
+    }
+
     function cv2WatchJob(jobId) {
       _cv2JobId = jobId;
       document.getElementById('cv2Progress').style.display = '';
@@ -2176,7 +2470,8 @@
       document.getElementById('cv2ResumeBtn').style.display = 'none';
       document.getElementById('cv2RetryBtn').style.display = 'none';
       document.getElementById('cv2Log').innerHTML = '';
-      cv2ConnectSSE(jobId);
+      // 先加载已有状态，再连接 SSE
+      cv2ViewJob(jobId);
     }
 
     async function cv2ResumeJob(jobId) {
@@ -2186,6 +2481,20 @@
       document.getElementById('cv2ResumeBtn').style.display = 'none';
       document.getElementById('cv2RetryBtn').style.display = 'none';
       document.getElementById('cv2Log').innerHTML = '';
+
+      // 先加载已有数据填充表格
+      try {
+        const jr = await apiFetch(`/admin/crawl_v2/jobs/${jobId}`);
+        const jd = await jr.json();
+        if (jd.ok && jd.urls) {
+          const completedSet = new Set(jd.results.filter(x => x.status === 'ok').map(x => x.index));
+          const failedMap = {};
+          jd.results.filter(x => x.status === 'failed').forEach(x => { failedMap[x.index] = x.error || ''; });
+          cv2RestoreTable(jd.urls, jd.results, completedSet, failedMap);
+          cv2UpdateBar(jd.completed, jd.total, jd.failed, false);
+        }
+      } catch(e) { /* proceed anyway */ }
+
       try {
         const r = await apiFetch(`/admin/crawl_v2/jobs/${jobId}/resume`, { method: 'POST' });
         const d = await r.json();
