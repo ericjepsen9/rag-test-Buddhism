@@ -23,10 +23,12 @@
 支持的文档格式：纯文本(.txt)、Markdown(.md)、PDF(.pdf)
 """
 
+import logging
 import os
 import sys
 import argparse
 import json
+import time
 from pathlib import Path
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
@@ -41,6 +43,8 @@ from rag_runtime_config import (
     KNOWLEDGE_DIR, OPENAI_MODEL, OPENAI_API_BASE,
     SHARED_ENTITY_DIRS,
 )
+
+logger = logging.getLogger("import_knowledge")
 
 try:
     import fcntl
@@ -145,20 +149,40 @@ def _read_input_file(path: str) -> str:
 
 
 def _llm_call(client, system_prompt: str, user_prompt: str,
-              max_tokens: int = 4000) -> str:
-    """调用 LLM API"""
-    resp = client.chat.completions.create(
-        model=_get_knowledge_model(),
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.2,
-        max_tokens=max_tokens,
-    )
-    if not resp.choices:
-        return ""
-    return (resp.choices[0].message.content or "").strip()
+              max_tokens: int = 4000,
+              timeout: int = 120, retries: int = 2) -> str:
+    """调用 LLM API（带超时和重试）。
+
+    Parameters
+    ----------
+    timeout : int
+        单次请求超时秒数，默认 120 秒。
+    retries : int
+        失败后重试次数，默认 2 次（共最多 3 次调用）。
+    """
+    last_err: Exception | None = None
+    for attempt in range(1 + retries):
+        try:
+            resp = client.chat.completions.create(
+                model=_get_knowledge_model(),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.2,
+                max_tokens=max_tokens,
+                timeout=timeout,
+            )
+            if not resp.choices:
+                return ""
+            return (resp.choices[0].message.content or "").strip()
+        except Exception as e:
+            last_err = e
+            logger.warning("_llm_call attempt %d/%d failed: %s",
+                           attempt + 1, 1 + retries, e)
+            if attempt < retries:
+                time.sleep(2 ** attempt)  # 1s, 2s 指数退避
+    raise RuntimeError(f"LLM 调用失败（已重试 {retries} 次）: {last_err}")
 
 
 # ============================================================
