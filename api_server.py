@@ -3981,10 +3981,17 @@ def crawl_v2_get_job(request: Request, job_id: str):
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="任务不存在")
 
+    # 检测孤立的 running 状态（线程已不存在）
+    status = job.status
+    if status == "running" and not get_active_job(job_id):
+        status = "interrupted"
+        job.status = "interrupted"
+        job.save()
+
     return {
         "ok": True,
         "job_id": job.job_id,
-        "status": job.status,
+        "status": status,
         "total": len(job.urls),
         "completed": len(job.completed),
         "failed": len(job.failed),
@@ -4076,8 +4083,17 @@ def crawl_v2_resume(request: Request, job_id: str):
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="任务不存在")
 
-    if job.status == "running":
-        return {"ok": False, "detail": "任务正在运行中"}
+    # 只有真正在活跃线程中运行的任务才拒绝，interrupted 状态允许恢复
+    if job.status == "running" and get_active_job(job_id) is job:
+        # 再次确认线程确实在运行（检查是否有对应线程存活）
+        import threading as _th
+        thread_alive = any(
+            t.name in (f"crawl_v2_{job_id}", f"crawl_v2_resume_{job_id}")
+            and t.is_alive()
+            for t in _th.enumerate()
+        )
+        if thread_alive:
+            return {"ok": False, "detail": "任务正在运行中"}
 
     # 重置暂停状态
     job._stop_flag = False
@@ -4115,7 +4131,7 @@ def crawl_v2_retry_failed(request: Request, job_id: str):
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="任务不存在")
 
-    if job.status == "running":
+    if job.status == "running" and get_active_job(job_id):
         return {"ok": False, "detail": "任务正在运行中"}
 
     if not job.failed:

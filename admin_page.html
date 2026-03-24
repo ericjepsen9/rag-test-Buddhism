@@ -2049,7 +2049,7 @@
       document.getElementById('cv2StartBtn').style.display = 'none';
     }
 
-    /** 统一控制按钮显隐。state: running | paused | done | failed */
+    /** 统一控制按钮显隐。state: running | paused | done | failed | interrupted */
     function cv2SetButtons(state, hasFailed) {
       const pause   = document.getElementById('cv2PauseBtn');
       const resume  = document.getElementById('cv2ResumeBtn');
@@ -2058,10 +2058,10 @@
       const restart = document.getElementById('cv2RestartBtn');
 
       pause.style.display   = state === 'running' ? '' : 'none';
-      resume.style.display  = state === 'paused' ? '' : 'none';
+      resume.style.display  = (state === 'paused' || state === 'interrupted') ? '' : 'none';
       stop.style.display    = (state === 'running' || state === 'paused') ? '' : 'none';
       retry.style.display   = (state !== 'running' && hasFailed) ? '' : 'none';
-      restart.style.display = (state === 'done' || state === 'failed' || state === 'paused') ? '' : 'none';
+      restart.style.display = (state === 'done' || state === 'failed' || state === 'paused' || state === 'interrupted') ? '' : 'none';
     }
 
     /** 初始化每链接状态表格 */
@@ -2604,6 +2604,7 @@
         for (const j of d.jobs) {
           const st = { done: '<span style="color:green">完成</span>', running: '<span style="color:blue">运行中</span>',
                        paused: '<span style="color:orange">暂停</span>', failed: '<span style="color:red">失败</span>',
+                       interrupted: '<span style="color:#e65100">已中断</span>',
                        pending: '等待' }[j.status] || j.status;
           const ts = j.created_at ? new Date(j.created_at * 1000).toLocaleString() : '';
           html += `<tr style="border-bottom:1px solid var(--border)">`;
@@ -2616,10 +2617,10 @@
           if (j.status === 'running') {
             html += `<button class="btn btn-outline" style="font-size:11px;padding:2px 6px" onclick="cv2WatchJob('${j.job_id}')">查看进度</button> `;
           }
-          if (j.status === 'paused') {
+          if (j.status === 'paused' || j.status === 'interrupted') {
             html += `<button class="btn btn-outline" style="font-size:11px;padding:2px 6px" onclick="cv2ResumeJob('${j.job_id}')">继续</button> `;
           }
-          if (j.status === 'done' || j.status === 'failed' || j.status === 'paused') {
+          if (j.status === 'done' || j.status === 'failed' || j.status === 'paused' || j.status === 'interrupted') {
             html += `<button class="btn btn-outline" style="font-size:11px;padding:2px 6px" onclick="cv2RestartJob('${j.job_id}')">重新开始</button> `;
           }
           if (j.failed > 0 && j.status !== 'running') {
@@ -2644,8 +2645,8 @@
         if (!d.ok) { toast(d.detail || '获取任务失败'); return; }
 
         cv2UpdateBar(d.completed, d.total, d.failed, false);
-        const stLabel = { done: '完成', running: '运行中', paused: '已暂停', failed: '失败' }[d.status] || d.status;
-        const stColor = { done: 'green', running: 'blue', paused: 'orange', failed: 'red' }[d.status] || '';
+        const stLabel = { done: '完成', running: '运行中', paused: '已暂停', failed: '失败', interrupted: '已中断' }[d.status] || d.status;
+        const stColor = { done: 'green', running: 'blue', paused: 'orange', failed: 'red', interrupted: '#e65100' }[d.status] || '';
         document.getElementById('cv2StatusText').innerHTML =
           `<span style="color:${stColor}">${stLabel}</span> — 成功 ${d.completed}/${d.total}` +
           (d.failed > 0 ? ` · 失败 ${d.failed}` : '');

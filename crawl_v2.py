@@ -211,7 +211,7 @@ class CrawlJob:
 
     def __init__(self, job_id: str = None):
         self.job_id = job_id or f"cj_{int(time.time())}_{uuid.uuid4().hex[:6]}"
-        self.status = "pending"  # pending | running | paused | done | failed
+        self.status = "pending"  # pending | running | paused | done | failed | interrupted
         self.start_url = ""
         self.url_must_contain = ""
         self.entity_type = "doctrine"
@@ -287,9 +287,22 @@ class CrawlJob:
         for f in sorted(DATA_DIR.glob("cj_*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
+                status = data["status"]
+                job_id = data["job_id"]
+                # 如果状态为 running 但不在活跃任务中，说明服务重启导致线程丢失
+                if status == "running" and job_id not in _active_jobs:
+                    status = "interrupted"
+                    # 同时修正持久化文件，避免反复判断
+                    data["status"] = "interrupted"
+                    try:
+                        tmp = f.with_suffix(".json.tmp")
+                        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+                        os.replace(str(tmp), str(f))
+                    except Exception:
+                        pass
                 jobs.append({
-                    "job_id": data["job_id"],
-                    "status": data["status"],
+                    "job_id": job_id,
+                    "status": status,
                     "start_url": data["start_url"],
                     "total": len(data.get("urls", [])),
                     "completed": len(data.get("completed", [])),
