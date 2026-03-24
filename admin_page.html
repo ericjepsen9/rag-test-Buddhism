@@ -839,6 +839,7 @@
               <option value="doctrine">doctrine — 教义</option>
               <option value="scripture">scripture — 经典</option>
               <option value="lecture">lecture — 论典讲记</option>
+              <option value="talk">talk — 法师开示/演讲</option>
               <option value="practice">practice — 修行</option>
               <option value="master">master — 人物</option>
               <option value="history">history — 历史</option>
@@ -1020,6 +1021,8 @@
               <option value="practice">practice — 修行方法</option>
               <option value="sect">sect — 宗派</option>
               <option value="master">master — 高僧大德</option>
+              <option value="lecture">lecture — 论典讲记</option>
+              <option value="talk">talk — 法师开示/演讲</option>
             </optgroup>
             <optgroup label="单文件（无需 ID）">
               <option value="general">general — 通用知识</option>
@@ -2215,8 +2218,19 @@
     }
 
     function cv2TypeChanged() {
-      const isLecture = document.getElementById('cv2Type').value === 'lecture';
-      document.getElementById('cv2TreatiseNameBox').style.display = isLecture ? '' : 'none';
+      const type = document.getElementById('cv2Type').value;
+      const needsName = type === 'lecture' || type === 'talk';
+      const box = document.getElementById('cv2TreatiseNameBox');
+      box.style.display = needsName ? '' : 'none';
+      // 更新标签文字
+      const label = box.querySelector('label');
+      if (type === 'talk') {
+        label.innerHTML = '开示/专题名称 <span style="color:red">*</span>';
+        document.getElementById('cv2TreatiseName').placeholder = '如：佛法与生活、安忍开示';
+      } else {
+        label.innerHTML = '论典名称 <span style="color:red">*</span>';
+        document.getElementById('cv2TreatiseName').placeholder = '如：入行论';
+      }
     }
 
     async function cv2Start() {
@@ -2226,10 +2240,13 @@
       const delay = parseFloat(document.getElementById('cv2Delay').value) || 2;
       if (!url) { toast('请输入起始页 URL'); return; }
 
-      // lecture 类型必须填写论典名称
+      // lecture/talk 类型必须填写名称
       const treatiseName = (document.getElementById('cv2TreatiseName').value || '').trim();
       if (type === 'lecture' && !treatiseName) {
         toast('lecture 类型必须填写论典名称'); return;
+      }
+      if (type === 'talk' && !treatiseName) {
+        toast('talk 类型必须填写开示/专题名称'); return;
       }
 
       const payload = { start_url: url, url_must_contain: filter, type, delay, build: true };
