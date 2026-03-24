@@ -494,11 +494,7 @@ def ask(request: Request, req: AskRequest):
             latency_ms = int((time.monotonic() - t0) * 1000)
             log_error("api_ask_timeout", f"请求超时 ({_ASK_TIMEOUT_SEC}s)",
                       meta={"question": question[:200], "latency_ms": latency_ms})
-            return JSONResponse(
-                status_code=504,
-                content={"ok": False, "answer": f"查询处理超时（{_ASK_TIMEOUT_SEC}秒），请简化问题后重试",
-                         "media": [], "latency_ms": latency_ms},
-            )
+            return AskResponse(ok=False, answer=f"查询处理超时（{_ASK_TIMEOUT_SEC}秒），请简化问题后重试")
         latency_ms = int((time.monotonic() - t0) * 1000)
         route = _ctx.get("route", "")
         product_id = _ctx.get("product", "")
@@ -590,15 +586,20 @@ def ask(request: Request, req: AskRequest):
             pass
         log_error("api_ask", repr(e), meta=error_meta)
         # 根据异常类型返回更具体的错误信息
+        err_str = str(e).lower()
         err_msg = "接口执行异常，请稍后重试"
-        if "model" in str(e).lower() or "sentence" in str(e).lower():
+        if "model" in err_str or "sentence" in err_str:
             err_msg = "嵌入模型未加载，请等待模型初始化完成后重试"
-        elif "openai" in str(e).lower() or "api_key" in str(e).lower():
+        elif "openai" in err_str or "api_key" in err_str:
             err_msg = "LLM 服务未配置，请先在管理后台配置 LLM 模型"
-        return JSONResponse(
-            status_code=500,
-            content={"ok": False, "answer": err_msg,
-                     "media": [], "latency_ms": latency_ms},
+        elif "connect" in err_str or "connection" in err_str or "refused" in err_str:
+            err_msg = "LLM 服务连接失败，请检查 API Base 地址和 LLM 服务是否正在运行"
+        # 附加具体错误类型（便于管理员排查）
+        err_detail = f"{type(e).__name__}: {str(e)[:200]}"
+        logger.warning(f"ask error: {err_detail}")
+        return AskResponse(
+            ok=False,
+            answer=err_msg,
         )
 
 

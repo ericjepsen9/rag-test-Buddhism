@@ -726,6 +726,13 @@ def start_llm_service(api_key: str = "") -> dict:
         _os.environ["OPENAI_API_KEY"] = api_key
     _mod.USE_OPENAI = True
     try:
+        # 重置所有 LLM client 缓存，确保使用最新配置
+        try:
+            from llm_client import reset_all_clients, sync_from_legacy
+            reset_all_clients()
+            sync_from_legacy()
+        except Exception:
+            pass
         import rag_answer
         with rag_answer._openai_client_lock:
             rag_answer._openai_client = None
@@ -733,11 +740,6 @@ def start_llm_service(api_key: str = "") -> dict:
         client = rag_answer._get_openai_client()
         if client is None:
             return {"ok": False, "error": "LLM client 创建失败，请检查 API Key 和 API Base"}
-        try:
-            from llm_client import sync_from_legacy
-            sync_from_legacy()
-        except Exception:
-            pass
         _persist_overrides({"use_openai": True})
         return {"ok": True, "message": f"LLM 服务已启动 (model={OPENAI_MODEL})"}
     except Exception as e:
@@ -755,7 +757,8 @@ def stop_llm_service() -> dict:
     except Exception:
         pass
     try:
-        from llm_client import sync_from_legacy
+        from llm_client import reset_all_clients, sync_from_legacy
+        reset_all_clients()
         sync_from_legacy()
     except Exception:
         pass
