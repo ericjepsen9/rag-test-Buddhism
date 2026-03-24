@@ -403,6 +403,12 @@ class CrawlJob:
                     else:
                         entity_id = f"{treatise}/{_title_to_id(fetched['title'])}"
                     logger.info("讲记导入: %s (课次=%d)", entity_id, lesson_num)
+                # talk 类型：使用专题名/标题作为 entity_id
+                elif entity_type == "talk":
+                    talk_name = self.treatise_name or _title_to_id(fetched["title"]).split("_")[0]
+                    title_id = _title_to_id(fetched["title"])
+                    entity_id = f"{talk_name}/{title_id}"
+                    logger.info("开示导入: %s", entity_id)
                 else:
                     entity_id = _title_to_id(fetched["title"])
 
@@ -413,7 +419,7 @@ class CrawlJob:
                 result = _generate_knowledge(client, fetched["content"], entity_type, entity_id)
 
                 entry["files_generated"] = {}
-                for key in ("main_txt", "faq_txt", "alias_txt"):
+                for key in ("main_txt", "faq_txt", "life_faq_txt", "alias_txt"):
                     if result.get(key):
                         entry["files_generated"][key.replace("_txt", ".txt")] = len(result[key])
 

@@ -3890,9 +3890,11 @@ def crawl_v2_start(request: Request, req: CrawlV2StartRequest):
 
     from crawl_v2 import CrawlJob, SiteAdapter, set_active_job
 
-    # lecture 类型必须提供论典名
+    # lecture/talk 类型必须提供名称
     if req.type == "lecture" and not req.treatise_name.strip():
         raise HTTPException(status_code=400, detail="lecture 类型必须填写论典名称（treatise_name）")
+    if req.type == "talk" and not req.treatise_name.strip():
+        raise HTTPException(status_code=400, detail="talk 类型必须填写开示/专题名称（treatise_name）")
 
     job = CrawlJob()
     job.start_url = req.start_url
