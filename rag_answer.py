@@ -104,7 +104,7 @@ _thread_local = threading.local()
 # Buddhist domain signal rules for detect_route disambiguation
 # ---------------------------------------------------------------------------
 _ROUTE_ORDER = [
-    "scripture", "doctrine", "practice", "sect", "concept",
+    "life", "scripture", "doctrine", "practice", "sect", "concept",
     "history", "ritual", "basic",
 ]
 _ROUTE_ORDER_IDX = {r: i for i, r in enumerate(_ROUTE_ORDER)}
@@ -124,6 +124,12 @@ _HISTORY_SIGNALS = ("历史", "朝代", "传入", "发展", "祖师", "高僧",
                     "达摩", "玄奘", "鸠摩罗什", "佛教史")
 _RITUAL_SIGNALS = ("仪轨", "法会", "供养", "礼拜", "早课", "晚课",
                    "回向", "发愿", "忏悔", "法事", "放生")
+_LIFE_SIGNALS = ("生活", "日常", "工作", "职场", "压力", "焦虑", "情绪", "脾气",
+                 "愤怒", "生气", "发火", "家庭", "婚姻", "夫妻", "孩子", "父母",
+                 "人际关系", "同事", "吵架", "矛盾", "误解", "冤枉", "委屈",
+                 "内疚", "自责", "抑郁", "迷茫", "躺平", "没有动力", "拖延",
+                 "手机", "上瘾", "注意力", "分心", "怎么办", "怎么面对",
+                 "死亡", "去世", "离世", "临终", "换位思考", "同理心")
 
 # Chitchat regex patterns — 使用非锚定模式支持句中匹配
 _RE_CHAT_GREETING = re.compile(r"(你好|嗨|hi|hello|hey|您好|在吗|在不在)", re.IGNORECASE)
@@ -536,7 +542,7 @@ def detect_route(question: str) -> str:
         "doctrine": _DOCTRINE_SIGNALS, "practice": _PRACTICE_SIGNALS,
         "scripture": _SCRIPTURE_SIGNALS, "sect": _SECT_SIGNALS,
         "concept": _CONCEPT_SIGNALS, "history": _HISTORY_SIGNALS,
-        "ritual": _RITUAL_SIGNALS,
+        "ritual": _RITUAL_SIGNALS, "life": _LIFE_SIGNALS,
     }
     # 跟踪每个信号词被哪些路由使用，避免同一信号同时加分多个路由
     signal_used_by: Dict[str, str] = {}
@@ -575,6 +581,19 @@ def detect_route(question: str) -> str:
     if "scripture" in scores and "doctrine" in scores:
         if any(s in q for s in ("经", "论", "律", "第几品", "哪一品", "原文")):
             scores["scripture"] += 4.0
+
+    # life vs practice disambiguation: daily life context -> life route
+    if "life" in scores and "practice" in scores:
+        if any(s in q for s in ("怎么办", "怎么面对", "怎么处理", "怎么调节", "怎么化解",
+                                 "生活", "日常", "工作", "家庭", "同事", "压力", "焦虑")):
+            scores["life"] += 4.0
+        if any(s in q for s in ("怎么修", "如何修", "修行方法", "法门", "次第")):
+            scores["practice"] += 4.0
+
+    # life vs concept disambiguation: asking about emotional/practical advice -> life
+    if "life" in scores and "concept" in scores:
+        if any(s in q for s in ("怎么办", "怎么面对", "怎么处理", "怎么调节")):
+            scores["life"] += 4.0
 
     # Multi-entity mention -> sect comparison
     mentioned_projects = detect_terms(q, PROJECT_ALIASES)
@@ -1107,14 +1126,21 @@ def _get_openai_client():
 def llm_generate_answer(question: str, context: str, route: str, mode: str,
                         history_summary: str = "",
                         history_pairs: list = None,
-                        low_confidence: bool = False) -> str:
+                        low_confidence: bool = False,
+                        user_level: str = "") -> str:
     """RAG: use retrieved context with LLM to generate answer.
-    Supports conversation history for multi-turn dialogue."""
+    Supports conversation history for multi-turn dialogue.
+    user_level: 'beginner' or 'experienced' — adjusts tone and depth."""
     client = _get_openai_client()
     if client is None:
         return ""
     if not context.strip():
         return ""
+
+    # 确定用户级别
+    if not user_level:
+        from rag_runtime_config import DEFAULT_USER_LEVEL
+        user_level = DEFAULT_USER_LEVEL
 
     length_hint = "控制在300-500字，重点突出、层次清晰" if mode == "brief" else "详细全面，可适当展开，800字以内"
     route_hints = {
@@ -1126,6 +1152,7 @@ def llm_generate_answer(question: str, context: str, route: str, mode: str,
         "concept": "详细解释佛教概念的含义、出处和在修行中的意义。",
         "history": "说明佛教历史事件、人物和发展脉络。",
         "ritual": "说明仪轨的具体步骤、意义和注意事项。",
+        "life": "结合日常生活场景给出具体可操作的建议，引用相关颂词或教言并用通俗语言解读。",
     }
 
     history_block = ""
@@ -1146,6 +1173,26 @@ def llm_generate_answer(question: str, context: str, route: str, mode: str,
             f"   对话脉络：「{history_summary}」\n"
         )
 
+    # 用户级别提示
+    if user_level == "experienced":
+        level_hint = (
+            "\n## 用户级别：有经验的佛教修行者\n"
+            "- 可以直接使用佛学专业术语（如空性、缘起、中观、唯识等），无需逐一解释基础概念\n"
+            "- 可以引用梵文/巴利文术语和原典原文\n"
+            "- 讨论可以深入教理层面，涉及不同宗派观点的辨析\n"
+            "- 修行建议可以更具体、更深入，包含具体的观修方法和次第\n"
+            "- 语气可以更为直接精炼\n"
+        )
+    else:
+        level_hint = (
+            "\n## 用户级别：初学者\n"
+            "- 使用通俗易懂的语言，避免过多专业术语\n"
+            "- 遇到佛学术语时，请用括号简要解释（如：般若（智慧）、嗔恨（愤怒）等）\n"
+            "- 多用生活中的比喻和例子帮助理解\n"
+            "- 修行建议要简单可操作，适合日常生活中实践\n"
+            "- 语气亲切温和，像一位有耐心的老师\n"
+        )
+
     system_prompt = (
         "你是一个佛教知识问答助手。请基于【参考资料】回答用户的问题。\n\n"
         "## 回答规则\n"
@@ -1157,6 +1204,7 @@ def llm_generate_answer(question: str, context: str, route: str, mode: str,
         "请直接说明「现有资料库未收录该主题的相关内容」，不要强行从不相关资料中拼凑答案\n"
         "4. 回答要条理清晰，使用分点或分段组织\n"
         "5. 如参考资料中有经典原文，引用时用「」括起\n\n"
+        f"{level_hint}\n"
         "## 来源标注\n"
         "- 参考资料标记为 [来源1：...]、[来源2：...] 等\n"
         "- 在回答中引用具体内容后，用 [来源N] 标注，N 为对应编号\n"
@@ -1332,7 +1380,7 @@ _SPECIAL_INTENT_REPLIES = {
 
 
 def answer_one(question: str, mode: str, rewrite: dict = None,
-               route_override: str = "") -> str:
+               route_override: str = "", user_level: str = "") -> str:
     product = detect_product(question)
     route = route_override or detect_route(question)
     _thread_local.route = route
@@ -1452,6 +1500,7 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
                 history_summary=history_summary,
                 history_pairs=history_pairs,
                 low_confidence=low_confidence,
+                user_level=user_level,
             )
             # Validate: not too short, not echo of question
             if llm_answer and len(llm_answer.strip()) >= 15:
@@ -1583,8 +1632,9 @@ def _detect_route_with_history(question: str, rewrite: dict) -> str:
 
 
 def answer_question(question: str, mode: str, history: list = None,
-                    rewrite: dict = None) -> str:
-    """Main entry point: answer a question, return string."""
+                    rewrite: dict = None, user_level: str = "") -> str:
+    """Main entry point: answer a question, return string.
+    user_level: 'beginner' or 'experienced' — adjusts answer tone and depth."""
     q = (question or "").strip()
     if not q:
         return "请输入您想了解的佛教问题。"
@@ -1635,7 +1685,7 @@ def answer_question(question: str, mode: str, history: list = None,
     if len(sub_tasks) > 1:
         futures = []
         for subq, sub_rewrite, route in sub_tasks:
-            fut = _search_pool.submit(answer_one, subq, mode, sub_rewrite, route)
+            fut = _search_pool.submit(answer_one, subq, mode, sub_rewrite, route, user_level)
             futures.append(fut)
         for fut in futures:
             try:
@@ -1648,7 +1698,7 @@ def answer_question(question: str, mode: str, history: list = None,
     else:
         for subq, sub_rewrite, route in sub_tasks:
             try:
-                ans = answer_one(subq, mode, rewrite=sub_rewrite, route_override=route)
+                ans = answer_one(subq, mode, rewrite=sub_rewrite, route_override=route, user_level=user_level)
             except Exception as e:
                 log_error("answer_one", repr(e), meta={"question": subq})
                 ans = ""

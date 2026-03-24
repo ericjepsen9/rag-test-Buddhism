@@ -269,6 +269,7 @@ class HistoryItem(BaseModel):
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=MAX_QUESTION_LEN)
     mode: Literal["brief", "full"] = "brief"
+    user_level: Literal["beginner", "experienced"] = "beginner"
     history: List[HistoryItem] = Field(default_factory=list, max_length=10)
     debug: bool = False
 
@@ -470,9 +471,9 @@ def ask(request: Request, req: AskRequest):
             raise HTTPException(status_code=400, detail="问题不能为空")
         logger.debug(f"ask: question={question[:200]}")
 
-        # 响应缓存：相同 question+mode+history 组合在 TTL 内直接返回
+        # 响应缓存：相同 question+mode+user_level+history 组合在 TTL 内直接返回
         history_hash = hashlib.md5(str(req.history or []).encode()).hexdigest()[:8] if req.history else ""
-        cache_key = f"{question}|{req.mode}|{history_hash}"
+        cache_key = f"{question}|{req.mode}|{req.user_level}|{history_hash}"
         cached = _response_cache_get(cache_key)
         if cached is not None and not req.debug:
             cached_resp = cached.copy()
@@ -507,7 +508,7 @@ def ask(request: Request, req: AskRequest):
 
         def _run_with_trace():
             set_trace_id(_tid)  # 传播 trace_id 到工作线程
-            ans = answer_question(question, req.mode, history=history, rewrite=rw)
+            ans = answer_question(question, req.mode, history=history, rewrite=rw, user_level=req.user_level)
             _ctx["route"], _ctx["product"] = get_last_route_product()
             return ans
 
@@ -536,6 +537,7 @@ def ask(request: Request, req: AskRequest):
                 "resolved_question": resolved_q if rw["context_resolved"] else None,
                 "search_query": rw.get("search_query", ""),
                 "mode": req.mode,
+                "user_level": req.user_level,
                 "route": route,
                 "product": product_id,
                 "method": None,

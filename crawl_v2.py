@@ -438,6 +438,8 @@ class CrawlJob:
                             _atomic_write(ov_dir / f"faq_{treatise}.txt", overview["faq_txt"])
                         if overview.get("alias_txt"):
                             _atomic_write(ov_dir / "alias.txt", overview["alias_txt"])
+                        if overview.get("life_faq_txt"):
+                            _atomic_write(ov_dir / f"faq_life_{treatise}.txt", overview["life_faq_txt"])
                         logger.info("论典总览已生成: %s", ov_dir)
                     except Exception as e:
                         logger.warning("生成论典总览失败: %s", e, exc_info=True)

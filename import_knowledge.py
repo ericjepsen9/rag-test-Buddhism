@@ -315,6 +315,8 @@ _SYSTEM_LECTURE = """你是佛教讲记整理专家。用户会提供一堂课�
 {
   "main_txt": "格式化整理后的完整讲记",
   "faq_txt": "从本课内容提取的延伸FAQ问答对（3-5对）",
+  "life_faq_txt": "从本课内容提取的佛法与生活应用FAQ问答对（3-5对）",
+  "alias_txt": "本课核心术语的别名和关键词",
   "lesson_meta": {
     "lesson_number": 0,
     "pin_name": "对应品名（如 '第一品 菩提心利益'，未提及则留空）",
@@ -402,6 +404,33 @@ faq_txt 整理规则：
    - 本课引用的其他经论相关问题
 4. 回答要基于讲记内容，具体完整，100-300 字
 
+life_faq_txt 整理规则（佛法与生活应用）：
+1. 根据本课讲解的颂词和教理，提取 3-5 个与日常生活场景相关的FAQ问答对
+2. 格式：【Q】问题\\n【A】回答\\n\\n（每对之间空一行）
+3. 问题必须用**生活化的语言**描述具体场景，而非佛学术语，例如：
+   - ✅ "被同事误解或冤枉时怎么调节情绪？"（而非"如何修安忍？"）
+   - ✅ "工作没有动力、总想躺平怎么办？"（而非"如何修精进？"）
+   - ✅ "跟家人吵架后心里放不下怎么办？"（而非"如何对治嗔恨？"）
+   - ✅ "总是刷手机停不下来怎么办？"（而非"如何修正知正念？"）
+4. 回答要包含三个部分：
+   a. 引用本课相关颂词（用「」括起）
+   b. 用通俗语言解读这个颂词如何指导该生活场景
+   c. 给出1-2个具体可操作的做法
+5. 回答语气亲切、实用，面向普通人而非专业修行者，150-300字
+6. 如果本课内容较偏理论、确实难以关联生活场景，可以少于3对，但不要强行编造
+
+alias_txt 整理规则：
+1. 每行一组同义词（空格分隔），将佛学术语与生活化表述关联
+2. 包含本课核心术语的：正式名、口语表达、生活场景关联词
+3. 示例：
+   - 安忍 忍辱 忍耐 忍受 耐心 情绪管理
+   - 嗔恨 嗔恚 愤怒 生气 发火 发脾气
+   - 精进 努力 勤奋 上进 动力 不懈怠
+   - 正知正念 觉察 专注 注意力 自我觉察
+   - 自他交换 换位思考 将心比心 同理心
+4. 不超过15行
+5. 只提取本课实际涉及的术语，不要泛化
+
 禁止事项：
 - 禁止将讲记压缩为摘要或概述
 - 禁止用 "在此处请填入..." 等占位符替代实际内容
@@ -417,6 +446,7 @@ _SYSTEM_LECTURE_OVERVIEW = """你是佛教知识整理专家。用户会提供�
 {
   "main_txt": "论典总体介绍",
   "faq_txt": "FAQ 问答对",
+  "life_faq_txt": "佛法与生活应用FAQ问答对",
   "alias_txt": "别名和关键词"
 }
 
@@ -428,6 +458,7 @@ main_txt 整理规则：
    四、核心思想
    五、讲解者/传承（讲解的法师、传承背景）
    六、学习建议（学习次第、注意事项）
+   七、在日常生活中的应用（各品教义如何指导日常生活，概述）
 2. 内容限于原文明确提及的信息，不要编造
 
 faq_txt 整理规则：
@@ -442,10 +473,32 @@ faq_txt 整理规则：
    - 学习指导类（"学习入行论有什么次第？"）
 4. 回答要具体，50-300 字
 
+life_faq_txt 整理规则（佛法与生活应用）：
+1. 生成 15-25 个与日常生活场景相关的FAQ问答对
+2. 格式：【Q】问题\\n【A】回答\\n\\n（每对之间空一行）
+3. 覆盖论典各品对应的生活场景：
+   - 菩提心与生活（"普通人怎么在生活中发菩提心？"）
+   - 忏悔与心理（"做错事后总是自责内疚怎么办？"）
+   - 安忍与情绪（"被人误解冤枉时怎么调节情绪？"、"跟家人吵架后心里放不下怎么办？"）
+   - 精进与动力（"工作学习没有动力总想躺平怎么办？"）
+   - 正知正念与专注（"总是刷手机停不下来怎么办？"、"注意力不集中怎么办？"）
+   - 自他交换与人际关系（"怎么在家庭矛盾中换位思考？"、"同事之间有矛盾怎么处理？"）
+   - 智慧与焦虑（"对未来感到焦虑迷茫怎么办？"、"什么都看不开怎么办？"）
+   - 回向与日常善行（"做了好事怎么回向？"、"日常怎么积累善业？"）
+   - 综合生活应用（"入行论对处理职场关系最有用的教言是什么？"、"亲人去世时怎么用入行论开导自己？"）
+4. 问题用生活化的语言，回答包含：相关颂词引用 + 通俗解读 + 具体做法
+5. 回答面向普通人，语气亲切实用，150-300字
+
 alias_txt 整理规则：
-1. 每行一组同义词（空格分隔）
+1. 每行一组同义词（空格分隔），将佛学术语与生活化表述关联
 2. 包含：论典全名、简称、梵文名、英文名、作者名、核心术语
-3. 不超过 30 行"""
+3. 同时包含生活化关联词映射，例如：
+   - 安忍 忍辱 忍耐 耐心 情绪管理 控制脾气
+   - 精进 努力 勤奋 上进 动力 不懈怠 不躺平
+   - 正知正念 觉察 专注 注意力 自我觉察 活在当下
+   - 自他交换 换位思考 将心比心 同理心 理解他人
+   - 菩提心 利他心 助人为乐 为他人着想
+4. 不超过 40 行"""
 
 
 def refine_knowledge(client, current: dict, feedback: str,
@@ -617,11 +670,22 @@ def _write_knowledge_files(result: dict, entity_type: str, entity_id: str,
 
     if entity_type == "lecture":
         # 讲记类型：entity_id 格式为 "入行论/第001课"
-        # 存储路径: knowledge/buddhism/lecture/{论典名}/{第NNN课}.txt
+        # 存储路径: knowledge/buddhism/lecture/{论典名}/{品名}/{第NNN课}.txt
         parts = entity_id.split("/", 1)
         treatise_id = parts[0]
         lesson_id = parts[1] if len(parts) > 1 else ""
-        out_dir = KNOWLEDGE_DIR / "buddhism" / "lecture" / treatise_id
+        # 按品拆分：从 lesson_meta.pin_name 获取品名作为子目录
+        pin_name = ""
+        lesson_meta = result.get("lesson_meta", {})
+        if isinstance(lesson_meta, dict):
+            pin_name = lesson_meta.get("pin_name", "").strip()
+        if pin_name:
+            # 规范化品名作为目录名（去除空格，保留中文）
+            import re as _re
+            pin_dir_name = _re.sub(r'[\\/:*?"<>|\s]+', '_', pin_name).strip('_')
+            out_dir = KNOWLEDGE_DIR / "buddhism" / "lecture" / treatise_id / pin_dir_name
+        else:
+            out_dir = KNOWLEDGE_DIR / "buddhism" / "lecture" / treatise_id
     elif is_single:
         dir_name = _ENTITY_TYPES[entity_type][0]
         out_dir = KNOWLEDGE_DIR / "buddhism" / dir_name
@@ -641,6 +705,9 @@ def _write_knowledge_files(result: dict, entity_type: str, entity_id: str,
         if result.get("faq_txt"):
             print(f"\n--- faq.txt ({len(result['faq_txt'])} 字) ---")
             print(result["faq_txt"][:1000])
+        if result.get("life_faq_txt"):
+            print(f"\n--- faq_life.txt ({len(result['life_faq_txt'])} 字) ---")
+            print(result["life_faq_txt"][:1000])
         if result.get("alias_txt"):
             print(f"\n--- alias.txt ---")
             print(result["alias_txt"])
@@ -656,7 +723,7 @@ def _write_knowledge_files(result: dict, entity_type: str, entity_id: str,
             _atomic_write(lesson_path, main_txt)
             logger.info("写入讲记 %s (%d 字)", lesson_path, len(main_txt))
 
-        # 每课的延伸 FAQ 追加到论典级 faq 文件
+        # 每课的延伸 FAQ 追加到品级 faq 文件（按品拆分防止文件过大）
         faq_txt = result.get("faq_txt", "")
         if faq_txt:
             faq_path = out_dir / f"faq_{treatise_id}.txt"
@@ -665,6 +732,32 @@ def _write_knowledge_files(result: dict, entity_type: str, entity_id: str,
                 faq_txt = existing.rstrip() + "\n\n" + faq_txt
             _atomic_write(faq_path, faq_txt)
             logger.info("追加 FAQ 到 %s", faq_path)
+
+        # 每课的生活应用 FAQ 追加到品级 faq_life 文件
+        life_faq_txt = result.get("life_faq_txt", "")
+        if life_faq_txt:
+            life_faq_path = out_dir / f"faq_life_{treatise_id}.txt"
+            if life_faq_path.exists():
+                existing = life_faq_path.read_text(encoding="utf-8")
+                life_faq_txt = existing.rstrip() + "\n\n" + life_faq_txt
+            _atomic_write(life_faq_path, life_faq_txt)
+            logger.info("追加生活 FAQ 到 %s", life_faq_path)
+
+        # 每课的 alias 追加到品级 alias 文件（去重）
+        alias_txt = result.get("alias_txt", "")
+        if alias_txt:
+            alias_path = out_dir / "alias.txt"
+            if alias_path.exists():
+                existing_lines = set(alias_path.read_text(encoding="utf-8").strip().splitlines())
+                new_lines = [ln for ln in alias_txt.strip().splitlines() if ln.strip() and ln.strip() not in existing_lines]
+                if new_lines:
+                    existing_content = alias_path.read_text(encoding="utf-8").rstrip()
+                    alias_txt = existing_content + "\n" + "\n".join(new_lines)
+                    _atomic_write(alias_path, alias_txt)
+                    logger.info("追加 alias 到 %s（新增 %d 行）", alias_path, len(new_lines))
+            else:
+                _atomic_write(alias_path, alias_txt)
+                logger.info("写入 alias %s", alias_path)
 
         return out_dir
 

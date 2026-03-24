@@ -402,6 +402,13 @@
           <option value="full">详细模式 — 全面详尽，适合深入了解</option>
         </select>
       </div>
+      <div class="setting-item" style="margin-top:8px">
+        <label>用户级别</label>
+        <select id="setUserLevel" onchange="updateUserLevelBadge()">
+          <option value="beginner" selected>初学者 — 通俗易懂，术语有解释</option>
+          <option value="experienced">有经验者 — 专业术语，深入教理</option>
+        </select>
+      </div>
     </div>
 
     <div class="setting-group">
@@ -506,6 +513,9 @@ function updateModeBadge() {
   $('modeBadge').textContent = mode === 'brief' ? '简洁' : '详细';
   saveSettings();
 }
+function updateUserLevelBadge() {
+  saveSettings();
+}
 
 // ===== Settings persistence =====
 const SETTINGS_KEY = 'rag_chat_settings';
@@ -513,6 +523,7 @@ function saveSettings() {
   try {
     const s = {
       mode: $('setMode').value,
+      user_level: $('setUserLevel').value,
       debug: $('setDebug').checked,
       timestamp: $('setTimestamp').checked,
       latency: $('setLatency').checked,
@@ -527,6 +538,7 @@ function loadSettings() {
     if (!raw) return;
     const s = JSON.parse(raw);
     if (s.mode) $('setMode').value = s.mode;
+    if (s.user_level) $('setUserLevel').value = s.user_level;
     if (s.debug !== undefined) $('setDebug').checked = s.debug;
     if (s.timestamp !== undefined) $('setTimestamp').checked = s.timestamp;
     if (s.latency !== undefined) $('setLatency').checked = s.latency;
@@ -970,6 +982,7 @@ async function ask() {
   const body = {
     question,
     mode: $('setMode').value,
+    user_level: $('setUserLevel').value,
     debug: $('setDebug').checked,
     history: chatHistory.slice(-MAX_HISTORY),
   };

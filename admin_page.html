@@ -1190,6 +1190,26 @@
         </div>
       </div>
 
+      <!-- 回答设置 -->
+      <div class="card" style="margin:0">
+        <div class="card-title">回答设置</div>
+        <p style="font-size:13px;color:var(--text-sec);margin-bottom:10px">
+          设置默认的用户级别，影响回答的语气和深度。
+        </p>
+        <div style="margin-bottom:10px">
+          <label style="font-size:13px;font-weight:500;display:block;margin-bottom:4px">默认用户级别</label>
+          <select id="userLevelSelect" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;width:100%">
+            <option value="beginner">初学者 — 通俗易懂，术语有解释</option>
+            <option value="experienced">有经验者 — 专业术语，深入教理</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="saveUserLevel()">保存</button>
+          <button class="btn btn-outline btn-sm" onclick="loadUserLevel()">刷新</button>
+        </div>
+        <div id="userLevelStatus" style="font-size:12px;color:var(--text-sec);margin-top:6px"></div>
+      </div>
+
     </div>
 
     <!-- 系统诊断 -->
@@ -1273,7 +1293,7 @@
       if (name === 'knowledge') loadKnowledgeProducts();
       if (name === 'synonyms')  loadSynonyms();
       if (name === 'keywords')  { loadKeywords(); loadClarification(); _initClrOptions(); }
-      if (name === 'system')    { loadLlmConfigs(); loadServiceStatus(); loadCacheStats(); loadServerConfig(); loadSystemStatus(); }
+      if (name === 'system')    { loadLlmConfigs(); loadServiceStatus(); loadCacheStats(); loadServerConfig(); loadUserLevel(); loadSystemStatus(); }
     }
 
     /* ===== Toast ===== */
@@ -1861,6 +1881,36 @@
         badge.className = 'badge ' + (d.level === 'DEBUG' ? 'badge-success' : 'badge-info');
         toast(enable ? '调试模式已开启' : '调试模式已关闭');
       } catch(e) { toast('操作失败：' + e.message); }
+    }
+
+    /* ===== 回答设置（用户级别） ===== */
+    async function loadUserLevel() {
+      try {
+        const r = await apiFetch('/admin/config');
+        const d = await r.json();
+        const level = d.default_user_level?.value || 'beginner';
+        document.getElementById('userLevelSelect').value = level;
+        document.getElementById('userLevelStatus').textContent = '当前：' + (level === 'beginner' ? '初学者' : '有经验者');
+      } catch(e) {
+        document.getElementById('userLevelStatus').textContent = '加载失败：' + e.message;
+      }
+    }
+    async function saveUserLevel() {
+      const level = document.getElementById('userLevelSelect').value;
+      try {
+        const r = await apiFetch('/admin/config', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ updates: { default_user_level: level } })
+        });
+        const d = await r.json();
+        if (d.ok) {
+          toast('用户级别已更新为：' + (level === 'beginner' ? '初学者' : '有经验者'));
+          document.getElementById('userLevelStatus').textContent = '当前：' + (level === 'beginner' ? '初学者' : '有经验者');
+        } else {
+          toast('保存失败');
+        }
+      } catch(e) { toast('保存失败：' + e.message); }
     }
 
     /* ===== 服务器配置 ===== */
