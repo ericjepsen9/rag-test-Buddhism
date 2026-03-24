@@ -164,12 +164,12 @@ def _llm_call(client, system_prompt: str, user_prompt: str,
     ----------
     timeout : int
         单次请求超时秒数，默认 120 秒。
-        当 max_tokens > 8000 时自动提升至 300 秒。
+        当 max_tokens >= 4000 时自动提升至 300 秒。
     retries : int
         失败后重试次数，默认 2 次（共最多 3 次调用）。
     """
     # 大输出自动延长超时
-    if max_tokens > 8000:
+    if max_tokens >= 4000:
         timeout = max(timeout, 300)
     last_err: Exception | None = None
     for attempt in range(1 + retries):
