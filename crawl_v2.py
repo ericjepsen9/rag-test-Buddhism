@@ -429,7 +429,7 @@ class CrawlJob:
                             client, fetched["content"], treatise
                         )
                         from rag_runtime_config import KNOWLEDGE_DIR
-                        ov_dir = KNOWLEDGE_DIR / "buddhism" / treatise
+                        ov_dir = KNOWLEDGE_DIR / "buddhism" / "lecture" / treatise
                         ov_dir.mkdir(parents=True, exist_ok=True)
                         from import_knowledge import _atomic_write
                         if overview.get("main_txt"):

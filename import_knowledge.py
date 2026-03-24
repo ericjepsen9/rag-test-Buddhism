@@ -617,10 +617,11 @@ def _write_knowledge_files(result: dict, entity_type: str, entity_id: str,
 
     if entity_type == "lecture":
         # 讲记类型：entity_id 格式为 "入行论/第001课"
+        # 存储路径: knowledge/buddhism/lecture/{论典名}/{第NNN课}.txt
         parts = entity_id.split("/", 1)
         treatise_id = parts[0]
         lesson_id = parts[1] if len(parts) > 1 else ""
-        out_dir = KNOWLEDGE_DIR / "buddhism" / treatise_id
+        out_dir = KNOWLEDGE_DIR / "buddhism" / "lecture" / treatise_id
     elif is_single:
         dir_name = _ENTITY_TYPES[entity_type][0]
         out_dir = KNOWLEDGE_DIR / "buddhism" / dir_name

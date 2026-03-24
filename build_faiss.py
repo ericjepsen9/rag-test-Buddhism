@@ -477,6 +477,15 @@ def _collect_txt_files(pdir):
             display_name = f"{subdir.name}/{fp.name}"
             results.append((fp, stype, display_name))
 
+        # 3. 二级子目录（如 lecture/入行论/第001课.txt）
+        for sub2 in sorted(subdir.iterdir()):
+            if not sub2.is_dir() or sub2.name.startswith("."):
+                continue
+            for fp in sorted(sub2.glob("*.txt")):
+                stype = _infer_source_type(fp.name)
+                display_name = f"{subdir.name}/{sub2.name}/{fp.name}"
+                results.append((fp, stype, display_name))
+
     return results
 
 
@@ -635,9 +644,10 @@ def _attach_buddhist_meta(meta: dict, cd: dict):
 def _attach_lesson_meta(meta: dict, display_name: str):
     """从文件名提取讲记课次元数据。
 
-    匹配 '入行论/第001课.txt' 等格式，提取 treatise 和 lesson_number。
+    匹配 'lecture/入行论/第001课.txt' 等格式，提取 treatise 和 lesson_number。
+    也兼容不带 lecture/ 前缀的旧格式 '入行论/第001课.txt'。
     """
-    m = re.match(r'^(.+)/第(\d+)课\.txt$', display_name)
+    m = re.match(r'^(?:lecture/)?(.+)/第(\d+)课\.txt$', display_name)
     if m:
         meta["treatise"] = m.group(1)
         meta["lesson_number"] = int(m.group(2))
