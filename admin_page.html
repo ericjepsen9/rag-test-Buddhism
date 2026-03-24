@@ -2339,7 +2339,7 @@
       if (_cv2EventSource) { _cv2EventSource.close(); _cv2EventSource = null; }
 
       const baseUrl = window._apiBase || '';
-      const es = new EventSource(baseUrl + `/admin/crawl_v2/jobs/${jobId}/progress`);
+      const es = new EventSource(baseUrl + `/admin/crawl_v2/jobs/${jobId}/progress?token=${encodeURIComponent(_apiKey)}`);
       _cv2EventSource = es;
 
       es.onmessage = function(ev) {

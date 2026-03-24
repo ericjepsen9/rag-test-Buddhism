@@ -180,8 +180,11 @@ async def admin_auth_middleware(request: Request, call_next):
             )
     if path.startswith("/admin") and path not in _ADMIN_AUTH_EXEMPT and _ADMIN_API_KEY:
         auth = request.headers.get("authorization", "")
+        # 支持 query param token（用于 EventSource/SSE 等无法设置 header 的场景）
+        query_token = request.query_params.get("token", "")
         key_ok = (
-            auth.startswith("Bearer ") and auth[7:].strip() == _ADMIN_API_KEY
+            (auth.startswith("Bearer ") and auth[7:].strip() == _ADMIN_API_KEY)
+            or (query_token and query_token.strip() == _ADMIN_API_KEY)
         )
         if not key_ok:
             from fastapi.responses import JSONResponse
