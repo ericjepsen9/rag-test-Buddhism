@@ -3418,6 +3418,246 @@ def admin_batch_pattern_import(request: Request, req: BatchPatternRequest):
     }
 
 
+class CrawlImportRequest(BaseModel):
+    """爬取目录页并批量导入"""
+    start_url: str = Field(..., description="起始页 URL（系统会自动发现同系列所有链接）")
+    url_must_contain: str = Field(default="", description="URL 必须包含的关键字（过滤无关链接）")
+    type: str = Field(default="doctrine", description="知识类型")
+    build: bool = Field(default=True, description="完成后自动构建索引")
+    dry_run: bool = Field(default=False, description="仅发现链接，不实际导入")
+    delay: float = Field(default=2.0, description="每次抓取间隔秒数")
+    max_pages: int = Field(default=500, description="最多抓取页数")
+
+
+def _crawl_discover_links(start_url: str, url_must_contain: str = "",
+                           max_pages: int = 500, delay: float = 1.0) -> list[str]:
+    """从起始页爬取，自动发现同系列的所有文章链接。
+
+    策略：
+    1. 先抓起始页，提取页面中所有同域链接
+    2. 用 url_must_contain 过滤出同系列链接
+    3. 对发现的链接继续爬取目录/导航页以发现更多链接
+    4. 去重排序后返回
+    """
+    import requests as http_requests
+    from urllib.parse import urlparse, urljoin
+    from bs4 import BeautifulSoup
+    import re as _re
+    import time as _time
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 "
+                       "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+
+    parsed_start = urlparse(start_url)
+    base_domain = parsed_start.netloc
+
+    discovered: dict[str, str] = {}  # url -> title
+    visited: set[str] = set()
+    to_visit: list[str] = [start_url]
+
+    # 也尝试抓 sitemap
+    sitemap_urls = [
+        f"{parsed_start.scheme}://{base_domain}/sitemap.xml",
+        f"{parsed_start.scheme}://{base_domain}/sitemap_index.xml",
+        f"{parsed_start.scheme}://{base_domain}/wp-sitemap.xml",
+        f"{parsed_start.scheme}://{base_domain}/wp-sitemap-posts-post-1.xml",
+        f"{parsed_start.scheme}://{base_domain}/wp-sitemap-posts-page-1.xml",
+    ]
+    for sm_url in sitemap_urls:
+        try:
+            resp = http_requests.get(sm_url, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                # 提取 sitemap 中的 URL
+                for m in _re.finditer(r'<loc>\s*(https?://[^<]+)\s*</loc>', resp.text):
+                    u = m.group(1).strip()
+                    if url_must_contain and url_must_contain not in u:
+                        continue
+                    if urlparse(u).netloc == base_domain:
+                        discovered[u] = ""
+                        if u not in visited:
+                            to_visit.append(u)
+        except Exception:
+            pass
+
+    # BFS 爬取发现链接
+    pages_fetched = 0
+    while to_visit and pages_fetched < min(max_pages, 10):
+        # 只爬少量页面来发现链接，不需要全部爬
+        url = to_visit.pop(0)
+        if url in visited:
+            continue
+        visited.add(url)
+
+        try:
+            resp = http_requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+            if resp.status_code != 200:
+                continue
+            resp.encoding = resp.apparent_encoding or "utf-8"
+            pages_fetched += 1
+
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            # 提取所有链接
+            for a in soup.find_all("a", href=True):
+                href = a["href"].strip()
+                full_url = urljoin(url, href)
+                # 清理 fragment 和 query
+                full_url = full_url.split("#")[0].split("?")[0]
+                if not full_url.startswith("http"):
+                    continue
+                if urlparse(full_url).netloc != base_domain:
+                    continue
+                if url_must_contain and url_must_contain not in full_url:
+                    continue
+
+                title = (a.get_text(strip=True) or "")[:100]
+                if full_url not in discovered:
+                    discovered[full_url] = title
+
+            if pages_fetched < 5 and delay > 0:
+                _time.sleep(delay)
+
+        except Exception:
+            continue
+
+    # 排序：尝试按数字排序
+    def _sort_key(url: str):
+        nums = _re.findall(r'(\d+)', url.split("/")[-2] if url.endswith("/") else url.split("/")[-1])
+        return [int(n) for n in nums] if nums else [0]
+
+    sorted_urls = sorted(discovered.keys(), key=_sort_key)
+    return sorted_urls
+
+
+@app.post("/admin/crawl_import")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+def admin_crawl_import(request: Request, req: CrawlImportRequest):
+    """自动爬取目录发现所有链接，然后批量导入知识库。
+
+    1. 从起始 URL 爬取，发现所有同系列文章链接
+    2. 逐一抓取正文 → LLM 整理 → 写入知识库
+    3. 统一构建索引
+    """
+    if not req.start_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="请提供完整 URL")
+
+    # 第1步：发现链接
+    try:
+        all_urls = _crawl_discover_links(
+            req.start_url,
+            url_must_contain=req.url_must_contain,
+            max_pages=req.max_pages,
+            delay=req.delay,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"爬取发现链接失败: {e}")
+
+    if not all_urls:
+        return {"ok": False, "detail": "未发现任何匹配的链接", "total": 0, "urls": []}
+
+    if req.dry_run:
+        return {
+            "ok": True,
+            "dry_run": True,
+            "total": len(all_urls),
+            "urls": all_urls,
+        }
+
+    # 第2步：逐一导入
+    from import_knowledge import (
+        _ENTITY_TYPES, _get_openai_client, _generate_knowledge,
+        _write_knowledge_files,
+    )
+    import time as _time
+
+    results = []
+    success_count = 0
+    need_build_products = set()
+
+    for idx, url in enumerate(all_urls):
+        entry = {"url": url, "index": idx + 1, "status": "pending", "error": None}
+        try:
+            fetched = _fetch_url_content(url)
+            entry["title"] = fetched["title"]
+            entry["content_length"] = len(fetched["content"])
+
+            entity_type = req.type or "doctrine"
+            if entity_type not in _ENTITY_TYPES:
+                entry["status"] = "failed"
+                entry["error"] = f"不支持的类型: {entity_type}"
+                results.append(entry)
+                continue
+
+            _, is_single = _ENTITY_TYPES[entity_type]
+            entity_id = _title_to_id(fetched["title"])
+            entry["type"] = entity_type
+            entry["id"] = entity_id
+
+            client = _get_openai_client()
+            result = _generate_knowledge(client, fetched["content"], entity_type, entity_id)
+            entry["files_generated"] = {}
+            if result.get("main_txt"):
+                entry["files_generated"]["main.txt"] = len(result["main_txt"])
+            if result.get("faq_txt"):
+                entry["files_generated"]["faq.txt"] = len(result["faq_txt"])
+            if result.get("alias_txt"):
+                entry["files_generated"]["alias.txt"] = len(result["alias_txt"])
+
+            out_dir = _write_knowledge_files(result, entity_type, entity_id, dry_run=False)
+            entry["output_dir"] = str(out_dir)
+
+            if entity_type == "product":
+                need_build_products.add(entity_id)
+            else:
+                need_build_products.add("_shared")
+
+            entry["status"] = "ok"
+            success_count += 1
+
+        except Exception as e:
+            entry["status"] = "failed"
+            entry["error"] = str(e)
+            log_error("crawl_import", repr(e), meta={"url": url})
+
+        results.append(entry)
+
+        if idx < len(all_urls) - 1 and req.delay > 0:
+            _time.sleep(req.delay)
+
+    # 第3步：建索引
+    built_index = False
+    if req.build and success_count > 0:
+        try:
+            if "_shared" in need_build_products:
+                from build_faiss import build_shared
+                build_shared()
+                invalidate_store_cache("_shared")
+            for pid in need_build_products:
+                if pid != "_shared":
+                    from build_faiss import build_for_product
+                    build_for_product(pid)
+                    invalidate_store_cache(pid)
+            with _health_lock:
+                global _health_cache
+                _health_cache = {}
+            built_index = True
+        except Exception as e:
+            log_error("crawl_import_build", repr(e))
+
+    return {
+        "ok": success_count > 0,
+        "total": len(all_urls),
+        "success": success_count,
+        "failed": len(all_urls) - success_count,
+        "built_index": built_index,
+        "results": results,
+    }
+
+
 def _extract_article_media(html: str) -> list:
     """从 HTML 中提取文章的图片和视频链接。"""
     import re as _re

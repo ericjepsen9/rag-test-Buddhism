@@ -811,11 +811,56 @@
       </div>
     </div>
 
-    <!-- 批量 URL 模板导入 -->
+    <!-- 自动爬取导入 -->
     <div class="card">
-      <div class="card-title">批量 URL 导入
+      <div class="card-title">自动爬取导入
         <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
-          用 URL 模板 + 数字范围批量抓取系列文章（如讲解第1课~第201课）
+          输入任意一课的链接，自动发现同系列全部文章并批量导入
+        </span>
+      </div>
+      <div class="row-flex" style="flex-wrap:wrap;gap:10px">
+        <div style="flex:4;min-width:200px">
+          <label>起始页 URL（任意一课的链接）</label>
+          <input type="url" id="crawlStartUrl"
+                 placeholder="https://mingguang.im/r/ru-xing-lun-jiang-jie-2006-nian-ban-di-1-ke/">
+        </div>
+        <div style="flex:2;min-width:150px">
+          <label>URL 过滤关键字（只导入包含该关键字的链接）</label>
+          <input type="text" id="crawlFilter"
+                 placeholder="ru-xing-lun-jiang-jie">
+        </div>
+      </div>
+      <div class="row-flex" style="margin-top:10px;flex-wrap:wrap;gap:10px">
+        <div style="flex:2;min-width:120px">
+          <label>知识类型</label>
+          <select id="crawlType">
+            <option value="doctrine">doctrine — 教义</option>
+            <option value="scripture">scripture — 经典</option>
+            <option value="practice">practice — 修行</option>
+            <option value="master">master — 人物</option>
+            <option value="history">history — 历史</option>
+            <option value="ritual">ritual — 仪轨</option>
+            <option value="sect">sect — 宗派</option>
+            <option value="term">term — 术语</option>
+          </select>
+        </div>
+        <div style="flex:1;min-width:80px">
+          <label>抓取间隔(秒)</label>
+          <input type="number" id="crawlDelay" value="2" min="0" step="0.5">
+        </div>
+        <button class="btn btn-outline" id="crawlDiscoverBtn" onclick="doCrawlDiscover()">发现链接</button>
+        <button class="btn btn-info" id="crawlImportBtn" onclick="doCrawlImport()">自动爬取并导入</button>
+      </div>
+      <div id="crawlResult" style="display:none;margin-top:12px">
+        <div id="crawlResultContent" style="font-size:13px;max-height:300px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px"></div>
+      </div>
+    </div>
+
+    <!-- 批量 URL 模板导入 -->
+    <div class="card" style="border-left:3px solid var(--border)">
+      <div class="card-title">批量 URL 模板导入
+        <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
+          已知 URL 规律时用模板 + 数字范围批量导入
         </span>
       </div>
       <div class="row-flex" style="flex-wrap:wrap;gap:10px">
@@ -1805,6 +1850,92 @@
     }
 
     /* ===== URL 抓取 ===== */
+    /* ===== 自动爬取导入 ===== */
+    async function doCrawlDiscover() {
+      const startUrl = document.getElementById('crawlStartUrl').value.trim();
+      const filter = document.getElementById('crawlFilter').value.trim();
+      if (!startUrl) { toast('请输入起始页 URL'); return; }
+      const btn = document.getElementById('crawlDiscoverBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> 发现中…';
+      const el = document.getElementById('crawlResult');
+      const content = document.getElementById('crawlResultContent');
+      el.style.display = '';
+      content.innerHTML = '<span class="spin"></span> 正在爬取网站目录，发现同系列链接…';
+      try {
+        const r = await apiFetch('/admin/crawl_import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ start_url: startUrl, url_must_contain: filter, dry_run: true,
+            type: document.getElementById('crawlType').value, delay: 1 })
+        });
+        const d = await r.json();
+        if (!d.ok && d.detail) {
+          content.innerHTML = `<span style="color:var(--danger)">${d.detail}</span>`;
+          toast(d.detail, 4000); return;
+        }
+        if (d.urls && d.urls.length) {
+          content.innerHTML = `<strong>发现 ${d.total} 个链接：</strong><br>`
+            + `<ol style="margin:6px 0;padding-left:20px">`
+            + d.urls.map(u => `<li style="font-size:12px;word-break:break-all;margin:2px 0">${u}</li>`).join('')
+            + '</ol>';
+          toast(`发现 ${d.total} 个链接，确认后点"自动爬取并导入"`);
+        } else {
+          content.innerHTML = '未发现匹配的链接。请调整过滤关键字再试。';
+        }
+      } catch(e) {
+        content.innerHTML = `<span style="color:var(--danger)">发现失败：${e.message}</span>`;
+        if (e.message !== '403') toast('发现失败：' + e.message, 4000);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '发现链接';
+      }
+    }
+
+    async function doCrawlImport() {
+      const startUrl = document.getElementById('crawlStartUrl').value.trim();
+      const filter = document.getElementById('crawlFilter').value.trim();
+      const type = document.getElementById('crawlType').value;
+      const delay = parseFloat(document.getElementById('crawlDelay').value) || 2;
+      if (!startUrl) { toast('请输入起始页 URL'); return; }
+      if (!confirm('确认开始自动爬取并导入？\n系统将自动发现所有链接并逐一导入知识库。\n\n此操作可能需要较长时间，请耐心等待。')) return;
+
+      const btn = document.getElementById('crawlImportBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> 爬取导入中…';
+      const el = document.getElementById('crawlResult');
+      const content = document.getElementById('crawlResultContent');
+      el.style.display = '';
+      content.innerHTML = '<span class="spin"></span> 正在自动爬取、抓取正文、LLM 整理并导入知识库…<br>请耐心等待，不要关闭页面。';
+
+      try {
+        const r = await apiFetch('/admin/crawl_import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ start_url: startUrl, url_must_contain: filter, type, delay, dry_run: false, build: true })
+        });
+        const d = await r.json();
+        let html = `<strong>导入完成：成功 ${d.success}/${d.total}</strong>`;
+        if (d.built_index) html += ' <span class="badge badge-success">索引已更新</span>';
+        html += '<div style="max-height:250px;overflow-y:auto;margin-top:8px">';
+        for (const item of (d.results || [])) {
+          const icon = item.status === 'ok' ? '✅' : '❌';
+          const title = item.title ? ` — ${item.title}` : '';
+          const err = item.error ? ` <span style="color:var(--danger)">${item.error}</span>` : '';
+          html += `<div style="font-size:12px;margin:3px 0;word-break:break-all">${icon} #${item.index} ${item.url}${title}${err}</div>`;
+        }
+        html += '</div>';
+        content.innerHTML = html;
+        toast(`爬取导入完成：${d.success}/${d.total} 成功`);
+      } catch(e) {
+        content.innerHTML = `<span style="color:var(--danger)">导入失败：${e.message}</span>`;
+        if (e.message !== '403') toast('爬取导入失败：' + e.message, 4000);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '自动爬取并导入';
+      }
+    }
+
     /* ===== 批量 URL 模板导入 ===== */
     async function doBatchPreview() {
       const pattern = document.getElementById('batchUrlPattern').value.trim();
