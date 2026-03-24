@@ -2452,10 +2452,22 @@ def admin_import_knowledge(request: Request, req: ImportKnowledgeRequest):
 
     # 安全校验 ID
     if entity_id:
-        if ".." in entity_id or "/" in entity_id or "\\" in entity_id:
+        if ".." in entity_id or "\\" in entity_id:
             raise HTTPException(status_code=400, detail="非法 ID")
-        if not _SAFE_NAME_RE.match(entity_id):
-            raise HTTPException(status_code=400, detail="ID 只允许字母、数字、下划线、横线、中文")
+        # lecture/talk 类型允许一级 "/" 分隔（如 "入行论/第001课"）
+        if entity_type in ("lecture", "talk"):
+            parts = entity_id.split("/")
+            if len(parts) > 2 or not all(p.strip() for p in parts):
+                raise HTTPException(status_code=400,
+                    detail=f"{entity_type} 类型 ID 格式应为「名称/课号」，如「入行论/第001课」")
+            for p in parts:
+                if not _SAFE_NAME_RE.match(p):
+                    raise HTTPException(status_code=400, detail="ID 只允许字母、数字、下划线、横线、中文")
+        else:
+            if "/" in entity_id:
+                raise HTTPException(status_code=400, detail="非法 ID")
+            if not _SAFE_NAME_RE.match(entity_id):
+                raise HTTPException(status_code=400, detail="ID 只允许字母、数字、下划线、横线、中文")
 
     raw_text = req.content.strip()
     if not raw_text:
@@ -2892,6 +2904,10 @@ async def admin_import_knowledge_file(request: "Request"):
         suffix = Path(fname).suffix.lower()
 
         file_data = await file_item.read()
+
+        # 文件大小限制（50MB）
+        if len(file_data) > 50 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="文件过大，最大支持 50MB")
 
         if suffix == ".pdf":
             try:

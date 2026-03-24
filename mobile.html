@@ -632,7 +632,7 @@ function doSubmit() {
     if (ok) {
       const msg = dryRun
         ? '预览成功！\n' + JSON.stringify(data, null, 2)
-        : '导入成功！' + (data.files_written ? '\n写入文件: ' + data.files_written.join(', ') : '');
+        : '导入成功！' + (data.files_generated ? '\n生成文件: ' + Object.keys(data.files_generated).join(', ') : '');
       showResult(msg, 'success');
       addHistory(title || id || type, true);
     } else {

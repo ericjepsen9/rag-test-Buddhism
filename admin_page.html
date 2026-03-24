@@ -1040,6 +1040,23 @@
           </div>
         </div>
       </div>
+      <!-- lecture/talk 类型专用字段 -->
+      <div id="impLectureTalkFields" style="display:none;margin-bottom:14px;padding:10px 14px;background:#f8f9fa;border-radius:8px;border:1px solid var(--border)">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <label id="impTreatiseLabel">论典名称 <span style="color:var(--danger)">*必填</span></label>
+            <input type="text" id="impTreatiseName" placeholder="如：入行论">
+          </div>
+          <div id="impLessonIdBox">
+            <label>课号/篇名</label>
+            <input type="text" id="impLessonId" placeholder="如：第001课 或 自定义标题">
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text-sec);margin-top:6px" id="impLectureTalkHint">
+          lecture：论典名 + 课号会自动组合为 ID（如 入行论/第001课）<br>
+          talk：专题名 + 篇名会自动组合为 ID（如 佛法与生活/情绪管理）
+        </div>
+      </div>
 
       <div style="margin-bottom:14px">
         <label>原始文档内容（粘贴经文、注释、介绍等原始文本）</label>
@@ -2388,7 +2405,7 @@
           }
           else if (evt === 'paused') {
             document.getElementById('cv2StatusText').textContent = '已暂停';
-            cv2SetButtons('paused', Object.keys(_cv2Items.filter(x => x.status === 'failed')).length > 0);
+            cv2SetButtons('paused', _cv2Items.filter(x => x.status === 'failed').length > 0);
             cv2AppendLog('<span style="color:orange">PAUSE</span>', '任务已暂停');
             es.close();
             _cv2EventSource = null;
@@ -2914,26 +2931,62 @@
 
     /* ===== 知识导入 ===== */
     const _IMP_SINGLE_TYPES = new Set(['general','history','ritual','glossary']);
+    const _IMP_LECTURE_TALK_TYPES = new Set(['lecture','talk']);
 
     function onImpTypeChange() {
       const type = document.getElementById('impType').value;
       const single = _IMP_SINGLE_TYPES.has(type);
-      document.getElementById('impId').disabled = single;
-      document.getElementById('impIdRequired').style.display = single ? 'none' : '';
-      document.getElementById('impIdHint').style.display = single ? '' : 'none';
-      if (single) document.getElementById('impId').value = '';
+      const isLectureTalk = _IMP_LECTURE_TALK_TYPES.has(type);
+
+      // lecture/talk 使用专用字段，隐藏通用 ID 字段
+      const idRow = document.getElementById('impId').parentElement;
+      const ltFields = document.getElementById('impLectureTalkFields');
+      if (isLectureTalk) {
+        idRow.style.display = 'none';
+        ltFields.style.display = '';
+        // 更新标签
+        const label = document.getElementById('impTreatiseLabel');
+        const hint = document.getElementById('impLectureTalkHint');
+        if (type === 'talk') {
+          label.innerHTML = '开示/专题名称 <span style="color:var(--danger)">*必填</span>';
+          document.getElementById('impTreatiseName').placeholder = '如：佛法与生活、安忍开示';
+          document.getElementById('impLessonId').placeholder = '如：情绪管理 或 第一讲';
+          hint.textContent = 'talk：专题名 + 篇名会自动组合为 ID（如 佛法与生活/情绪管理）';
+        } else {
+          label.innerHTML = '论典名称 <span style="color:var(--danger)">*必填</span>';
+          document.getElementById('impTreatiseName').placeholder = '如：入行论';
+          document.getElementById('impLessonId').placeholder = '如：第001课';
+          hint.textContent = 'lecture：论典名 + 课号会自动组合为 ID（如 入行论/第001课）';
+        }
+      } else {
+        idRow.style.display = '';
+        ltFields.style.display = 'none';
+        document.getElementById('impId').disabled = single;
+        document.getElementById('impIdRequired').style.display = single ? 'none' : '';
+        document.getElementById('impIdHint').style.display = single ? '' : 'none';
+        if (single) document.getElementById('impId').value = '';
+      }
     }
 
     let _impPreviewData = null;
 
     async function doImport(dryRun) {
       const type    = document.getElementById('impType').value;
-      const id      = document.getElementById('impId').value.trim();
+      let id        = document.getElementById('impId').value.trim();
       const content = document.getElementById('impContent').value.trim();
       const build   = document.getElementById('impBuild').checked;
 
       if (!content) { toast('请填写文档内容'); return; }
-      if (!_IMP_SINGLE_TYPES.has(type) && !id) { toast('该类型需要填写实体 ID'); return; }
+
+      // lecture/talk 类型：从专用字段组合 ID
+      if (_IMP_LECTURE_TALK_TYPES.has(type)) {
+        const treatise = document.getElementById('impTreatiseName').value.trim();
+        const lesson = document.getElementById('impLessonId').value.trim();
+        if (!treatise) { toast(type === 'lecture' ? '请填写论典名称' : '请填写开示/专题名称'); return; }
+        id = lesson ? `${treatise}/${lesson}` : `${treatise}/${treatise}_default`;
+      } else if (!_IMP_SINGLE_TYPES.has(type) && !id) {
+        toast('该类型需要填写实体 ID'); return;
+      }
 
       const previewBtn = document.getElementById('impPreviewBtn');
       const importBtn  = document.getElementById('impImportBtn');
@@ -2982,7 +3035,7 @@
 
         // 预览文件内容
         const preview = d.preview || {};
-        const fileKeys = Object.keys(preview);
+        const fileKeys = Object.keys(preview).filter(k => preview[k]);
         if (fileKeys.length) {
           _impPreviewData = preview;
           _updatePreviewTabs(preview);
@@ -2990,9 +3043,21 @@
           if (dryRun) {
             document.getElementById('impRefineArea').style.display = '';
           }
+        } else if (dryRun) {
+          // 预览无内容时提示
+          document.getElementById('impResultSummary').innerHTML +=
+            '<br><span style="color:var(--warning)">LLM 未生成有效内容，请检查原始文档是否包含足够的佛学相关信息</span>';
+          document.getElementById('impRefineArea').style.display = 'none';
         }
 
         if (!dryRun && d.ok) {
+          // 导入成功：清晰反馈
+          document.getElementById('impResultSummary').innerHTML =
+            `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+               <span class="badge badge-success" style="font-size:13px;padding:4px 12px">导入成功</span>
+               ${filesInfo}
+               ${d.built_index ? '<span class="badge badge-info">索引已更新</span>' : ''}
+             </div>`;
           toast('导入成功 ✓');
           document.getElementById('impRefineArea').style.display = 'none';
           loadDashboard();
@@ -3026,7 +3091,10 @@
         b.className = b === btn ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-outline');
     }
 
+    let _impBusy = false;  // refine/commit 互斥锁
+
     async function doRefine() {
+      if (_impBusy) { toast('操作进行中，请稍候'); return; }
       const feedback = document.getElementById('impFeedback').value.trim();
       if (!feedback) { toast('请填写修改意见'); return; }
       if (!_impPreviewData) { toast('请先生成预览'); return; }
@@ -3034,7 +3102,9 @@
       const id   = document.getElementById('impId').value.trim();
       const raw_text = document.getElementById('impContent').value.trim();
       const btn = document.getElementById('impRefineBtn');
-      btn.disabled = true;
+      const commitBtn = document.getElementById('impCommitBtn');
+      _impBusy = true;
+      btn.disabled = commitBtn.disabled = true;
       btn.innerHTML = '<span class="spin"></span> 修订中…';
       document.getElementById('impResultSummary').innerHTML =
         '<span style="color:var(--text-sec)">LLM 正在根据意见修订，请稍候…</span>';
@@ -3073,12 +3143,15 @@
           `<span style="color:var(--danger)">请求失败：${_esc(e.message)}</span>`;
         if (e.message !== '403') toast('修订失败：' + e.message, 4000);
       } finally {
+        _impBusy = false;
         btn.disabled = false;
+        commitBtn.disabled = false;
         btn.innerHTML = '↺ 精炼修订';
       }
     }
 
     async function doCommit() {
+      if (_impBusy) { toast('操作进行中，请稍候'); return; }
       if (!_impPreviewData || !_impPreviewData.main_txt) {
         toast('请先生成预览内容再提交'); return;
       }
@@ -3087,7 +3160,9 @@
       const build = document.getElementById('impCommitBuild').checked;
       if (!confirm(`确认将当前预览内容写入知识库？\n类型：${type}${id ? '\nID：' + id : ''}`)) return;
       const btn = document.getElementById('impCommitBtn');
-      btn.disabled = true;
+      const refineBtn = document.getElementById('impRefineBtn');
+      _impBusy = true;
+      btn.disabled = refineBtn.disabled = true;
       btn.innerHTML = '<span class="spin"></span> 写入中…';
       try {
         const r = await apiFetch('/admin/import_knowledge/commit', {
@@ -3116,7 +3191,9 @@
       } catch(e) {
         if (e.message !== '403') toast('写入失败：' + e.message, 4000);
       } finally {
+        _impBusy = false;
         btn.disabled = false;
+        refineBtn.disabled = false;
         btn.innerHTML = '✓ 确认写入';
       }
     }
