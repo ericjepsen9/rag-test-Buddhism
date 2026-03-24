@@ -21,7 +21,7 @@ from slowapi.errors import RateLimitExceeded
 
 from media_router import find_media, invalidate_media_cache
 from rag_answer import answer_question, invalidate_store_cache, get_last_route_product
-from rag_logger import log_error, get_recent_qa, get_recent_misses, get_recent_errors
+from rag_logger import log_error, log_event, get_recent_qa, get_recent_misses, get_recent_errors
 
 logger = logging.getLogger("rag-api")
 
@@ -60,6 +60,12 @@ async def _lifespan(app):
     from rag_logger import log_event, log_error
     global _startup_time
     _startup_time = time.monotonic()
+    log_event("startup", "服务启动中...", meta={
+        "python": os.popen("python3 --version 2>&1").read().strip(),
+        "pid": os.getpid(),
+        "knowledge_dir": str(KNOWLEDGE_DIR),
+        "admin_key_set": bool(_ADMIN_API_KEY),
+    })
     if not os.environ.get("SKIP_WARMUP"):
         try:
             from rag_answer import embed_query
@@ -185,40 +191,57 @@ async def admin_auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-# ===== 调试日志中间件 =====
+# ===== 请求日志中间件 =====
 @app.middleware("http")
-async def debug_logging_middleware(request: Request, call_next):
-    if not logger.isEnabledFor(logging.DEBUG):
-        return await call_next(request)
+async def request_logging_middleware(request: Request, call_next):
+    """记录所有 API 请求的日志（非静态资源）。
 
-    import time as _time
-    start = _time.time()
+    INFO 级别：记录 /ask、/admin/* 的状态码和耗时
+    DEBUG 级别：额外记录请求体
+    """
     path = request.url.path
     method = request.method
 
-    # Log request
+    # 跳过静态资源和健康检查（减少噪音）
+    if path.startswith("/web/") or path in ("/favicon.ico", "/manifest.json", "/sw.js"):
+        return await call_next(request)
+
+    is_debug = logger.isEnabledFor(logging.DEBUG)
+    is_api = path.startswith("/admin") or path in ("/ask", "/v1/chat/completions", "/health")
+
+    # DEBUG 模式下捕获请求体
     body_text = ""
-    if method in ("POST", "PUT", "PATCH") and path.startswith("/admin"):
+    if is_debug and method in ("POST", "PUT", "PATCH") and path.startswith("/admin"):
         try:
             body = await request.body()
             body_text = body.decode("utf-8", errors="replace")[:2000]
-            # Need to make body readable again
             async def receive():
                 return {"type": "http.request", "body": body}
             request._receive = receive
         except Exception:
             pass
 
+    start = time.time()
     response = await call_next(request)
-    duration = round((_time.time() - start) * 1000, 1)
+    duration = round((time.time() - start) * 1000, 1)
 
-    if path.startswith("/admin") or path == "/ask" or path == "/health":
-        log_msg = f"{method} {path} → {response.status_code} ({duration}ms)"
-        if request.url.query:
-            log_msg += f"  query: {request.url.query}"
-        if body_text:
-            log_msg += f"\n  body: {body_text[:500]}"
-        logger.debug(log_msg)
+    if is_api:
+        status = response.status_code
+        # 错误状态码始终记录（无论日志级别），方便排查
+        if status >= 400:
+            log_msg = f"[ERR] {method} {path} → {status} ({duration}ms)"
+            if request.url.query:
+                log_msg += f"  query: {request.url.query}"
+            if body_text:
+                log_msg += f"  body: {body_text[:300]}"
+            logger.warning(log_msg)
+        elif is_debug:
+            log_msg = f"{method} {path} → {status} ({duration}ms)"
+            if request.url.query:
+                log_msg += f"  query: {request.url.query}"
+            if body_text:
+                log_msg += f"  body: {body_text[:500]}"
+            logger.debug(log_msg)
 
     return response
 
@@ -832,7 +855,9 @@ def admin_products():
 def admin_rebuild(request: Request, req: RebuildRequest):
     global _health_cache
     from build_faiss import build_for_product
+    from rag_logger import log_event
     product = req.product.strip()
+    log_event("admin_rebuild", f"开始重建索引: {product}", meta={"timeout_sec": req.timeout_sec})
     # 安全校验：产品名不得包含路径分隔符或特殊字符（防止路径遍历）
     if "/" in product or "\\" in product or ".." in product or not product:
         raise HTTPException(status_code=400, detail="非法产品名称")
@@ -880,6 +905,7 @@ def admin_rebuild(request: Request, req: RebuildRequest):
         from relation_engine import invalidate_relations_cache
         invalidate_relations_cache()
         invalidate_media_cache(product)
+        log_event("admin_rebuild", f"索引重建完成: {product}")
         return {"ok": True, "product": product}
     except HTTPException:
         raise
@@ -1551,10 +1577,14 @@ async def admin_upload_zip(request: "Request"):
 @app.post("/admin/debug")
 def admin_toggle_debug(request: Request, enable: bool = True):
     """切换调试模式日志级别"""
+    from rag_logger import log_event
     level = logging.DEBUG if enable else logging.INFO
+    old_level = logging.getLevelName(logger.level) if logger.level else "NOT_SET"
     logger.setLevel(level)
     logging.getLogger().setLevel(level)  # root logger too
-    return {"ok": True, "level": "DEBUG" if enable else "INFO"}
+    new_level = "DEBUG" if enable else "INFO"
+    log_event("admin_debug", f"日志级别切换: {old_level} → {new_level}")
+    return {"ok": True, "level": new_level, "previous_level": old_level}
 
 
 # ===== 运行时配置接口 =====
@@ -1652,6 +1682,11 @@ class MultiLLMUpdateRequest(BaseModel):
 @app.post("/admin/llm/configs")
 def admin_update_llm_config(req: MultiLLMUpdateRequest):
     """更新指定用途的 LLM 配置"""
+    from rag_logger import log_event
+    log_event("admin_llm_config", f"更新 LLM 配置: purpose={req.purpose}", meta={
+        "provider": req.provider, "model": req.model,
+        "api_base": req.api_base or "", "enabled": req.enabled,
+    })
     from llm_client import update_llm_config
     result = update_llm_config(
         req.purpose,
@@ -1752,6 +1787,8 @@ def admin_embedding_status():
 @app.post("/admin/service/embedding/start")
 def admin_embedding_start():
     """加载 BGE-M3 嵌入模型"""
+    from rag_logger import log_event
+    log_event("admin_service", "请求加载嵌入模型")
     from rag_runtime_config import start_embedding_model
     result = start_embedding_model()
     if not result.get("ok"):
@@ -1762,6 +1799,8 @@ def admin_embedding_start():
 @app.post("/admin/service/embedding/stop")
 def admin_embedding_stop():
     """卸载 BGE-M3 嵌入模型"""
+    from rag_logger import log_event
+    log_event("admin_service", "请求卸载嵌入模型")
     from rag_runtime_config import stop_embedding_model
     result = stop_embedding_model()
     if not result.get("ok"):
@@ -1785,6 +1824,8 @@ class LLMStartRequest(BaseModel):
 @app.post("/admin/service/llm/start")
 def admin_llm_start(req: LLMStartRequest):
     """启动 LLM 服务"""
+    from rag_logger import log_event
+    log_event("admin_service", "请求启动 LLM 服务")
     from rag_runtime_config import start_llm_service
     result = start_llm_service(req.api_key)
     if not result.get("ok"):
@@ -1795,6 +1836,8 @@ def admin_llm_start(req: LLMStartRequest):
 @app.post("/admin/service/llm/stop")
 def admin_llm_stop():
     """停止 LLM 服务"""
+    from rag_logger import log_event
+    log_event("admin_service", "请求停止 LLM 服务")
     from rag_runtime_config import stop_llm_service
     return stop_llm_service()
 
@@ -1871,6 +1914,8 @@ def admin_cache_stats():
 @limiter.limit(_ADMIN_RATE_LIMIT)
 def admin_cache_clear(request: Request):
     """清空所有缓存（响应缓存、嵌入缓存、索引缓存、LLM 改写缓存）"""
+    from rag_logger import log_event
+    log_event("admin_cache", "请求清空所有缓存")
     from rag_answer import _embed_cache, _store_cache
     cleared = {}
     with _response_cache_lock:
@@ -1890,7 +1935,251 @@ def admin_cache_clear(request: Request):
     return {"ok": True, "cleared": cleared}
 
 
-# ===== 系统状态接口 =====
+# ===== 系统完整运行状态 =====
+
+@app.get("/admin/system_status")
+def admin_system_status():
+    """获取系统完整运行状态诊断信息，用于调试排查问题。
+
+    返回所有子系统的健康状况、配置、版本信息。
+    """
+    import sys
+    import platform
+    from datetime import datetime as _dt
+    status = {
+        "timestamp": _dt.now().isoformat(timespec="seconds"),
+        "uptime_seconds": int(time.monotonic() - _startup_time) if _startup_time else 0,
+        "python": {
+            "version": sys.version,
+            "platform": platform.platform(),
+            "pid": os.getpid(),
+        },
+        "subsystems": {},
+        "config": {},
+        "errors": [],
+    }
+
+    # ---- 1. 嵌入模型状态 ----
+    try:
+        from rag_answer import _model
+        model_loaded = _model is not None
+        model_name = ""
+        if _model is not None:
+            model_name = getattr(_model, "model_card_data", {}) or ""
+            # 尝试获取模型路径
+            try:
+                from rag_answer import EMBED_MODEL_NAME
+                model_name = EMBED_MODEL_NAME
+            except ImportError:
+                pass
+        status["subsystems"]["embedding"] = {
+            "status": "ok" if model_loaded else "not_loaded",
+            "model_loaded": model_loaded,
+            "model_name": str(model_name),
+        }
+    except Exception as e:
+        status["subsystems"]["embedding"] = {"status": "error", "error": str(e)}
+        status["errors"].append(f"embedding: {e}")
+
+    # ---- 2. LLM 配置状态（多用途） ----
+    try:
+        from llm_client import get_all_llm_configs, is_enabled, get_client
+        configs = get_all_llm_configs()
+        llm_status = {}
+        for purpose in ("chat", "knowledge"):
+            cfg = configs.get(purpose, {})
+            enabled = is_enabled(purpose)
+            client_ok = False
+            if enabled:
+                try:
+                    c = get_client(purpose)
+                    client_ok = c is not None
+                except Exception:
+                    pass
+            llm_status[purpose] = {
+                "enabled": enabled,
+                "provider": cfg.get("provider", ""),
+                "model": cfg.get("model", ""),
+                "api_base": cfg.get("api_base", ""),
+                "api_key_set": cfg.get("api_key_set", False),
+                "client_created": client_ok,
+                "connection_verified": cfg.get("connection_verified", False),
+            }
+        status["subsystems"]["llm"] = {"status": "ok", "purposes": llm_status}
+    except ImportError:
+        # 无 llm_client 模块，回退到旧配置
+        try:
+            from rag_runtime_config import USE_OPENAI, OPENAI_MODEL, OPENAI_API_BASE
+            status["subsystems"]["llm"] = {
+                "status": "legacy",
+                "enabled": USE_OPENAI,
+                "model": OPENAI_MODEL,
+                "api_base": OPENAI_API_BASE,
+                "api_key_set": bool(os.environ.get("OPENAI_API_KEY", "").strip()),
+            }
+        except Exception as e:
+            status["subsystems"]["llm"] = {"status": "error", "error": str(e)}
+            status["errors"].append(f"llm: {e}")
+
+    # ---- 3. 知识库状态 ----
+    try:
+        from rag_runtime_config import STORE_ROOT
+        products = []
+        if KNOWLEDGE_DIR.exists():
+            shared_names = _SHARED_DIR_NAMES
+            for p in sorted(KNOWLEDGE_DIR.iterdir()):
+                if not p.is_dir() or p.name in shared_names:
+                    continue
+                store = STORE_ROOT / p.name
+                index_ok = (store / "index.faiss").exists()
+                docs_ok = (store / "docs.jsonl").exists()
+                doc_count = 0
+                file_count = sum(1 for f in p.iterdir() if f.is_file())
+                if docs_ok:
+                    try:
+                        doc_count = sum(1 for _ in (store / "docs.jsonl").open("r", encoding="utf-8"))
+                    except OSError:
+                        pass
+                products.append({
+                    "name": p.name,
+                    "knowledge_files": file_count,
+                    "index_built": index_ok,
+                    "docs_indexed": doc_count,
+                })
+        shared_store = STORE_ROOT / "_shared"
+        shared_ok = (shared_store / "index.faiss").exists()
+        shared_docs = 0
+        if shared_ok:
+            try:
+                shared_docs = sum(1 for _ in (shared_store / "docs.jsonl").open("r", encoding="utf-8"))
+            except OSError:
+                pass
+        status["subsystems"]["knowledge"] = {
+            "status": "ok" if products else "empty",
+            "products": products,
+            "shared_index_built": shared_ok,
+            "shared_docs": shared_docs,
+            "knowledge_dir": str(KNOWLEDGE_DIR),
+            "store_dir": str(STORE_ROOT),
+        }
+    except Exception as e:
+        status["subsystems"]["knowledge"] = {"status": "error", "error": str(e)}
+        status["errors"].append(f"knowledge: {e}")
+
+    # ---- 4. 缓存状态 ----
+    try:
+        from rag_answer import _embed_cache, _store_cache
+        cache_info = {
+            "response_cache_size": len(_RESPONSE_CACHE),
+            "response_cache_max": _RESPONSE_CACHE_MAX,
+            "embed_cache_size": len(_embed_cache),
+            "store_cache_products": list(_store_cache.keys()),
+        }
+        try:
+            from query_rewrite import _llm_rewrite_cache
+            cache_info["llm_rewrite_cache"] = _llm_rewrite_cache.stats
+        except Exception:
+            cache_info["llm_rewrite_cache"] = "unavailable"
+        status["subsystems"]["cache"] = cache_info
+    except Exception as e:
+        status["subsystems"]["cache"] = {"error": str(e)}
+
+    # ---- 5. 同义词系统 ----
+    try:
+        from synonym_store import get_all_synonyms_combined
+        syn = get_all_synonyms_combined()
+        status["subsystems"]["synonyms"] = {
+            "static_count": len(syn.get("static", {})),
+            "learned_count": len(syn.get("learned", {})),
+        }
+    except Exception as e:
+        status["subsystems"]["synonyms"] = {"error": str(e)}
+
+    # ---- 6. 日志状态 ----
+    try:
+        from rag_logger import QA_LOG, MISS_LOG, ERROR_LOG, EVENT_LOG, LOG_DIR
+        log_info = {}
+        for name, path in [("qa", QA_LOG), ("miss", MISS_LOG), ("error", ERROR_LOG), ("event", EVENT_LOG)]:
+            if path.exists():
+                st = path.stat()
+                log_info[name] = {"size_bytes": st.st_size, "exists": True}
+            else:
+                log_info[name] = {"size_bytes": 0, "exists": False}
+        status["subsystems"]["logs"] = {
+            "log_dir": str(LOG_DIR),
+            "files": log_info,
+        }
+    except Exception as e:
+        status["subsystems"]["logs"] = {"error": str(e)}
+
+    # ---- 7. 运行时配置 ----
+    try:
+        from rag_runtime_config import get_tunable_config
+        status["config"]["tunable"] = get_tunable_config()
+    except Exception as e:
+        status["config"]["tunable"] = {"error": str(e)}
+
+    # ---- 8. 线程池状态 ----
+    try:
+        from rag_answer import _search_pool
+        pool = _search_pool
+        status["subsystems"]["thread_pool"] = {
+            "max_workers": getattr(pool, "_max_workers", "unknown"),
+            "threads_alive": len([t for t in getattr(pool, "_threads", []) if t.is_alive()]),
+        }
+    except Exception as e:
+        status["subsystems"]["thread_pool"] = {"error": str(e)}
+
+    # ---- 9. 管理鉴权状态 ----
+    status["subsystems"]["auth"] = {
+        "admin_api_key_set": bool(_ADMIN_API_KEY),
+    }
+
+    # ---- 10. 速率限制配置 ----
+    status["config"]["rate_limits"] = {
+        "ask": _ASK_RATE_LIMIT,
+        "admin": _ADMIN_RATE_LIMIT,
+        "ask_timeout_sec": _ASK_TIMEOUT_SEC,
+    }
+
+    # ---- 11. 日志级别 ----
+    status["config"]["log_level"] = logging.getLevelName(logger.level) if logger.level else "NOT_SET"
+    status["config"]["root_log_level"] = logging.getLevelName(logging.getLogger().level)
+
+    # ---- 12. 最近错误摘要 ----
+    try:
+        recent_errors = get_recent_errors(limit=5)
+        status["recent_errors"] = recent_errors
+    except Exception:
+        status["recent_errors"] = []
+
+    # 总体状态判断
+    has_errors = bool(status["errors"])
+    emb_ok = status["subsystems"].get("embedding", {}).get("model_loaded", False)
+    llm_ok = False
+    llm_sub = status["subsystems"].get("llm", {})
+    if "purposes" in llm_sub:
+        llm_ok = any(p.get("enabled") for p in llm_sub["purposes"].values())
+    elif llm_sub.get("enabled"):
+        llm_ok = True
+    knowledge_ok = bool(status["subsystems"].get("knowledge", {}).get("products"))
+
+    if has_errors:
+        overall = "error"
+    elif emb_ok and llm_ok and knowledge_ok:
+        overall = "healthy"
+    elif emb_ok and knowledge_ok:
+        overall = "degraded_no_llm"
+    elif emb_ok:
+        overall = "degraded_no_knowledge"
+    else:
+        overall = "degraded"
+
+    status["overall_status"] = overall
+    return status
+
+
+# ===== 系统统计接口 =====
 
 @app.get("/admin/stats")
 def admin_stats():
@@ -2372,6 +2661,78 @@ async def admin_import_knowledge_file(request: "Request"):
         await form.close()
 
 
+def _extract_article_text(html: str):
+    """从 HTML 中提取文章标题和正文纯文本。
+
+    优先使用 BeautifulSoup（如已安装），否则用正则做基础提取。
+    """
+    title = ""
+    text = ""
+
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        # 提取标题
+        og_title = soup.find("meta", property="og:title")
+        if og_title and og_title.get("content"):
+            title = og_title["content"]
+        elif soup.title:
+            title = soup.title.get_text(strip=True)
+
+        # 移除不需要的标签
+        for tag in soup.find_all(["script", "style", "nav", "footer", "header", "aside"]):
+            tag.decompose()
+
+        # 微信文章特有结构
+        article = soup.find(id="js_content") or soup.find(class_="rich_media_content")
+        if article:
+            text = article.get_text(separator="\n", strip=True)
+        else:
+            # 通用提取：找最大的文本块
+            body = soup.find("body")
+            if body:
+                text = body.get_text(separator="\n", strip=True)
+
+    except ImportError:
+        # 无 BeautifulSoup，用正则基础提取
+        import re as _re
+
+        # 标题
+        m = _re.search(r'<title[^>]*>(.*?)</title>', html, _re.DOTALL | _re.IGNORECASE)
+        if m:
+            title = m.group(1).strip()
+
+        # og:title
+        m = _re.search(r'property="og:title"\s+content="([^"]*)"', html)
+        if m:
+            title = m.group(1).strip()
+
+        # 微信正文区域
+        m = _re.search(r'id="js_content"[^>]*>(.*?)</div>\s*</div>', html, _re.DOTALL)
+        if m:
+            raw = m.group(1)
+        else:
+            raw = _re.sub(r'<script[^>]*>.*?</script>', '', html, flags=_re.DOTALL | _re.IGNORECASE)
+            raw = _re.sub(r'<style[^>]*>.*?</style>', '', raw, flags=_re.DOTALL | _re.IGNORECASE)
+
+        # 去除 HTML 标签
+        raw = _re.sub(r'<br\s*/?>', '\n', raw, flags=_re.IGNORECASE)
+        raw = _re.sub(r'<p[^>]*>', '\n', raw, flags=_re.IGNORECASE)
+        raw = _re.sub(r'<[^>]+>', '', raw)
+        # 去除 HTML 实体
+        raw = _re.sub(r'&nbsp;', ' ', raw)
+        raw = _re.sub(r'&[a-zA-Z]+;', '', raw)
+        text = _re.sub(r'\n{3,}', '\n\n', raw).strip()
+
+    # 清理多余空行
+    lines = [l.strip() for l in text.split("\n")]
+    text = re.sub(r'\n{3,}', '\n\n', "\n".join(lines)).strip()
+
+    return title, text
+
+
 class FetchUrlRequest(BaseModel):
     """通过 URL 抓取网页正文"""
     url: str = Field(..., description="要抓取的网页 URL")
@@ -2660,76 +3021,6 @@ def admin_auto_import(request: Request, req: AutoImportRequest):
         "dry_run": req.dry_run,
         "results": results,
     }
-    """从 HTML 中提取文章标题和正文纯文本。
-
-    优先使用 BeautifulSoup（如已安装），否则用正则做基础提取。
-    """
-    title = ""
-    text = ""
-
-    try:
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup(html, "html.parser")
-
-        # 提取标题
-        og_title = soup.find("meta", property="og:title")
-        if og_title and og_title.get("content"):
-            title = og_title["content"]
-        elif soup.title:
-            title = soup.title.get_text(strip=True)
-
-        # 移除不需要的标签
-        for tag in soup.find_all(["script", "style", "nav", "footer", "header", "aside"]):
-            tag.decompose()
-
-        # 微信文章特有结构
-        article = soup.find(id="js_content") or soup.find(class_="rich_media_content")
-        if article:
-            text = article.get_text(separator="\n", strip=True)
-        else:
-            # 通用提取：找最大的文本块
-            body = soup.find("body")
-            if body:
-                text = body.get_text(separator="\n", strip=True)
-
-    except ImportError:
-        # 无 BeautifulSoup，用正则基础提取
-        import re as _re
-
-        # 标题
-        m = _re.search(r'<title[^>]*>(.*?)</title>', html, _re.DOTALL | _re.IGNORECASE)
-        if m:
-            title = m.group(1).strip()
-
-        # og:title
-        m = _re.search(r'property="og:title"\s+content="([^"]*)"', html)
-        if m:
-            title = m.group(1).strip()
-
-        # 微信正文区域
-        m = _re.search(r'id="js_content"[^>]*>(.*?)</div>\s*</div>', html, _re.DOTALL)
-        if m:
-            raw = m.group(1)
-        else:
-            raw = _re.sub(r'<script[^>]*>.*?</script>', '', html, flags=_re.DOTALL | _re.IGNORECASE)
-            raw = _re.sub(r'<style[^>]*>.*?</style>', '', raw, flags=_re.DOTALL | _re.IGNORECASE)
-
-        # 去除 HTML 标签
-        raw = _re.sub(r'<br\s*/?>', '\n', raw, flags=_re.IGNORECASE)
-        raw = _re.sub(r'<p[^>]*>', '\n', raw, flags=_re.IGNORECASE)
-        raw = _re.sub(r'<[^>]+>', '', raw)
-        # 去除 HTML 实体
-        raw = _re.sub(r'&nbsp;', ' ', raw)
-        raw = _re.sub(r'&[a-zA-Z]+;', '', raw)
-        text = _re.sub(r'\n{3,}', '\n\n', raw).strip()
-
-    # 清理多余空行
-    import re as _re2
-    lines = [l.strip() for l in text.split("\n")]
-    text = _re2.sub(r'\n{3,}', '\n\n', "\n".join(lines)).strip()
-
-    return title, text
 
 
 def _extract_article_media(html: str) -> list:

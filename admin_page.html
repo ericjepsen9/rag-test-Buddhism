@@ -1001,6 +1001,19 @@
 
     </div>
 
+    <!-- 系统诊断 -->
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>系统诊断</span>
+        <button class="btn btn-outline btn-sm" onclick="loadSystemStatus()">刷新</button>
+      </div>
+      <p style="font-size:13px;color:var(--text-sec);margin-bottom:10px">
+        完整的系统运行状态，包括嵌入模型、LLM 配置、知识库索引、缓存、日志等所有子系统健康状况。
+      </p>
+      <div id="systemStatusSummary" style="font-size:13px;margin-bottom:10px"></div>
+      <pre class="out" id="systemStatusOut" style="display:none;max-height:600px;overflow:auto"></pre>
+    </div>
+
   </div>
 
   <!-- 文件编辑弹窗 -->
@@ -1069,7 +1082,7 @@
       if (name === 'knowledge') loadKnowledgeProducts();
       if (name === 'synonyms')  loadSynonyms();
       if (name === 'keywords')  { loadKeywords(); loadClarification(); _initClrOptions(); }
-      if (name === 'system')    { loadLlmConfigs(); loadServiceStatus(); loadCacheStats(); loadServerConfig(); }
+      if (name === 'system')    { loadLlmConfigs(); loadServiceStatus(); loadCacheStats(); loadServerConfig(); loadSystemStatus(); }
     }
 
     /* ===== Toast ===== */
@@ -1674,6 +1687,52 @@
         if (d.cors_origins) html += `CORS：${d.cors_origins}<br>`;
         area.innerHTML = html || '无配置数据';
       } catch(e) { area.textContent = '加载失败：' + e.message; }
+    }
+
+    /* ===== 系统诊断 ===== */
+    async function loadSystemStatus() {
+      const summary = document.getElementById('systemStatusSummary');
+      const out = document.getElementById('systemStatusOut');
+      summary.textContent = '加载中…';
+      out.style.display = 'none';
+      try {
+        const r = await apiFetch('/admin/system_status');
+        const d = await r.json();
+        // 总体状态摘要
+        const statusMap = {
+          healthy: '✅ 系统健康',
+          degraded_no_llm: '⚠️ LLM 未配置',
+          degraded_no_knowledge: '⚠️ 知识库为空',
+          degraded: '⚠️ 服务降级',
+          error: '❌ 存在错误',
+        };
+        let html = `<strong>${statusMap[d.overall_status] || d.overall_status}</strong>`;
+        html += ` · 运行 ${Math.floor(d.uptime_seconds/3600)}h${Math.floor((d.uptime_seconds%3600)/60)}m`;
+        // 子系统概要
+        const sub = d.subsystems || {};
+        if (sub.embedding) html += `<br>嵌入模型: ${sub.embedding.model_loaded ? '已加载' : '未加载'}`;
+        if (sub.llm && sub.llm.purposes) {
+          for (const [k,v] of Object.entries(sub.llm.purposes)) {
+            html += `<br>LLM(${k}): ${v.enabled ? (v.connection_verified ? '已验证' : '已启用未验证') : '未启用'}`;
+            if (v.model) html += ` [${v.model}]`;
+          }
+        }
+        if (sub.knowledge) {
+          const kn = sub.knowledge;
+          html += `<br>知识库: ${kn.products ? kn.products.length + '个产品' : '空'}`;
+          html += `, 共享索引: ${kn.shared_index_built ? '已建' : '未建'}`;
+        }
+        // 最近错误
+        if (d.recent_errors && d.recent_errors.length > 0) {
+          html += `<br><span style="color:var(--red)">最近 ${d.recent_errors.length} 条错误：</span>`;
+          for (const e of d.recent_errors.slice(0, 3)) {
+            html += `<br>&nbsp;&nbsp;${e.ts} [${e.stage}] ${(e.error||'').substring(0,80)}`;
+          }
+        }
+        summary.innerHTML = html;
+        out.style.display = 'block';
+        out.textContent = JSON.stringify(d, null, 2);
+      } catch(e) { summary.textContent = '加载失败：' + e.message; }
     }
 
     /* ===== URL 抓取 ===== */
