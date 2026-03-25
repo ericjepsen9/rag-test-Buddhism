@@ -370,6 +370,7 @@
         <button class="btn btn-primary btn-sm" id="logTabQa"    onclick="switchLogTab('qa')"   >问答日志</button>
         <button class="btn btn-outline btn-sm" id="logTabMiss"  onclick="switchLogTab('miss')" >未命中</button>
         <button class="btn btn-outline btn-sm" id="logTabError" onclick="switchLogTab('error')">错误日志</button>
+        <button class="btn btn-outline btn-sm" id="logTabSystem" onclick="switchLogTab('system')">系统日志</button>
         <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
           <label style="margin:0;font-size:12px">条数</label>
           <select id="logLimit" style="width:70px;padding:4px 8px;font-size:12px" onchange="loadLogs()">
@@ -430,6 +431,23 @@
               </tr>
             </thead>
             <tbody id="logBodyError"><tr><td colspan="4" class="empty">点击刷新加载</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 系统日志表格 -->
+      <div id="logPanelSystem" style="display:none">
+        <div class="table-wrap">
+          <table id="logTableSystem">
+            <thead>
+              <tr>
+                <th style="width:140px">时间</th>
+                <th style="width:140px">事件</th>
+                <th>消息</th>
+                <th>元数据</th>
+              </tr>
+            </thead>
+            <tbody id="logBodySystem"><tr><td colspan="4" class="empty">点击刷新加载</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -781,6 +799,27 @@
           </table>
         </div>
       </div>
+    </div>
+
+    <!-- 从已有知识库提取关键词 -->
+    <div class="card">
+      <div class="card-title">从已有文件批量提取关键词
+        <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
+          扫描知识库文件，用 LLM 提取同义词/分词/路由关键词（适用于导入时未提取的文件）
+        </span>
+      </div>
+      <div class="row-flex" style="margin-bottom:14px">
+        <div>
+          <label>产品名称</label>
+          <input type="text" id="extractKwProduct" value="buddhism" style="width:160px">
+        </div>
+        <div>
+          <label>最大文件数</label>
+          <input type="number" id="extractKwMax" value="50" min="1" max="500" style="width:100px">
+        </div>
+        <button class="btn btn-warning" id="extractKwBtn" onclick="doExtractKeywords()">开始提取</button>
+      </div>
+      <pre class="out" id="extractKwOut" style="display:none"></pre>
     </div>
 
   </div>
@@ -3234,6 +3273,38 @@
       }
     }
 
+    async function doExtractKeywords() {
+      const product  = document.getElementById('extractKwProduct').value.trim();
+      const maxFiles = parseInt(document.getElementById('extractKwMax').value) || 50;
+      const btn      = document.getElementById('extractKwBtn');
+      const out      = document.getElementById('extractKwOut');
+      if (!product) { toast('请输入产品名称'); return; }
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> 提取中…（可能需要数分钟）';
+      out.style.display = '';
+      out.textContent = `正在扫描 ${product} 知识库文件并提取关键词，请耐心等待…`;
+      try {
+        const r = await apiFetch(`/admin/keywords/extract-from-existing?product=${encodeURIComponent(product)}&max_files=${maxFiles}`, {
+          method: 'POST'
+        });
+        const d = await r.json();
+        if (d.ok) {
+          out.textContent = JSON.stringify(d, null, 2);
+          toast(`提取完成：同义词 +${d.total_synonyms_added}，分词 +${d.total_jieba_words_added}，路由词 +${d.total_route_keywords_added}`, 5000);
+          loadSynonyms();
+        } else {
+          out.textContent = '失败：' + JSON.stringify(d, null, 2);
+          toast('提取失败', 3000);
+        }
+      } catch(e) {
+        out.textContent = '请求失败：' + e.message;
+        if (e.message !== '403') toast('请求失败：' + e.message, 3000);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '开始提取';
+      }
+    }
+
     async function loadLlmExpandLog() {
       const logWrap = document.getElementById('llmExpandLogWrap');
       const tbody   = document.getElementById('llmExpandLogBody');
@@ -3822,7 +3893,7 @@
 
     function switchLogTab(kind) {
       _curLogTab = kind;
-      ['qa','miss','error'].forEach(k => {
+      ['qa','miss','error','system'].forEach(k => {
         document.getElementById('logPanel' + k.charAt(0).toUpperCase() + k.slice(1)).style.display = k === kind ? '' : 'none';
         const btn = document.getElementById('logTab' + k.charAt(0).toUpperCase() + k.slice(1));
         btn.className = k === kind ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
@@ -3871,13 +3942,22 @@
             <td style="font-size:12px;color:var(--text-sec)">${_esc(it.rewritten_query || '')}</td>
             <td style="font-size:12px;color:var(--text-sec)">${_esc(JSON.stringify(it.meta || {}))}</td>
           </tr>`).join('');
-        } else {
+        } else if (kind === 'error') {
           const tbody = document.getElementById('logBodyError');
           if (!items.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无错误记录</td></tr>'; return; }
           tbody.innerHTML = items.map(it => `<tr>
             <td style="white-space:nowrap;font-size:12px">${_esc(_shortTs(it.ts))}</td>
             <td><span class="badge badge-danger">${_esc(it.stage || '')}</span></td>
             <td style="font-size:12px;color:var(--danger);word-break:break-all">${_esc(it.error || '')}</td>
+            <td style="font-size:12px;color:var(--text-sec)">${_esc(JSON.stringify(it.meta || {}))}</td>
+          </tr>`).join('');
+        } else if (kind === 'system') {
+          const tbody = document.getElementById('logBodySystem');
+          if (!items.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无系统日志</td></tr>'; return; }
+          tbody.innerHTML = items.map(it => `<tr>
+            <td style="white-space:nowrap;font-size:12px">${_esc(_shortTs(it.ts))}</td>
+            <td><span class="badge badge-info">${_esc(it.event || '')}</span></td>
+            <td style="font-size:12px">${_esc(it.message || '')}</td>
             <td style="font-size:12px;color:var(--text-sec)">${_esc(JSON.stringify(it.meta || {}))}</td>
           </tr>`).join('');
         }
