@@ -1442,21 +1442,22 @@ def _validate_product_name(name: str) -> str:
 
 @app.get("/admin/knowledge/{product}")
 def admin_knowledge_files(product: str):
-    """列出某产品的知识库文件"""
+    """列出某产品的知识库文件（包括子目录中的文件）"""
     product = _validate_product_name(product)
     pdir = KNOWLEDGE_DIR / product
     if not pdir.exists():
         raise HTTPException(status_code=404, detail=f"产品 '{product}' 不存在")
     files = []
-    for f in sorted(pdir.iterdir()):
-        if f.is_file():
-            stat = f.stat()
-            files.append({
-                "name": f.name,
-                "size": stat.st_size,
-                "modified": int(stat.st_mtime),
-                "editable": f.suffix in _ALLOWED_EXTENSIONS,
-            })
+    # 递归扫描所有 .txt 文件（与 build_faiss 的扫描范围一致）
+    for f in sorted(pdir.rglob("*.txt")):
+        rel_path = f.relative_to(pdir)
+        stat = f.stat()
+        files.append({
+            "name": str(rel_path),
+            "size": stat.st_size,
+            "modified": int(stat.st_mtime),
+            "editable": f.suffix in _ALLOWED_EXTENSIONS,
+        })
     return {"product": product, "files": files}
 
 
@@ -2512,17 +2513,18 @@ def admin_import_knowledge(request: Request, req: ImportKnowledgeRequest):
                                           dry_run=req.dry_run)
 
         # 构建索引
+        # 所有类型的知识文件都存储在 knowledge/buddhism/ 下，
+        # 因此需要重建 buddhism 产品索引（而非共享索引）
         built_index = False
         if req.build and not req.dry_run:
             try:
+                from build_faiss import build_for_product
                 if entity_type == "product":
-                    from build_faiss import build_for_product
                     build_for_product(entity_id)
                     invalidate_store_cache(entity_id)
                 else:
-                    from build_faiss import build_shared
-                    build_shared()
-                    invalidate_store_cache("_shared")
+                    build_for_product("buddhism")
+                    invalidate_store_cache("buddhism")
                 # 清除健康检查缓存
                 with _health_lock:
                     global _health_cache
@@ -3282,10 +3284,11 @@ def admin_auto_import(request: Request, req: AutoImportRequest):
             entry["output_dir"] = str(out_dir)
 
             # 记录需要重建索引的产品
+            # 所有类型的知识文件都存储在 knowledge/buddhism/ 下
             if entity_type == "product":
                 need_build_products.add(entity_id)
             else:
-                need_build_products.add("_shared")
+                need_build_products.add("buddhism")
 
             entry["status"] = "ok"
             success_count += 1
@@ -3411,10 +3414,11 @@ def admin_batch_pattern_import(request: Request, req: BatchPatternRequest):
             out_dir = _write_knowledge_files(result, entity_type, entity_id, dry_run=False)
             entry["output_dir"] = str(out_dir)
 
+            # 所有类型的知识文件都存储在 knowledge/buddhism/ 下
             if entity_type == "product":
                 need_build_products.add(entity_id)
             else:
-                need_build_products.add("_shared")
+                need_build_products.add("buddhism")
 
             entry["status"] = "ok"
             success_count += 1
@@ -3652,10 +3656,11 @@ def admin_crawl_import(request: Request, req: CrawlImportRequest):
             out_dir = _write_knowledge_files(result, entity_type, entity_id, dry_run=False)
             entry["output_dir"] = str(out_dir)
 
+            # 所有类型的知识文件都存储在 knowledge/buddhism/ 下
             if entity_type == "product":
                 need_build_products.add(entity_id)
             else:
-                need_build_products.add("_shared")
+                need_build_products.add("buddhism")
 
             entry["status"] = "ok"
             success_count += 1
