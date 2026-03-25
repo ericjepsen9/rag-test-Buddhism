@@ -1796,13 +1796,24 @@ def match_faq(question: str, faq_text: str, faq_keyword_map: Dict[str, str],
 
     # 在 FAQ 文本中查找对应的 Q&A 对
     # 同时用归一化后的 topic 进行匹配，提高容错
+    # 增加 bigram 验证：FAQ 问题必须与用户问题有足够的语义重叠
     topic_norm = _normalize_for_faq(matched_topic)
+    q_bigrams = set(q_norm[i:i+2] for i in range(len(q_norm) - 1)) if len(q_norm) >= 2 else set()
     lines = faq_text.split("\n")
     for i, line in enumerate(lines):
         line_s = line.strip()
         if line_s.startswith("【Q】"):
             line_norm = _normalize_for_faq(line_s)
             if matched_topic in line_s or topic_norm in line_norm:
+                # 验证 FAQ 问题与用户问题的语义重叠度
+                # 避免仅凭一个关键词（如"入行论"）就返回不相关的 FAQ
+                if q_bigrams and len(q_norm) > 6:
+                    faq_q_norm = _normalize_for_faq(line_s.replace("【Q】", ""))
+                    faq_bigrams = set(faq_q_norm[j:j+2] for j in range(len(faq_q_norm) - 1))
+                    if faq_bigrams:
+                        overlap = len(q_bigrams & faq_bigrams) / max(len(q_bigrams), 1)
+                        if overlap < 0.25:
+                            continue  # FAQ 问题与用户问题差异太大，跳过
                 # 收集后续的 【A】 内容
                 answer_parts = []
                 for j in range(i + 1, len(lines)):

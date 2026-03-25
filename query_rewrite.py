@@ -484,13 +484,36 @@ def _resolve_context(question: str, history_ctx: Dict[str, Any]) -> str:
     return q
 
 
+# 意图词优先级映射：当多个路由同时匹配时，根据意图词决定主路由
+_INTENT_ROUTE_PRIORITY = {
+    "practice": re.compile(
+        r"(怎么修|如何修|如何断|如何对治|如何调伏|如何降伏"
+        r"|断除|对治|调伏|降伏|修法|修行方法|学处"
+        r"|哪些方法|什么方法|怎么做|怎么修行|怎么持戒|怎么忏悔)"),
+    "concept": re.compile(
+        r"(是什么|什么意思|含义|定义|什么是|什么叫|概念|区别|关系)"),
+}
+
+
 def _detect_route_for_expansion(q: str) -> List[str]:
-    """检测问题命中的路由，返回匹配到的路由列表"""
+    """检测问题命中的路由，返回匹配到的路由列表。
+    当多个路由同时匹配时，根据意图词调整优先级。"""
     q_lower = q.lower()
     matched = []
     for route, keywords in _QUESTION_ROUTES_LOWER.items():
         if any(kw in q_lower for kw in keywords):
             matched.append(route)
+
+    # 多路由冲突解决：如果同时匹配 scripture + practice，
+    # 根据意图词判断用户真正想问什么
+    if len(matched) > 1:
+        for priority_route, pattern in _INTENT_ROUTE_PRIORITY.items():
+            if pattern.search(q) and priority_route in matched:
+                # 把意图路由提到最前面
+                matched.remove(priority_route)
+                matched.insert(0, priority_route)
+                break
+
     return matched
 
 
@@ -602,10 +625,11 @@ def rewrite_query(question: str, history: Optional[List[Dict]] = None,
     expanded_terms.extend(buddhist)
     expanded_terms.extend(concepts)
 
-    # 路由感知扩展
+    # 路由感知扩展：只使用首选路由的扩展词，避免多路由叠加引入噪音
     detected_routes = _detect_route_for_expansion(q)
-    for rt in detected_routes:
-        expanded_terms.extend(_ROUTE_EXPANSION.get(rt, []))
+    if detected_routes:
+        primary_route = detected_routes[0]
+        expanded_terms.extend(_ROUTE_EXPANSION.get(primary_route, []))
 
     # 历史路由继承
     if not detected_routes and history_ctx.get("route"):
