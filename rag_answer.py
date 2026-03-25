@@ -1427,12 +1427,14 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
     route_top_k = route_cfg.get("k", DEFAULT_TOP_K)
     route_threshold = route_cfg.get("threshold", SCORE_THRESHOLD)
 
-    # 1. Try FAQ exact match — 仅用于简短的基础概念问题
-    # 对于包含动词意图词（如何、怎么、哪些）的问题，跳过 FAQ 走向量搜索
-    # 以获取更详细的 lecture 内容
-    _SKIP_FAQ_PATTERNS = re.compile(
-        r"(如何|怎么|怎样|哪些|哪种|有什么方法|提到了|讲了|阐述了|包括|详细)")
-    skip_faq = bool(_SKIP_FAQ_PATTERNS.search(question))
+    # 1. Try FAQ exact match — 根据问题类型决定是否走 FAQ
+    # 方法类问题（如何/怎么/哪些方法）跳过 FAQ，走向量搜索获取讲记详细内容
+    # 概述类问题（讲了什么/是谁/属于什么）保留 FAQ，因为 FAQ 有精确答案
+    _METHOD_PATTERNS = re.compile(
+        r"(如何|怎么修|怎样修|怎么断|怎么对治|怎么发|哪些方法|什么方法|有什么办法|提到了哪些)")
+    _OVERVIEW_PATTERNS = re.compile(
+        r"(讲了什么|讲什么|是谁|谁写的|谁造的|属于|有几品|是什么$|是什么意思|什么是)")
+    skip_faq = bool(_METHOD_PATTERNS.search(question)) and not bool(_OVERVIEW_PATTERNS.search(question))
 
     faq_answer = ""
     if not skip_faq:
@@ -1460,6 +1462,47 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
         return answer
 
     # 2. Parallel vector + keyword hybrid search (ThreadPoolExecutor)
+    # 比较类问题：拆分为两个子查询分别检索，合并结果
+    _COMPARISON_RE = re.compile(r"(.{1,12}?)(和|与|跟)(.{1,12}?)(的)?(区别|不同|异同|差别|对比)")
+    _comp_match = _COMPARISON_RE.search(question)
+    if _comp_match:
+        concept_a = _comp_match.group(1).strip()
+        concept_b = _comp_match.group(3).strip()
+        # 分别检索两个概念
+        _hits_a = vector_search(product, concept_a, route_top_k)
+        _hits_b = vector_search(product, concept_b, route_top_k)
+        # 合并去重
+        _seen = set()
+        _combined = []
+        for h in _hits_a + _hits_b:
+            key = h.get("text", "")[:100]
+            if key not in _seen:
+                _seen.add(key)
+                _combined.append(h)
+        if _combined:
+            hits = sorted(_combined, key=lambda x: x.get("score", 0), reverse=True)[:route_top_k]
+            # 跳过后续搜索，直接到 LLM 生成
+            hits = filter_by_score(hits, route_threshold)
+            hits = _deduplicate_hits(hits)
+            # 直接跳到 LLM context 构建
+            if USE_OPENAI and hits:
+                context = _build_context(hits)
+                if context:
+                    comp_hint = f"\n[提示：用户在对比「{concept_a}」和「{concept_b}」，请分别解释两者，然后总结异同。]\n"
+                    llm_answer = llm_generate_answer(
+                        question, comp_hint + context, route, mode,
+                        history_summary=rewrite.get("history_summary", ""),
+                        history_pairs=rewrite.get("history_pairs", []),
+                        user_level=user_level,
+                    )
+                    if llm_answer and len(llm_answer.strip()) >= 15:
+                        evidence = build_evidence(hits[:3])
+                        answer = format_structured_answer(route, [llm_answer], evidence)
+                        log_qa(question, answer, rewritten_query=rewrite.get("expanded", ""),
+                               matched_sources=evidence, hit=True,
+                               meta={**_log_meta, "method": "comparison_split"})
+                        return answer
+
     search_q = rewrite.get("search_query", rewrite.get("original", question))
 
     def _do_vector(store_name):

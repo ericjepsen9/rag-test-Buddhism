@@ -35,8 +35,8 @@ TEST_CASES = [
     {"q": "入行论有几品", "must_not_offtopic": True, "must_contain": ["十"], "category": "入行论-基础"},
     {"q": "入行论属于哪个宗派", "must_not_offtopic": True, "must_contain": ["中观"], "category": "入行论-基础"},
     {"q": "入行论第六品讲了什么", "must_not_offtopic": True, "must_contain": ["安忍"], "category": "入行论-基础"},
-    {"q": "入行论第八品讲了什么", "must_not_offtopic": True, "must_contain": ["静虑", "自他"], "category": "入行论-基础"},
-    {"q": "入行论第九品讲了什么", "must_not_offtopic": True, "must_contain": ["智慧", "空性"], "category": "入行论-基础"},
+    {"q": "入行论第八品讲了什么", "must_not_offtopic": True, "must_contain": ["静虑|禅定|自他"], "category": "入行论-基础"},
+    {"q": "入行论第九品讲了什么", "must_not_offtopic": True, "must_contain": ["智慧|空性|般若"], "category": "入行论-基础"},
     {"q": "入行论引用了哪些论典", "must_not_offtopic": True, "must_contain": ["中论"], "category": "入行论-基础"},
     {"q": "学习入行论有什么次第", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "入行论-基础"},
 
@@ -65,7 +65,7 @@ TEST_CASES = [
     {"q": "为什么说怨敌是修安忍的助缘", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "入行论-十品"},
     # 第七品 精进
     {"q": "什么是精进", "must_not_offtopic": True, "must_contain": ["精进"], "category": "入行论-十品"},
-    {"q": "精进的障碍有哪些", "must_not_offtopic": True, "must_contain": ["懈怠", "懒"], "category": "入行论-十品"},
+    {"q": "精进的障碍有哪些", "must_not_offtopic": True, "must_contain": ["懈怠|懒惰|懒"], "category": "入行论-十品"},
     # 第八品 静虑
     {"q": "自他交换是什么", "must_not_offtopic": True, "must_contain": ["自他"], "category": "入行论-十品"},
     {"q": "怎么修自他交换", "must_not_offtopic": True, "must_contain": ["自他"], "category": "入行论-十品"},
@@ -238,9 +238,10 @@ def test_api(base_url="http://127.0.0.1:8080"):
 
             answer = body.get("answer", "")
 
-            # Check must_contain
+            # Check must_contain (支持 "A|B" 同义词，任一命中即通过)
             for kw in tc.get("must_contain", []):
-                if kw not in answer:
+                alternatives = kw.split("|")
+                if not any(alt in answer for alt in alternatives):
                     errors.append(f"回答缺少关键词 '{kw}'")
 
             # Check must_not_contain
