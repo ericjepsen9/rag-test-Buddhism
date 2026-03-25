@@ -966,6 +966,7 @@ def _extract_keywords_from_content(raw_text: str, entity_type: str, entity_id: s
     提取的同义词自动审批并立即生效于搜索。"""
     try:
         from keyword_extractor import extract_keywords_from_document, save_extraction_result
+        from import_knowledge import _get_openai_client
         from search_utils import _SYNONYM_MAP
         from synonym_store import get_all_learned, batch_approve
 
@@ -996,7 +997,7 @@ def _extract_keywords_from_content(raw_text: str, entity_type: str, entity_id: s
     except Exception as e:
         log_error("keyword_extract", repr(e),
                   meta={"type": entity_type, "id": entity_id})
-        return {}
+        return {"error": str(e)}
 
 
 @app.get("/admin/synonyms/all")
@@ -1326,7 +1327,9 @@ def admin_extract_keywords_from_existing(request: Request,
                 entity_id = fp.stem
 
             stats = _extract_keywords_from_content(text, entity_type, entity_id)
-            if stats:
+            if stats.get("error"):
+                results.append({"file": rel, "error": stats["error"]})
+            else:
                 total_synonyms += stats.get("synonyms_added", 0)
                 total_jieba += stats.get("jieba_words_added", 0)
                 total_route += stats.get("route_keywords_added", 0)
