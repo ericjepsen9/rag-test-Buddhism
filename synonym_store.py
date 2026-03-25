@@ -57,10 +57,14 @@ def _save(data: Dict[str, Any]) -> None:
         raise
 
 
+_AUTO_APPROVE_THRESHOLD = 3  # 出现≥3次的映射自动审批
+
+
 def save_learned(original_term: str, mapped_to: str) -> None:
     """保存一条 LLM 改写成功的映射。
 
     如果该映射已存在，更新计数和最后使用时间。
+    高频映射（≥_AUTO_APPROVE_THRESHOLD 次）自动审批。
     """
     original_term = original_term.strip()
     mapped_to = mapped_to.strip()
@@ -77,6 +81,9 @@ def save_learned(original_term: str, mapped_to: str) -> None:
             # 仅在未审核时更新映射目标，已审核的人工映射不可被 LLM 覆盖
             if entry.get("mapped_to") != mapped_to and not entry.get("approved"):
                 entry["mapped_to"] = mapped_to
+            # 高频映射自动审批
+            if not entry.get("approved") and entry.get("count", 0) >= _AUTO_APPROVE_THRESHOLD:
+                entry["approved"] = True
         else:
             data[original_term] = {
                 "mapped_to": mapped_to,

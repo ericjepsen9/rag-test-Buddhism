@@ -961,6 +961,44 @@ def _reload_synonym_runtime():
         log_error("synonym_reload", repr(e))
 
 
+def _extract_keywords_from_content(raw_text: str, entity_type: str, entity_id: str):
+    """从导入内容中自动提取关键词（同义词/分词/路由关键词）。
+    提取的同义词自动审批并立即生效于搜索。"""
+    try:
+        from keyword_extractor import extract_keywords_from_document, save_extraction_result
+        from search_utils import _SYNONYM_MAP
+        from synonym_store import get_all_learned, batch_approve
+
+        # 收集已有同义词用于去重
+        existing = dict(_SYNONYM_MAP)
+        for item in get_all_learned():
+            existing[item["original"]] = item["mapped_to"]
+
+        client = _get_openai_client()
+        from rag_runtime_config import OPENAI_MODEL
+        kw_result = extract_keywords_from_document(
+            client, OPENAI_MODEL, raw_text,
+            entity_type, entity_id, existing,
+        )
+        stats = save_extraction_result(kw_result)
+
+        # 自动审批高置信度的同义词并刷新运行时
+        if stats.get("synonyms_added", 0) > 0:
+            new_terms = [s["original"] for s in kw_result.get("synonyms", [])
+                         if isinstance(s, dict) and s.get("original")]
+            if new_terms:
+                batch_approve(new_terms)
+            _reload_synonym_runtime()
+
+        log_event("keyword_extract", f"从 {entity_type}/{entity_id} 提取关键词",
+                  meta=stats)
+        return stats
+    except Exception as e:
+        log_error("keyword_extract", repr(e),
+                  meta={"type": entity_type, "id": entity_id})
+        return {}
+
+
 @app.get("/admin/synonyms/all")
 def admin_synonyms_all():
     """返回完整词库：静态同义词 + LLM 学习到的同义词"""
@@ -2512,6 +2550,11 @@ def admin_import_knowledge(request: Request, req: ImportKnowledgeRequest):
         out_dir = _write_knowledge_files(result, entity_type, entity_id,
                                           dry_run=req.dry_run)
 
+        # 自动提取关键词（同义词/分词/路由关键词）
+        kw_stats = {}
+        if not req.dry_run:
+            kw_stats = _extract_keywords_from_content(raw_text, entity_type, entity_id)
+
         # 构建索引
         # 所有类型的知识文件都存储在 knowledge/buddhism/ 下，
         # 因此需要重建 buddhism 产品索引（而非共享索引）
@@ -3283,6 +3326,9 @@ def admin_auto_import(request: Request, req: AutoImportRequest):
             out_dir = _write_knowledge_files(result, entity_type, entity_id, dry_run=False)
             entry["output_dir"] = str(out_dir)
 
+            # 5. 自动提取关键词
+            _extract_keywords_from_content(fetched["content"], entity_type, entity_id)
+
             # 记录需要重建索引的产品
             # 所有类型的知识文件都存储在 knowledge/buddhism/ 下
             if entity_type == "product":
@@ -3413,6 +3459,9 @@ def admin_batch_pattern_import(request: Request, req: BatchPatternRequest):
             # 写入知识库
             out_dir = _write_knowledge_files(result, entity_type, entity_id, dry_run=False)
             entry["output_dir"] = str(out_dir)
+
+            # 自动提取关键词
+            _extract_keywords_from_content(fetched["content"], entity_type, entity_id)
 
             # 所有类型的知识文件都存储在 knowledge/buddhism/ 下
             if entity_type == "product":
@@ -3655,6 +3704,9 @@ def admin_crawl_import(request: Request, req: CrawlImportRequest):
 
             out_dir = _write_knowledge_files(result, entity_type, entity_id, dry_run=False)
             entry["output_dir"] = str(out_dir)
+
+            # 自动提取关键词
+            _extract_keywords_from_content(fetched["content"], entity_type, entity_id)
 
             # 所有类型的知识文件都存储在 knowledge/buddhism/ 下
             if entity_type == "product":
