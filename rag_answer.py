@@ -905,6 +905,10 @@ def _try_faq_fast_path(hits: List[Dict], question: str, route: str,
     meta = top_hit.get("meta", {})
     if meta.get("source_type") != "faq":
         return ""
+    # 非 life 路由时，排除 faq_life 来源的命中
+    source_file = meta.get("source_file", "")
+    if route != "life" and "life" in source_file.lower():
+        return ""
 
     thresholds = FAQ_FAST_PATH_THRESHOLDS.get(route, FAQ_FAST_PATH_DEFAULT)
     score = top_hit.get("hybrid_score") or top_hit.get("score", 0.0)
@@ -1443,6 +1447,9 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
         if pdir.exists():
             for fp in sorted(pdir.rglob("faq*.txt")):
                 if fp.name == "faq.txt":
+                    continue
+                # 非 life 路由时排除 faq_life 文件，避免生活应用内容抢占教义问答
+                if route != "life" and "life" in fp.name.lower():
                     continue
                 sub_faq = fp.read_text(encoding="utf-8", errors="replace")
                 if sub_faq.strip():
