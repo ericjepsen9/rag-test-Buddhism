@@ -1427,18 +1427,26 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
     route_top_k = route_cfg.get("k", DEFAULT_TOP_K)
     route_threshold = route_cfg.get("threshold", SCORE_THRESHOLD)
 
-    # 1. Try FAQ exact match (with alias expansion, including sub-directory FAQs)
-    faq_text = read_knowledge_file(product, "faq.txt")
-    pdir = KNOWLEDGE_DIR / product
-    if pdir.exists():
-        for fp in sorted(pdir.rglob("faq*.txt")):
-            if fp.name == "faq.txt":
-                continue
-            sub_faq = fp.read_text(encoding="utf-8", errors="replace")
-            if sub_faq.strip():
-                faq_text = faq_text + "\n" + sub_faq
-    alias_text = read_knowledge_file(product, "alias.txt")
-    faq_answer = match_faq(question, faq_text, FAQ_KEYWORD_MAP, alias_text)
+    # 1. Try FAQ exact match — 仅用于简短的基础概念问题
+    # 对于包含动词意图词（如何、怎么、哪些）的问题，跳过 FAQ 走向量搜索
+    # 以获取更详细的 lecture 内容
+    _SKIP_FAQ_PATTERNS = re.compile(
+        r"(如何|怎么|怎样|哪些|哪种|有什么方法|提到了|讲了|阐述了|包括|详细)")
+    skip_faq = bool(_SKIP_FAQ_PATTERNS.search(question))
+
+    faq_answer = ""
+    if not skip_faq:
+        faq_text = read_knowledge_file(product, "faq.txt")
+        pdir = KNOWLEDGE_DIR / product
+        if pdir.exists():
+            for fp in sorted(pdir.rglob("faq*.txt")):
+                if fp.name == "faq.txt":
+                    continue
+                sub_faq = fp.read_text(encoding="utf-8", errors="replace")
+                if sub_faq.strip():
+                    faq_text = faq_text + "\n" + sub_faq
+        alias_text = read_knowledge_file(product, "alias.txt")
+        faq_answer = match_faq(question, faq_text, FAQ_KEYWORD_MAP, alias_text)
     if faq_answer:
         faq_evidence = [{"meta": {
             "source_file": "faq.txt",
