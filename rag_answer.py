@@ -784,12 +784,17 @@ def _deduplicate_hits(hits: List[Dict], base_overlap_threshold: float = 0.7,
 # Context building (reference architecture)
 # ===================================================================
 
-def _build_context(hits: List[Dict], max_chars: int = 5000) -> str:
+def _build_context(hits: List[Dict], max_chars: int = 5000, min_score: float = 0.15) -> str:
     """Build LLM context string from hits, truncating at chunk boundaries.
-    First 3 snippets include full metadata header; subsequent ones only get index."""
+    First 3 snippets include full metadata header; subsequent ones only get index.
+    Drops hits below min_score to avoid feeding irrelevant content to LLM."""
     parts = []
     total = 0
     for i, h in enumerate(hits, 1):
+        # 过滤低相关度 chunks，避免噪音干扰 LLM 生成
+        score = h.get("hybrid_score") or h.get("score", 0.0)
+        if i > 1 and score < min_score:
+            continue
         text = (h.get("text") or "").strip()
         if not text:
             continue

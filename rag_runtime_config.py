@@ -190,14 +190,14 @@ SCORE_THRESHOLD = 0.25
 
 # ===== FAQ 快速路径阈值 =====
 FAQ_FAST_PATH_THRESHOLDS = {
-    "doctrine":  {"score": 0.38, "ratio": 0.45},
-    "practice":  {"score": 0.35, "ratio": 0.40},
-    "scripture": {"score": 0.38, "ratio": 0.45},
-    "concept":   {"score": 0.38, "ratio": 0.45},
-    "basic":     {"score": 0.35, "ratio": 0.40},
-    "life":      {"score": 0.32, "ratio": 0.35},
+    "doctrine":  {"score": 0.55, "ratio": 0.60},
+    "practice":  {"score": 0.50, "ratio": 0.55},
+    "scripture": {"score": 0.55, "ratio": 0.60},
+    "concept":   {"score": 0.55, "ratio": 0.60},
+    "basic":     {"score": 0.50, "ratio": 0.55},
+    "life":      {"score": 0.45, "ratio": 0.50},
 }
-FAQ_FAST_PATH_DEFAULT = {"score": 0.40, "ratio": 0.50}
+FAQ_FAST_PATH_DEFAULT = {"score": 0.55, "ratio": 0.60}
 
 # ===== brief/full 模式配置 =====
 ANSWER_MODE_CONFIG = {
