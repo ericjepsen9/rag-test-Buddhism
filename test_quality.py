@@ -28,149 +28,132 @@ sys.path.insert(0, str(Path(__file__).parent))
 # ============================================================
 
 TEST_CASES = [
-    # === 基础概念 (应走 FAQ 快速回答) ===
-    {
-        "q": "入行论是谁写的",
-        "must_not_offtopic": True,
-        "must_contain": ["寂天"],
-        "must_not_contain": ["领导", "职场", "同事"],
-        "category": "basic",
-    },
-    {
-        "q": "入行论有几品",
-        "must_not_offtopic": True,
-        "must_contain": ["十品", "十"],
-        "category": "basic",
-    },
-    {
-        "q": "什么是佛教",
-        "must_not_offtopic": True,
-        "must_contain": ["释迦牟尼", "四圣谛"],
-        "category": "basic",
-    },
+    # ================================================================
+    # A. 入行论基础信息 (应从 FAQ 或知识库中准确回答)
+    # ================================================================
+    {"q": "入行论是谁写的", "must_not_offtopic": True, "must_contain": ["寂天"], "must_not_contain": ["领导", "职场", "同事"], "category": "入行论-基础"},
+    {"q": "入行论有几品", "must_not_offtopic": True, "must_contain": ["十"], "category": "入行论-基础"},
+    {"q": "入行论属于哪个宗派", "must_not_offtopic": True, "must_contain": ["中观"], "category": "入行论-基础"},
+    {"q": "入行论第六品讲了什么", "must_not_offtopic": True, "must_contain": ["安忍"], "category": "入行论-基础"},
+    {"q": "入行论第八品讲了什么", "must_not_offtopic": True, "must_contain": ["静虑", "自他"], "category": "入行论-基础"},
+    {"q": "入行论第九品讲了什么", "must_not_offtopic": True, "must_contain": ["智慧", "空性"], "category": "入行论-基础"},
+    {"q": "入行论引用了哪些论典", "must_not_offtopic": True, "must_contain": ["中论"], "category": "入行论-基础"},
+    {"q": "学习入行论有什么次第", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "入行论-基础"},
 
-    # === 修行方法 (应走向量搜索, 引用讲记) ===
-    {
-        "q": "如何断除贪心",
-        "expect_route": "practice",
-        "must_not_offtopic": True,
-        "must_contain": ["贪"],
-        "must_not_contain": ["不在我的服务范围"],
-        "category": "practice",
-    },
-    {
-        "q": "入行论中提到了哪些断除贪心的方法",
-        "must_not_offtopic": True,
-        "must_contain": ["贪"],
-        "must_not_contain": ["领导", "职场", "同事"],
-        "category": "practice",
-    },
-    {
-        "q": "如何修安忍",
-        "must_not_offtopic": True,
-        "must_contain": ["安忍", "嗔"],
-        "must_not_contain": ["领导", "职场"],
-        "category": "practice",
-    },
-    {
-        "q": "怎么修自他交换",
-        "must_not_offtopic": True,
-        "must_contain": ["自他"],
-        "category": "practice",
-    },
+    # ================================================================
+    # B. 入行论十品核心内容 — 每品至少一个问题
+    # ================================================================
+    # 第一品 菩提心利益
+    {"q": "菩提心有什么功德", "must_not_offtopic": True, "must_contain": ["菩提心"], "category": "入行论-十品"},
+    {"q": "暇满人身为什么难得", "must_not_offtopic": True, "must_contain": ["暇满"], "category": "入行论-十品"},
+    # 第二品 忏悔罪业
+    {"q": "忏悔罪业的方法有哪些", "must_not_offtopic": True, "must_contain": ["忏悔"], "must_not_contain": ["不在我的服务范围"], "category": "入行论-十品"},
+    {"q": "七支供养是什么", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "入行论-十品"},
+    # 第三品 受持菩提心
+    {"q": "菩提心的学处是什么", "must_not_offtopic": True, "must_not_clarify": True, "must_contain": ["学处", "菩提心"], "category": "入行论-十品"},
+    {"q": "愿菩提心和行菩提心的区别", "must_not_offtopic": True, "must_contain": ["愿", "行"], "category": "入行论-十品"},
+    # 第四品 不放逸
+    {"q": "不放逸是什么意思", "must_not_offtopic": True, "must_contain": ["放逸"], "category": "入行论-十品"},
+    {"q": "为什么发了菩提心后要不放逸", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "入行论-十品"},
+    # 第五品 正知正念
+    {"q": "什么是正知正念", "must_not_offtopic": True, "must_contain": ["正知", "正念"], "category": "入行论-十品"},
+    {"q": "如何护持自己的心", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "入行论-十品"},
+    # 第六品 安忍
+    {"q": "嗔恨心的过患是什么", "must_not_offtopic": True, "must_contain": ["嗔"], "category": "入行论-十品"},
+    {"q": "如何修安忍", "must_not_offtopic": True, "must_contain": ["安忍"], "must_not_contain": ["领导", "职场"], "category": "入行论-十品"},
+    {"q": "一嗔能摧毁千劫所积聚是什么意思", "must_not_offtopic": True, "must_contain": ["嗔", "善根"], "category": "入行论-十品"},
+    {"q": "为什么说怨敌是修安忍的助缘", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "入行论-十品"},
+    # 第七品 精进
+    {"q": "什么是精进", "must_not_offtopic": True, "must_contain": ["精进"], "category": "入行论-十品"},
+    {"q": "精进的障碍有哪些", "must_not_offtopic": True, "must_contain": ["懈怠", "懒"], "category": "入行论-十品"},
+    # 第八品 静虑
+    {"q": "自他交换是什么", "must_not_offtopic": True, "must_contain": ["自他"], "category": "入行论-十品"},
+    {"q": "怎么修自他交换", "must_not_offtopic": True, "must_contain": ["自他"], "category": "入行论-十品"},
+    {"q": "入行论中提到了哪些断除贪心的方法", "must_not_offtopic": True, "must_contain": ["贪"], "must_not_contain": ["领导", "职场", "同事"], "category": "入行论-十品"},
+    # 第九品 智慧
+    {"q": "入行论中的二谛是什么", "must_not_offtopic": True, "must_contain": ["世俗", "胜义"], "category": "入行论-十品"},
+    {"q": "中观应成派的观点是什么", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "入行论-十品"},
+    {"q": "为什么说修行需要空性智慧", "must_not_offtopic": True, "must_contain": ["空性", "智慧"], "category": "入行论-十品"},
+    # 第十品 回向
+    {"q": "回向是什么意思", "must_not_offtopic": True, "must_contain": ["回向"], "category": "入行论-十品"},
+    {"q": "为什么要把功德回向给众生", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "入行论-十品"},
 
-    # === 概念辨析 (应走向量搜索) ===
-    {
-        "q": "菩提心的学处是什么",
-        "must_not_offtopic": True,
-        "must_not_clarify": True,
-        "must_contain": ["学处", "菩提心"],
-        "category": "concept",
-    },
-    {
-        "q": "愿菩提心和行菩提心的区别",
-        "must_not_offtopic": True,
-        "must_contain": ["愿", "行"],
-        "category": "concept",
-    },
-    {
-        "q": "什么是正知正念",
-        "must_not_offtopic": True,
-        "must_contain": ["正知", "正念"],
-        "category": "concept",
-    },
-    {
-        "q": "不放逸是什么意思",
-        "must_not_offtopic": True,
-        "must_contain": ["放逸"],
-        "category": "concept",
-    },
-    {
-        "q": "嗔恨心的过患是什么",
-        "must_not_offtopic": True,
-        "must_contain": ["嗔", "善根"],
-        "category": "concept",
-    },
+    # ================================================================
+    # C. 佛教基础概念 (FAQ 已覆盖)
+    # ================================================================
+    {"q": "什么是佛教", "must_not_offtopic": True, "must_contain": ["释迦牟尼"], "category": "佛教基础"},
+    {"q": "四圣谛是什么", "must_not_offtopic": True, "must_contain": ["苦", "集", "灭", "道"], "category": "佛教基础"},
+    {"q": "什么是八正道", "must_not_offtopic": True, "must_contain": ["正见"], "category": "佛教基础"},
+    {"q": "什么是三宝", "must_not_offtopic": True, "must_contain": ["佛", "法", "僧"], "category": "佛教基础"},
+    {"q": "什么是因果报应", "must_not_offtopic": True, "must_contain": ["因果"], "category": "佛教基础"},
+    {"q": "什么是轮回", "must_not_offtopic": True, "must_contain": ["六道"], "category": "佛教基础"},
+    {"q": "什么是空性", "must_not_offtopic": True, "must_contain": ["空"], "category": "佛教基础"},
+    {"q": "什么是涅槃", "must_not_offtopic": True, "must_contain": ["涅槃"], "category": "佛教基础"},
+    {"q": "什么是菩萨", "must_not_offtopic": True, "must_contain": ["菩萨"], "category": "佛教基础"},
+    {"q": "五戒是什么", "must_not_offtopic": True, "must_contain": ["不杀生"], "category": "佛教基础"},
+    {"q": "什么是十二因缘", "must_not_offtopic": True, "must_contain": ["无明"], "category": "佛教基础"},
+    {"q": "心经讲什么", "must_not_offtopic": True, "must_contain": ["空"], "category": "佛教基础"},
+    {"q": "金刚经讲什么", "must_not_offtopic": True, "must_contain": ["金刚经"], "category": "佛教基础"},
 
-    # === 短查询 (不应误判离题) ===
-    {
-        "q": "暇满人身",
-        "must_not_offtopic": True,
-        "must_contain": ["暇满", "人身"],
-        "category": "short",
-    },
-    {
-        "q": "暇满",
-        "must_not_offtopic": True,
-        "must_contain": ["暇"],
-        "category": "short",
-    },
-    {
-        "q": "精进",
-        "must_not_offtopic": True,
-        "category": "short",
-    },
-    {
-        "q": "忏悔",
-        "must_not_offtopic": True,
-        "category": "short",
-    },
-    {
-        "q": "贪心",
-        "must_not_offtopic": True,
-        "category": "short",
-    },
-    {
-        "q": "嗔恨",
-        "must_not_offtopic": True,
-        "category": "short",
-    },
+    # ================================================================
+    # D. 修行方法类问题 (需要从讲记中检索详细内容)
+    # ================================================================
+    {"q": "如何断除贪心", "expect_route": "practice", "must_not_offtopic": True, "must_contain": ["贪"], "must_not_contain": ["不在我的服务范围"], "category": "修行方法"},
+    {"q": "如何对治嗔恨心", "must_not_offtopic": True, "must_contain": ["嗔"], "category": "修行方法"},
+    {"q": "如何发菩提心", "must_not_offtopic": True, "must_contain": ["菩提心"], "category": "修行方法"},
+    {"q": "如何修忍辱", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "修行方法"},
+    {"q": "如何修禅定", "must_not_offtopic": True, "must_contain": ["禅定", "定"], "category": "修行方法"},
+    {"q": "布施有哪几种", "must_not_offtopic": True, "must_contain": ["布施"], "category": "修行方法"},
+    {"q": "六波罗蜜是什么", "must_not_offtopic": True, "must_contain": ["布施", "持戒"], "category": "修行方法"},
+    {"q": "在家居士如何修行", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "修行方法"},
 
-    # === 经典内容 ===
-    {
-        "q": "入行论第六品讲了什么",
-        "must_not_offtopic": True,
-        "must_contain": ["安忍"],
-        "category": "scripture",
-    },
-    {
-        "q": "自他交换是什么",
-        "must_not_offtopic": True,
-        "must_contain": ["自他"],
-        "category": "scripture",
-    },
+    # ================================================================
+    # E. 颂词理解类 (检索颂词+讲解)
+    # ================================================================
+    {"q": "善逝法身佛子伴是什么意思", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "颂词理解"},
+    {"q": "暇满人身极难得这句话出自哪里", "must_not_offtopic": True, "must_contain": ["入行论", "暇满"], "category": "颂词理解"},
+    {"q": "身心若远离散乱即不生是什么意思", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "颂词理解"},
+    {"q": "若久修空性必断实有习是什么意思", "must_not_offtopic": True, "must_contain": ["空性"], "category": "颂词理解"},
 
-    # === 应被拒绝的离题问题 ===
-    {
-        "q": "今天天气怎么样",
-        "expect_offtopic": True,
-        "category": "offtopic",
-    },
-    {
-        "q": "Python怎么写",
-        "expect_offtopic": True,
-        "category": "offtopic",
-    },
+    # ================================================================
+    # F. 短查询 (不应误判离题)
+    # ================================================================
+    {"q": "暇满人身", "must_not_offtopic": True, "must_contain": ["暇满"], "category": "短查询"},
+    {"q": "暇满", "must_not_offtopic": True, "must_contain": ["暇"], "category": "短查询"},
+    {"q": "精进", "must_not_offtopic": True, "category": "短查询"},
+    {"q": "忏悔", "must_not_offtopic": True, "category": "短查询"},
+    {"q": "贪心", "must_not_offtopic": True, "category": "短查询"},
+    {"q": "嗔恨", "must_not_offtopic": True, "category": "短查询"},
+    {"q": "菩提心", "must_not_offtopic": True, "category": "短查询"},
+    {"q": "空性", "must_not_offtopic": True, "category": "短查询"},
+    {"q": "回向", "must_not_offtopic": True, "category": "短查询"},
+    {"q": "安忍", "must_not_offtopic": True, "category": "短查询"},
+    {"q": "无常", "must_not_offtopic": True, "category": "短查询"},
+    {"q": "因果", "must_not_offtopic": True, "category": "短查询"},
+
+    # ================================================================
+    # G. 跨品综合问题
+    # ================================================================
+    {"q": "入行论的核心思想是什么", "must_not_offtopic": True, "must_contain": ["菩提心"], "category": "综合"},
+    {"q": "入行论中六度是怎么讲的", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "综合"},
+    {"q": "入行论对修行人最重要的教言是什么", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "综合"},
+    {"q": "寂天菩萨如何论述空性与大悲的关系", "must_not_offtopic": True, "must_contain": ["空性"], "category": "综合"},
+
+    # ================================================================
+    # H. 易混淆/边界情况
+    # ================================================================
+    {"q": "入行论和入中论有什么区别", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "边界"},
+    {"q": "寂天菩萨和龙树菩萨的关系", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "边界"},
+    {"q": "佛教和其他宗教有什么不同", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "边界"},
+    {"q": "大乘和小乘有什么区别", "must_not_offtopic": True, "must_contain": ["大乘", "小乘"], "category": "边界"},
+
+    # ================================================================
+    # I. 应被拒绝的离题问题
+    # ================================================================
+    {"q": "今天天气怎么样", "expect_offtopic": True, "category": "离题"},
+    {"q": "Python怎么写", "expect_offtopic": True, "category": "离题"},
+    {"q": "股票怎么买", "expect_offtopic": True, "category": "离题"},
+    {"q": "推荐一部电影", "expect_offtopic": True, "category": "离题"},
 ]
 
 
