@@ -276,6 +276,7 @@ def test_api(base_url="http://127.0.0.1:8080"):
             passed += 1
         else:
             failed += 1
+        time.sleep(1)  # 避免触发 429 速率限制
 
     return results, passed, failed
 

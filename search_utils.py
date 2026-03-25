@@ -1812,7 +1812,9 @@ def match_faq(question: str, faq_text: str, faq_keyword_map: Dict[str, str],
                     faq_bigrams = set(faq_q_norm[j:j+2] for j in range(len(faq_q_norm) - 1))
                     if faq_bigrams:
                         overlap = len(q_bigrams & faq_bigrams) / max(len(q_bigrams), 1)
-                        if overlap < 0.45:
+                        # 短查询用低阈值（FAQ关键词已保证主题相关），长查询用高阈值
+                        min_overlap = 0.40 if len(q_norm) > 12 else 0.25
+                        if overlap < min_overlap:
                             continue  # FAQ 问题与用户问题差异太大，跳过
                 # 收集后续的 【A】 内容
                 answer_parts = []
