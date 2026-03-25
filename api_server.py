@@ -1281,6 +1281,71 @@ def admin_llm_expand_log(limit: int = 20):
     return {"items": get_llm_expansion_log(limit=min(max(1, limit), 50))}
 
 
+@app.post("/admin/keywords/extract-from-existing")
+@limiter.limit("5/minute")
+def admin_extract_keywords_from_existing(request: Request,
+                                          product: str = "buddhism",
+                                          max_files: int = 200):
+    """从已有知识库文件中批量提取关键词（同义词/分词/路由关键词）。
+    用于补跑之前导入但未提取关键词的文件。"""
+    from build_faiss import read_text_auto
+    product = _validate_product_name(product)
+    pdir = KNOWLEDGE_DIR / product
+    if not pdir.exists():
+        raise HTTPException(status_code=404, detail=f"产品 '{product}' 不存在")
+
+    # 收集所有 txt 文件（排除 alias.txt）
+    txt_files = []
+    for fp in sorted(pdir.rglob("*.txt")):
+        if fp.name.startswith("alias"):
+            continue
+        txt_files.append(fp)
+
+    if not txt_files:
+        return {"ok": True, "message": "没有找到知识文件", "processed": 0}
+
+    txt_files = txt_files[:max_files]
+    results = []
+    total_synonyms = 0
+    total_jieba = 0
+    total_route = 0
+
+    for fp in txt_files:
+        rel = str(fp.relative_to(pdir))
+        try:
+            text = read_text_auto(fp)
+            if not text or len(text.strip()) < 50:
+                continue
+            # 从路径推断类型和ID
+            parts = rel.replace("\\", "/").split("/")
+            if len(parts) >= 2 and parts[0] == "lecture":
+                entity_type = "lecture"
+                entity_id = "/".join(parts[1:]).replace(".txt", "")
+            else:
+                entity_type = "general"
+                entity_id = fp.stem
+
+            stats = _extract_keywords_from_content(text, entity_type, entity_id)
+            if stats:
+                total_synonyms += stats.get("synonyms_added", 0)
+                total_jieba += stats.get("jieba_words_added", 0)
+                total_route += stats.get("route_keywords_added", 0)
+                results.append({"file": rel, "stats": stats})
+        except Exception as e:
+            results.append({"file": rel, "error": str(e)})
+
+    _reload_synonym_runtime()
+    return {
+        "ok": True,
+        "processed": len(results),
+        "total_files": len(txt_files),
+        "total_synonyms_added": total_synonyms,
+        "total_jieba_words_added": total_jieba,
+        "total_route_keywords_added": total_route,
+        "details": results[:50],
+    }
+
+
 @app.get("/admin/logs/qa")
 def admin_logs_qa(limit: int = 20):
     return {"items": get_recent_qa(limit=min(max(1, limit), 100))}
