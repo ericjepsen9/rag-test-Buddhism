@@ -540,6 +540,7 @@ def collect_product_records(product: str):
                 faq_q_count = 0
                 for i, pair in enumerate(faq_pairs, 1):
                     # 完整问答对（用于答案生成和 FAQ 快速路径）
+                    _faq_layer = _detect_content_layer(pair["full"], display_name)
                     records.append({
                         "text": pair["full"],
                         "meta": {
@@ -547,6 +548,7 @@ def collect_product_records(product: str):
                             "source_file": display_name,
                             "source_type": "faq",
                             "chunk_id": f"{display_name}#faq{i}",
+                            "content_layer": _faq_layer,
                         }
                     })
                     # 问题文本独立嵌入（向量检索时更好匹配用户问题）
@@ -607,6 +609,8 @@ def collect_product_records(product: str):
                 _attach_buddhist_meta(meta, cd)
                 # 讲记课次元数据：从文件名提取课次信息
                 _attach_lesson_meta(meta, display_name)
+                # 内容层次标记（doctrine/practice/life/general）
+                meta["content_layer"] = _detect_content_layer(cd["text"], display_name)
                 records.append({
                     "text": cd["text"],
                     "meta": meta,
@@ -648,6 +652,36 @@ def _attach_buddhist_meta(meta: dict, cd: dict):
         meta["content_type"] = cd["content_type"]
     if "section_title" in cd:
         meta["section_title"] = cd["section_title"]
+
+
+def _detect_content_layer(text: str, source_file: str) -> str:
+    """根据内容特征和文件路径自动标记内容层次。
+
+    Returns: 'doctrine' | 'practice' | 'life' | 'general'
+    """
+    sf = source_file.lower()
+    # 文件名明确指示
+    if "faq_life" in sf or "life" in sf:
+        return "life"
+    # 内容特征检测
+    life_signals = ["工作中", "职场", "同事", "领导", "团队", "上班",
+                    "客户", "项目", "家庭关系", "人际关系", "压力", "焦虑"]
+    doctrine_signals = ["【颂词】", "【讲解】", "科判", "论云", "经云", "如是说",
+                        "《", "》", "菩萨", "空性", "缘起", "中观"]
+    practice_signals = ["修法", "观修", "实修", "窍诀", "次第", "打坐", "禅修",
+                        "如何修", "修行方法", "具体做法"]
+
+    life_count = sum(1 for s in life_signals if s in text)
+    doctrine_count = sum(1 for s in doctrine_signals if s in text)
+    practice_count = sum(1 for s in practice_signals if s in text)
+
+    if life_count >= 2 and life_count > doctrine_count:
+        return "life"
+    if practice_count >= 2 and practice_count > doctrine_count:
+        return "practice"
+    if doctrine_count >= 1:
+        return "doctrine"
+    return "general"
 
 
 def _attach_lesson_meta(meta: dict, display_name: str):

@@ -1547,12 +1547,18 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
     hits = filter_by_score(hits, route_threshold)
     hits = _deduplicate_hits(hits)
 
-    # 来源过滤：教义/修行类问题降低 faq_life 来源的权重
-    if _strategy.get("prefer_lecture") and route != "life":
+    # 来源过滤：根据问题类型和 content_layer 调整权重
+    if route != "life":
         for h in hits:
-            src = (h.get("meta") or {}).get("source_file", "")
-            if "life" in src.lower():
+            meta = h.get("meta") or {}
+            layer = meta.get("content_layer", "")
+            src = meta.get("source_file", "")
+            # content_layer 标记优先，文件名回退
+            is_life = (layer == "life") or (not layer and "life" in src.lower())
+            if is_life and _strategy.get("prefer_lecture"):
                 h["hybrid_score"] = h.get("hybrid_score", 0) * 0.3
+            elif layer == "doctrine" and _strategy.get("prefer_lecture"):
+                h["hybrid_score"] = h.get("hybrid_score", 0) * 1.15
         hits = sorted(hits, key=lambda x: x.get("hybrid_score", 0), reverse=True)
 
     # 3. CrossEncoder rerank (Buddhist feature)
