@@ -23,8 +23,9 @@ _PATTERNS = {
     "who":             re.compile(r"(是谁|谁写的|谁造的|作者|哪位)"),
     "which":           re.compile(r"(属于什么|属于哪|归于|哪个宗派|哪一派|什么宗)"),
     "verse":           re.compile(r"(这句话|这个颂词|出自哪|是什么意思.{0,4}$)"),
+    "original_text":   re.compile(r"(原文|全文|完整的|颂词是什么|怎么说的|原话|原句)"),
     "howmany":         re.compile(r"(有几|有多少|几品|几种|几个)"),
-    "reference":       re.compile(r"(出自哪|哪部经|哪本书|谁说的|原文|出处|引用自)"),
+    "reference":       re.compile(r"(出自哪|哪部经|哪本书|谁说的|出处|引用自)"),
     "relation":        re.compile(r"(.{1,8})(和|与|跟)(.{1,8})(的|有什么)?(关系|联系|关联)"),
     "sequence":        re.compile(r"(先后|顺序|次第|先修|后修|第一步|步骤|先学什么)"),
     "story":           re.compile(r"(公案|故事|典故|传说|讲一个|有没有.{0,4}故事)"),
@@ -58,6 +59,7 @@ STRATEGY = {
     "which":           {"skip_faq": False, "prefer_lecture": False},
     "howmany":         {"skip_faq": False, "prefer_lecture": False},
     "overview":        {"skip_faq": False, "prefer_lecture": False},
+    "original_text":   {"skip_faq": True,  "prefer_lecture": True},
     "reference":       {"skip_faq": False, "prefer_lecture": True},
     "method":          {"skip_faq": True,  "prefer_lecture": True},
     "reason":          {"skip_faq": True,  "prefer_lecture": True},
@@ -125,6 +127,21 @@ def classify(question: str) -> Dict[str, Any]:
             return {
                 "question_type": qtype,
                 "strategy": STRATEGY.get(qtype, DEFAULT_STRATEGY),
+                "comparison_concepts": None,
+            }
+
+    # 颂词特征检测：用户直接输入颂词/偈颂文本（无问句词）
+    # 特征：短文本 + (文言文词汇 或 佛教术语 + 非口语化)
+    _VERSE_SIGNALS = re.compile(
+        r"(，.*。|，.*，|兮|矣|乎|哉|皆|悉|故|若|莫|勿|岂|何以|极|尽|乃|亦)")
+    _VERSE_BUDDHIST = re.compile(
+        r"(佛|菩萨|众生|善根|功德|菩提|涅槃|轮回|烦恼|解脱|暇满|精进|安忍|回向|嗔|劫|戒|定|慧|苦|空|无常)")
+    _NOT_QUESTION = not any(w in q for w in ["吗", "呢", "？", "?", "怎么", "如何", "什么"])
+    if 4 < len(q) <= 30 and _NOT_QUESTION:
+        if _VERSE_SIGNALS.search(q) or _VERSE_BUDDHIST.search(q):
+            return {
+                "question_type": "verse",
+                "strategy": STRATEGY["verse"],
                 "comparison_concepts": None,
             }
 

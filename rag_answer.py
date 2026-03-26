@@ -1225,13 +1225,21 @@ def llm_generate_answer(question: str, context: str, route: str, mode: str,
             "- 突出核心要点\n"
         ),
         "verse": (
-            "\n## 回答策略：颂词解释类问题\n"
-            "用户想理解某句颂词/经文，请：\n"
-            "- 用户可能只引用了颂词的上半句或下半句，请从参考资料中找到完整的颂词（上下句一起）引用\n"
-            "- 先引用完整颂词原文\n"
+            "\n## 回答策略：颂词/经文类问题\n"
+            "用户输入了颂词或经文（可能只有上半句或下半句），请：\n"
+            "- 从参考资料中找到包含该句的完整颂词（上下句一起），完整引用\n"
+            "- 必须输出完整的颂词原文，一字不改\n"
             "- 逐句解释含义\n"
             "- 说明在修行中的意义\n"
-            "- 只聚焦用户问到的这个颂词，不要把参考资料中其他不相关的颂词也列出来\n"
+            "- 只聚焦用户问到的这个颂词，不要列出参考资料中其他不相关的颂词\n"
+        ),
+        "original_text": (
+            "\n## 回答策略：原文/全文请求\n"
+            "用户想要看完整的原文内容，请：\n"
+            "- 必须完整输出参考资料中的原文，不得省略或缩写\n"
+            "- 颂词/偈颂一字不改地完整呈现\n"
+            "- 如果原文很长，按段落或科判结构分段呈现\n"
+            "- 可在原文后简要说明背景和含义\n"
         ),
         "debate": (
             "\n## 回答策略：多观点/辩论类问题\n"
@@ -1857,7 +1865,7 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
     # Strategy 1: LLM RAG (primary) with context from hits
     if USE_OPENAI:
         # 根据问题类型调整 context 大小：颂词/定义类问题用少量精确内容
-        _ctx_size = {"verse": 3000, "definition": 3000, "who": 2000, "howmany": 2000}
+        _ctx_size = {"verse": 3000, "original_text": 6000, "definition": 3000, "who": 2000, "howmany": 2000}
         _max_ctx = _ctx_size.get(_qtype, 5000)
         context = _build_context(hits, max_chars=_max_ctx)
         if context:
