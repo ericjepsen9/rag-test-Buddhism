@@ -1431,14 +1431,12 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
     route_top_k = route_cfg.get("k", DEFAULT_TOP_K)
     route_threshold = route_cfg.get("threshold", SCORE_THRESHOLD)
 
-    # 1. Try FAQ exact match — 根据问题类型决定是否走 FAQ
-    # 方法类问题（如何/怎么/哪些方法）跳过 FAQ，走向量搜索获取讲记详细内容
-    # 概述类问题（讲了什么/是谁/属于什么）保留 FAQ，因为 FAQ 有精确答案
-    _METHOD_PATTERNS = re.compile(
-        r"(如何|怎么修|怎样修|怎么断|怎么对治|怎么发|哪些方法|什么方法|有什么办法|提到了哪些)")
-    _OVERVIEW_PATTERNS = re.compile(
-        r"(讲了什么|讲什么|是谁|谁写的|谁造的|属于|有几品|是什么$|是什么意思|什么是)")
-    skip_faq = bool(_METHOD_PATTERNS.search(question)) and not bool(_OVERVIEW_PATTERNS.search(question))
+    # 1. 问题分类 → 驱动后续搜索策略
+    from question_classifier import classify as _classify_question
+    _qclass = _classify_question(question)
+    _qtype = _qclass["question_type"]
+    _strategy = _qclass["strategy"]
+    skip_faq = _strategy.get("skip_faq", False)
 
     faq_answer = ""
     if not skip_faq:
@@ -1470,14 +1468,11 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
 
     # 2. Parallel vector + keyword hybrid search (ThreadPoolExecutor)
     # 比较类问题：拆分为两个子查询分别检索，合并结果
-    _COMPARISON_RE = re.compile(r"(.{1,12}?)(和|与|跟)(.{1,12}?)(的)?(区别|不同|异同|差别|对比)")
-    _comp_match = _COMPARISON_RE.search(question)
-    if _comp_match:
-        concept_a = _comp_match.group(1).strip()
-        concept_b = _comp_match.group(3).strip()
+    if _qtype == "comparison" and _qclass.get("comparison_concepts"):
+        concept_a, concept_b = _qclass["comparison_concepts"]
         # 分别检索两个概念
-        _hits_a = vector_search(product, concept_a, route_top_k)
-        _hits_b = vector_search(product, concept_b, route_top_k)
+        _hits_a = vector_search(product, concept_a + " 定义 含义", route_top_k)
+        _hits_b = vector_search(product, concept_b + " 定义 含义", route_top_k)
         # 合并去重
         _seen = set()
         _combined = []
@@ -1487,11 +1482,10 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
                 _seen.add(key)
                 _combined.append(h)
         if _combined:
+            # 比较类问题用更低的阈值，因为两个概念分开搜索分数可能较低
             hits = sorted(_combined, key=lambda x: x.get("score", 0), reverse=True)[:route_top_k]
-            # 跳过后续搜索，直接到 LLM 生成
-            hits = filter_by_score(hits, route_threshold)
+            hits = filter_by_score(hits, max(0.10, route_threshold - 0.10))
             hits = _deduplicate_hits(hits)
-            # 直接跳到 LLM context 构建
             if USE_OPENAI and hits:
                 context = _build_context(hits)
                 if context:
@@ -1552,6 +1546,14 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
     # Score filtering
     hits = filter_by_score(hits, route_threshold)
     hits = _deduplicate_hits(hits)
+
+    # 来源过滤：教义/修行类问题降低 faq_life 来源的权重
+    if _strategy.get("prefer_lecture") and route != "life":
+        for h in hits:
+            src = (h.get("meta") or {}).get("source_file", "")
+            if "life" in src.lower():
+                h["hybrid_score"] = h.get("hybrid_score", 0) * 0.3
+        hits = sorted(hits, key=lambda x: x.get("hybrid_score", 0), reverse=True)
 
     # 3. CrossEncoder rerank (Buddhist feature)
     if USE_RERANK and hits:
