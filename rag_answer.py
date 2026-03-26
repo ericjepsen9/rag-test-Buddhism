@@ -1226,9 +1226,11 @@ def llm_generate_answer(question: str, context: str, route: str, mode: str,
         "verse": (
             "\n## 回答策略：颂词解释类问题\n"
             "用户想理解某句颂词/经文，请：\n"
-            "- 先引用原文\n"
+            "- 只解释用户问到的那一句颂词，不要把参考资料中其他颂词也列出来\n"
+            "- 先引用该颂词原文\n"
             "- 逐句解释含义\n"
             "- 说明在修行中的意义\n"
+            "- 如参考资料包含多个颂词，忽略不相关的，只聚焦用户问的那一句\n"
         ),
         "debate": (
             "\n## 回答策略：多观点/辩论类问题\n"
@@ -1850,7 +1852,10 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
 
     # Strategy 1: LLM RAG (primary) with context from hits
     if USE_OPENAI:
-        context = _build_context(hits)
+        # 根据问题类型调整 context 大小：颂词/定义类问题用少量精确内容
+        _ctx_size = {"verse": 2000, "definition": 3000, "who": 2000, "howmany": 2000}
+        _max_ctx = _ctx_size.get(_qtype, 5000)
+        context = _build_context(hits, max_chars=_max_ctx)
         if context:
             history_summary = rewrite.get("history_summary", "")
             history_pairs = rewrite.get("history_pairs", [])
