@@ -102,7 +102,7 @@ CHUNK_OVERLAP = 150
 LLM_REWRITE_ENABLED = _os.environ.get("RAG_LLM_REWRITE", "1").strip().lower() in ("1", "true", "yes")
 
 LLM_TEMPERATURE = 0.3
-LLM_MAX_TOKENS_BRIEF = 1500
+LLM_MAX_TOKENS_BRIEF = 800
 LLM_MAX_TOKENS_FULL = 2500
 
 # 路由专属温度：教义/概念类需要确定性低温，修行/历史可稍高

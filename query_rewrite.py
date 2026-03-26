@@ -283,6 +283,21 @@ _BUDDHISM_GUARD_PATTERNS = re.compile(
     r"|闻思修|闻|思|修|加行|前行|正行|资粮|道次第)"
 )
 
+# 梵文/巴利文佛教术语：用户可能用外语提问，不应判为离题
+_SANSKRIT_TERMS = {
+    "sunyata": "空性", "prajna": "般若", "bodhi": "菩提", "bodhicitta": "菩提心",
+    "karma": "业力", "dharma": "法", "sangha": "僧伽", "nirvana": "涅槃",
+    "samsara": "轮回", "buddha": "佛", "bodhisattva": "菩萨",
+    "paramita": "波罗蜜", "sutra": "经", "mantra": "咒",
+    "mandala": "坛城", "tantra": "密续", "guru": "上师",
+    "vipassana": "内观", "samatha": "止", "metta": "慈",
+    "dukkha": "苦", "anicca": "无常", "anatta": "无我",
+}
+
+# 用户纠正模式：用户纠正上一个回答时的表达
+_USER_CORRECTION_PATTERNS = re.compile(
+    r"(不对|说错了|回答错了|不是这个|不是我问的|我问的是|我想问的是|你理解错了|答非所问)")
+
 # 产品/主题切换意图：用户想问另一个主题，不应继承历史
 _SWITCH_PATTERNS = re.compile(
     r"(换一个|另一个|另一种|其他的|别的|不同的|有没有其他|还有什么)"
@@ -336,6 +351,11 @@ def _has_domain_relevance(text: str) -> bool:
 
     # 3. 包含产品/项目名
     for term in _ALL_PRODUCT_TERMS:
+        if term in low:
+            return True
+
+    # 4. 包含梵文/巴利文佛教术语
+    for term in _SANSKRIT_TERMS:
         if term in low:
             return True
 

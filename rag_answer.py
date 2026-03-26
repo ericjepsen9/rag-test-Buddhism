@@ -1454,7 +1454,15 @@ def llm_generate_answer(question: str, context: str, route: str, mode: str,
         f"- 重点方向：{route_hints.get(route, '根据问题自然组织回答内容。')}\n"
         "- 不要大段复制参考资料原文，而是用自己的话提炼归纳，关键处引用原文\n"
         "- 科判编号（甲一、乙二等）仅在用户明确问科判时保留，否则转化为通俗表述\n"
-        "- 回答末尾加上：「以上内容基于佛教经典与传统教义整理，仅供学习参考。」\n"
+        "- 回答末尾加上：「以上内容基于佛教经典与传统教义整理，仅供学习参考。」\n\n"
+        "## 回答完整性（重要）\n"
+        "- 回答前先检查：用户问题的每个方面是否都已覆盖？\n"
+        "- 如果问题包含多个子问题（如「X是什么？怎么修？」），每个都要回答\n"
+        "- 如果只能回答部分，明确说明哪部分未能回答\n\n"
+        "## 准确性（重要）\n"
+        "- 只基于参考资料和确定的佛学知识回答，不要编造经论名称、人物、年代\n"
+        "- 如果不确定某个说法的准确性，标注「（待确认）」\n"
+        "- 不同来源的观点如有分歧，分别呈现而非只取一个\n"
         f"{qtype_instruction}"
         f"{history_block}"
     )
@@ -1641,6 +1649,25 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
     route_cfg = _get_route_config(route)
     route_top_k = route_cfg.get("k", DEFAULT_TOP_K)
     route_threshold = route_cfg.get("threshold", SCORE_THRESHOLD)
+
+    # 0. 敏感话题安全检测
+    _SAFETY_PATTERNS = re.compile(
+        r"(自杀|轻生|不想活|结束生命|跳楼|割腕|想死|去死|活不下去)")
+    if _SAFETY_PATTERNS.search(question):
+        _safety_reply = (
+            "我能感受到你现在非常痛苦。请记住，生命是珍贵的，你并不孤单。\n\n"
+            "佛教认为人身极为难得（暇满人身），每一个生命都有无限的价值和潜力。"
+            "当前的痛苦是暂时的，通过正确的方法可以转化和超越。\n\n"
+            "**如果你正在经历严重的情绪危机，请立即寻求帮助：**\n"
+            "- 全国24小时心理援助热线：400-161-9995\n"
+            "- 北京心理危机研究与干预中心：010-82951332\n"
+            "- 或联系身边信任的家人、朋友、法师\n\n"
+            "同时，尝试静下心来念诵「南无阿弥陀佛」或「南无观世音菩萨」，"
+            "观世音菩萨闻声救苦，会给予你力量和加持。"
+        )
+        log_qa(question, _safety_reply, rewritten_query="", matched_sources=[], hit=True,
+               meta={**_log_meta, "method": "safety_response"})
+        return _safety_reply
 
     # 1. 问题分类 → 驱动后续搜索策略
     from question_classifier import classify as _classify_question
