@@ -506,11 +506,12 @@ def detect_product(question: str) -> str:
 
 
 def _detect_special_intent(q: str) -> str:
-    """Detect special intents without knowledge coverage: price, comparison, location."""
+    """Detect special intents without knowledge coverage: price, location.
+    Note: comparison intent removed — Buddhist comparisons (大乘vs小乘,
+    愿菩提心vs行菩提心) should go through normal search, not return template."""
     if any(k in q for k in _PRICE_KWS):
         return "price"
-    if any(k in q for k in _COMPARE_KWS):
-        return "comparison"
+    # comparison 已移除：佛教对比类问题应走正常搜索流程
     if any(k in q for k in _LOCATION_KWS):
         return "location"
     return ""
@@ -1234,8 +1235,10 @@ def llm_generate_answer(question: str, context: str, route: str, mode: str,
         "可简要添加，但必须标注「（补充说明）」以区分\n"
         "2. **部分可答则答**：如果资料只能回答问题的一部分，先回答能回答的部分，"
         "然后注明「关于XX部分，现有资料未涉及」\n"
-        "3. **资料不相关时坦诚说明**：如果参考资料与用户问题明显不相关或无法回答该问题，"
-        "请直接说明「现有资料库未收录该主题的相关内容」，不要强行从不相关资料中拼凑答案\n"
+        "3. **资料不足时的处理**：如果参考资料与用户问题不够相关：\n"
+        "   - 若该问题属于佛教通识（如基本教义、常见概念对比），可基于你的佛学知识回答，末尾注明「（补充说明）」\n"
+        "   - 若该问题涉及特定讲记/法师观点而资料不足，说明「该内容知识库暂未完全覆盖」\n"
+        "   - 不要强行从不相关资料中拼凑答案\n"
         "4. 回答要条理清晰，使用分点或分段组织\n"
         "5. 如参考资料中有经典原文，引用时用「」括起\n\n"
         f"{level_hint}\n"
@@ -1336,9 +1339,11 @@ def _llm_fallback_answer(question: str, route: str, hits: list) -> str:
     system_prompt = (
         "你是一位佛教知识问答助手。用户问了一个知识库中尚未完全覆盖的问题。\n"
         "你的任务是：\n"
-        "1. 坦诚但友好地告知该话题目前知识库覆盖不足，不要编造任何事实\n"
-        "2. 如果提供了部分相关片段，可以简要提及相关信息（注明仅供参考）\n"
-        "3. 根据用户问题，推荐1-2个知识库能详细回答的相关话题\n"
+        "1. 如果该问题属于佛教基础知识（如大小乘区别、基本教义、常见概念），"
+        "请直接基于你的佛学知识回答，但末尾注明「（以上为佛教通识，非来自本知识库讲记内容）」\n"
+        "2. 如果提供了部分相关片段，优先基于片段内容回答（注明来源）\n"
+        "3. 如果该问题涉及特定法师的讲解或论典的具体章节内容，而你没有相关资料，"
+        "则坦诚说明知识库暂未覆盖，并推荐1-2个知识库能回答的相关话题\n"
         "4. 语气自然亲切\n"
         f"\n当前知识库覆盖的主题包括：\n{_KNOWLEDGE_TOPICS}\n"
     )

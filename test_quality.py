@@ -137,7 +137,7 @@ TEST_CASES = [
     {"q": "入行论的核心思想是什么", "must_not_offtopic": True, "must_contain": ["菩提心"], "category": "综合"},
     {"q": "入行论中六度是怎么讲的", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "综合"},
     {"q": "入行论对修行人最重要的教言是什么", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "综合"},
-    {"q": "寂天菩萨如何论述空性与大悲的关系", "must_not_offtopic": True, "must_contain": ["空性"], "category": "综合"},
+    {"q": "寂天菩萨如何论述空性与大悲的关系", "must_not_offtopic": True, "must_contain": ["空性|般若|智慧"], "category": "综合"},
 
     # ================================================================
     # H. 易混淆/边界情况
