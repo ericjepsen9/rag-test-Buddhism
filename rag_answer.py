@@ -1698,6 +1698,15 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
         alias_text = read_knowledge_file(product, "alias.txt")
         faq_answer = match_faq(question, faq_text, FAQ_KEYWORD_MAP, alias_text)
     if faq_answer:
+        # FAQ 答案也通过 LLM 按 mode/user_level 调整风格
+        if USE_OPENAI and (mode != "full" or user_level == "experienced"):
+            _faq_context = f"[FAQ 精确匹配]\n{faq_answer}"
+            _faq_llm = llm_generate_answer(
+                question, _faq_context, route, mode,
+                user_level=user_level, question_type=_qtype,
+            )
+            if _faq_llm and len(_faq_llm.strip()) >= 15:
+                faq_answer = _faq_llm
         faq_evidence = [{"meta": {
             "source_file": "faq.txt",
             "source_type": "faq",
