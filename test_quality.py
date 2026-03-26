@@ -194,6 +194,31 @@ TEST_CASES = [
     {"q": "寂天菩萨是哪个时代的", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "多轮对话"},
 
     # ================================================================
+    # N. 修行实操/困难/体验/戒律
+    # ================================================================
+    {"q": "打坐时腿疼怎么办", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "修行实操"},
+    {"q": "修了很久感觉没有进步怎么办", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "修行实操"},
+    {"q": "打坐时看到光是怎么回事", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "修行实操"},
+    {"q": "破戒了怎么办", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "修行实操"},
+
+    # ================================================================
+    # O. 生活应用/情绪/禁忌/误解澄清
+    # ================================================================
+    {"q": "安忍在生活中怎么用", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "应用与误解"},
+    {"q": "我很痛苦想不开怎么办", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "应用与误解"},
+    {"q": "学佛有什么禁忌", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "应用与误解"},
+    {"q": "佛教是迷信吗", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "应用与误解"},
+
+    # ================================================================
+    # P. 现代议题/推荐/出处/次第/念诵
+    # ================================================================
+    {"q": "佛教如何看待AI", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "扩展问题"},
+    {"q": "推荐几本佛教入门书", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "扩展问题"},
+    {"q": "修行的先后顺序是什么", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "扩展问题"},
+    {"q": "五蕴和十二因缘有什么关系", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "扩展问题"},
+    {"q": "回向文怎么念", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "扩展问题"},
+
+    # ================================================================
     # M. 容易混淆的问题
     # ================================================================
     {"q": "空和无有什么区别", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "易混淆"},
