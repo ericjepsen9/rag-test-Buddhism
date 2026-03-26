@@ -1162,7 +1162,8 @@ def llm_generate_answer(question: str, context: str, route: str, mode: str,
                         history_summary: str = "",
                         history_pairs: list = None,
                         low_confidence: bool = False,
-                        user_level: str = "") -> str:
+                        user_level: str = "",
+                        question_type: str = "") -> str:
     """RAG: use retrieved context with LLM to generate answer.
     Supports conversation history for multi-turn dialogue.
     user_level: 'beginner' or 'experienced' — adjusts tone and depth."""
@@ -1178,6 +1179,60 @@ def llm_generate_answer(question: str, context: str, route: str, mode: str,
         user_level = DEFAULT_USER_LEVEL
 
     length_hint = "控制在300-500字，重点突出、层次清晰" if mode == "brief" else "详细全面，可适当展开，800字以内"
+
+    # 根据问题类型给出具体的回答策略
+    _QTYPE_INSTRUCTIONS = {
+        "method": (
+            "\n## 回答策略：方法类问题\n"
+            "用户想知道具体方法/步骤，请：\n"
+            "- 先用一句话概括核心方法\n"
+            "- 然后分点列出具体方法（3-5个要点）\n"
+            "- 每个方法用自己的话简要解释，必要时引用关键颂词\n"
+            "- 不要大段复制讲记原文，而是提炼要义\n"
+        ),
+        "definition": (
+            "\n## 回答策略：定义类问题\n"
+            "用户想了解概念的含义，请：\n"
+            "- 先给出简明定义（1-2句话）\n"
+            "- 再展开解释含义和意义\n"
+            "- 可引用经典原文作为依据\n"
+        ),
+        "reason": (
+            "\n## 回答策略：原因类问题\n"
+            "用户想了解背后的原因/道理，请：\n"
+            "- 直接回答「为什么」\n"
+            "- 用逻辑清晰的论证说明原因\n"
+            "- 引用经论依据支撑论点\n"
+        ),
+        "comparison": (
+            "\n## 回答策略：比较类问题\n"
+            "用户想对比两个概念，请：\n"
+            "- 分别解释两者的定义\n"
+            "- 列出主要相同点和不同点\n"
+            "- 总结两者的关系\n"
+        ),
+        "list": (
+            "\n## 回答策略：列举类问题\n"
+            "用户想知道有哪些，请：\n"
+            "- 用编号列表列出所有项目\n"
+            "- 每项简要说明（1-2句话）\n"
+        ),
+        "overview": (
+            "\n## 回答策略：概述类问题\n"
+            "用户想了解整体内容，请：\n"
+            "- 概括主要内容和结构\n"
+            "- 突出核心要点\n"
+        ),
+        "verse": (
+            "\n## 回答策略：颂词解释类问题\n"
+            "用户想理解某句颂词/经文，请：\n"
+            "- 先引用原文\n"
+            "- 逐句解释含义\n"
+            "- 说明在修行中的意义\n"
+        ),
+    }
+    qtype_instruction = _QTYPE_INSTRUCTIONS.get(question_type, "")
+
     route_hints = {
         "basic": "介绍佛教基本知识。",
         "doctrine": "详细解释教义体系、逻辑关系和修证次第。",
@@ -1249,7 +1304,10 @@ def llm_generate_answer(question: str, context: str, route: str, mode: str,
         "## 格式\n"
         f"- 回答长度：{length_hint}\n"
         f"- 重点方向：{route_hints.get(route, '根据问题自然组织回答内容。')}\n"
+        "- 不要大段复制参考资料原文，而是用自己的话提炼归纳，关键处引用原文\n"
+        "- 科判编号（甲一、乙二等）仅在用户明确问科判时保留，否则转化为通俗表述\n"
         "- 回答末尾加上：「以上内容基于佛教经典与传统教义整理，仅供学习参考。」\n"
+        f"{qtype_instruction}"
         f"{history_block}"
     )
     if low_confidence:
@@ -1500,6 +1558,7 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
                         history_summary=rewrite.get("history_summary", ""),
                         history_pairs=rewrite.get("history_pairs", []),
                         user_level=user_level,
+                        question_type="comparison",
                     )
                     if llm_answer and len(llm_answer.strip()) >= 15:
                         evidence = build_evidence(hits[:3])
@@ -1612,6 +1671,7 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
                 history_pairs=history_pairs,
                 low_confidence=low_confidence,
                 user_level=user_level,
+                question_type=_qtype,
             )
             # Validate: not too short, not echo of question
             if llm_answer and len(llm_answer.strip()) >= 15:
