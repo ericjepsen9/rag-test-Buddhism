@@ -148,6 +148,42 @@ TEST_CASES = [
     {"q": "大乘和小乘有什么区别", "must_not_offtopic": True, "must_contain": ["大乘", "小乘"], "category": "边界"},
 
     # ================================================================
+    # J. 佛法与生活 (应返回生活应用层内容)
+    # ================================================================
+    {"q": "工作压力大怎么用佛法调节", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "佛法与生活"},
+    {"q": "如何用佛法面对焦虑", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "佛法与生活"},
+    {"q": "被同事冤枉了怎么办", "must_not_offtopic": True, "must_contain": ["安忍|忍辱|忍耐"], "category": "佛法与生活"},
+    {"q": "孩子不听话怎么从佛法角度看", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "佛法与生活"},
+    {"q": "如何在生活中修行", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "佛法与生活"},
+    {"q": "佛教怎么看待财富", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "佛法与生活"},
+    {"q": "亲人去世了怎么面对", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "佛法与生活"},
+    {"q": "总是拖延懈怠怎么办", "must_not_offtopic": True, "must_contain": ["精进|不放逸|懈怠"], "category": "佛法与生活"},
+
+    # ================================================================
+    # K. 心理学与佛法 (应能回答，不误判离题)
+    # ================================================================
+    {"q": "佛教如何看待抑郁症", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "心理与佛法"},
+    {"q": "正念冥想和佛教禅修有什么关系", "must_not_offtopic": True, "must_contain": ["正念|禅修"], "category": "心理与佛法"},
+    {"q": "佛法如何帮助控制情绪", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "心理与佛法"},
+    {"q": "佛教的慈悲心和心理学的共情有什么关系", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "心理与佛法"},
+
+    # ================================================================
+    # L. 多轮对话模拟 (上下文理解)
+    # ================================================================
+    {"q": "入行论第六品讲的是什么", "must_not_offtopic": True, "must_contain": ["安忍"], "category": "多轮对话"},
+    # 以下问题模拟追问（无历史上下文时应独立回答）
+    {"q": "那第七品呢", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "多轮对话"},
+    {"q": "寂天菩萨是哪个时代的", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "多轮对话"},
+
+    # ================================================================
+    # M. 容易混淆的问题
+    # ================================================================
+    {"q": "空和无有什么区别", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "易混淆"},
+    {"q": "佛教说的忍辱是忍气吞声吗", "must_not_offtopic": True, "must_contain": ["安忍|忍辱"], "category": "易混淆"},
+    {"q": "放下执著是不是什么都不要了", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "易混淆"},
+    {"q": "佛教是消极避世的吗", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "易混淆"},
+
+    # ================================================================
     # I. 应被拒绝的离题问题
     # ================================================================
     {"q": "今天天气怎么样", "expect_offtopic": True, "category": "离题"},
