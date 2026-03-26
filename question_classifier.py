@@ -16,6 +16,8 @@ _PATTERNS = {
     "method":      re.compile(r"(如何|怎么修|怎样修|怎么断|怎么对治|怎么发|怎么念|怎么持|怎么忏)"),
     "reason":      re.compile(r"(为什么|为何|原因|有什么功德|有什么过患|有什么利益)"),
     "comparison":  re.compile(r"(.{1,12}?)(和|与|跟)(.{1,12}?)(的|有什么|有何)?(区别|不同|异同|差别|对比)"),
+    "debate":      re.compile(r"(还是|是否|到底|究竟|矛盾|相违|怎么理解.{0,4}矛盾|既然.{2,10}为什么|那谁|那什么)"),
+    "advice":      re.compile(r"(适不适合|应该选|该不该|可不可以|能不能学|好不好|我该|我应该|先学|适合.{0,4}吗)"),
     "list":        re.compile(r"(有哪些|哪几种|包括什么|包括哪些|列举|哪些方法)"),
     "overview":    re.compile(r"(讲了什么|讲什么|主要内容|内容是什么|概述)"),
     "who":         re.compile(r"(是谁|谁写的|谁造的|作者|哪位)"),
@@ -35,6 +37,8 @@ STRATEGY = {
     "reason":      {"skip_faq": True,  "prefer_lecture": True},
     "list":        {"skip_faq": True,  "prefer_lecture": True, "boost_top_k": 20},
     "comparison":  {"skip_faq": True,  "prefer_lecture": False, "split_query": True},
+    "debate":      {"skip_faq": True,  "prefer_lecture": True},
+    "advice":      {"skip_faq": True,  "prefer_lecture": True},
     "verse":       {"skip_faq": True,  "prefer_lecture": True},
 }
 

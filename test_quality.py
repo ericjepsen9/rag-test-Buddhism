@@ -168,7 +168,25 @@ TEST_CASES = [
     {"q": "佛教的慈悲心和心理学的共情有什么关系", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "心理与佛法"},
 
     # ================================================================
-    # L. 多轮对话模拟 (上下文理解)
+    # L1. 多观点/辩论类问题 (应呈现多个角度)
+    # ================================================================
+    {"q": "菩提心是心王还是心所", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "多观点辩论"},
+    {"q": "佛教说无我，那谁在轮回", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "多观点辩论"},
+    {"q": "既然一切皆空，为什么还要修行", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "多观点辩论"},
+    {"q": "中观和唯识对空性的理解有什么不同", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "多观点辩论"},
+
+    # ================================================================
+    # L2. 个人建议/选择类问题 (应给出原则而非断言)
+    # ================================================================
+    {"q": "我适不适合学习密宗", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "个人建议"},
+    {"q": "如何选择上师", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "个人建议"},
+    {"q": "初学者应该先学哪部经", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "个人建议"},
+    {"q": "我应该修净土还是禅宗", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "个人建议"},
+    {"q": "学佛后可以吃肉吗", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "个人建议"},
+    {"q": "在家人可以受菩萨戒吗", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "个人建议"},
+
+    # ================================================================
+    # L3. 多轮对话模拟 (上下文理解)
     # ================================================================
     {"q": "入行论第六品讲的是什么", "must_not_offtopic": True, "must_contain": ["安忍"], "category": "多轮对话"},
     # 以下问题模拟追问（无历史上下文时应独立回答）
