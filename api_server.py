@@ -337,6 +337,22 @@ _HEALTH_CACHE_TTL = float(os.environ.get("HEALTH_CACHE_TTL", "15.0"))
 _health_lock = threading.Lock()
 
 
+class FeedbackRequest(BaseModel):
+    question: str = ""
+    answer: str = ""
+    rating: str = ""
+
+
+@app.post("/admin/feedback")
+def admin_feedback(req: FeedbackRequest):
+    """收集用户对回答的反馈（👍👎）"""
+    if req.rating not in ("good", "bad"):
+        return {"ok": False, "error": "invalid rating"}
+    log_event("user_feedback", f"{'👍' if req.rating == 'good' else '👎'} {req.question[:50]}",
+              meta={"question": req.question[:200], "answer_preview": req.answer[:100], "rating": req.rating})
+    return {"ok": True}
+
+
 @app.get("/health")
 def health():
     """健康检查：返回各产品索引状态、文档数、embedding模型状态及服务运行时间"""

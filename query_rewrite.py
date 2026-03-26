@@ -615,12 +615,24 @@ def rewrite_query(question: str, history: Optional[List[Dict]] = None,
         if not _has_domain_relevance(raw):
             is_offtopic = True
 
+    # 用户纠正检测：如果用户说"不对/说错了"，提取真正的问题并忽略历史上下文
+    is_correction = bool(_USER_CORRECTION_PATTERNS.search(raw))
+
     # 清理纠正前缀
     cleaned = _CORRECTION_PREFIX.sub("", raw).strip() if _CORRECTION_PREFIX.search(raw) else raw
+    if is_correction:
+        # 尝试提取纠正后的真正问题："不对，我问的是XX" → "XX"
+        import re as _re
+        _corr_extract = _re.search(r"(?:我问的是|我想问的是|我想了解)\s*(.+)", raw)
+        if _corr_extract:
+            cleaned = _corr_extract.group(1).strip()
 
     # 提取历史上下文（支持缓存复用）
+    # 用户纠正时忽略历史上下文，避免继续用错误的上下文
     history_ctx: Dict[str, Any] = {}
-    if _cached_ctx is not None:
+    if is_correction:
+        history_ctx = {}  # 纠正时清空历史上下文
+    elif _cached_ctx is not None:
         history_ctx = _cached_ctx
     elif history:
         history_ctx = _extract_history_context(history)

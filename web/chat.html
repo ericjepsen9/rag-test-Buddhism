@@ -694,6 +694,18 @@ function renderDebugRaw(d) {
     + esc(JSON.stringify(d, null, 2)) + '</pre>';
 }
 
+// ===== Feedback =====
+let _lastUserQuestion = '';
+function _sendFeedback(answer, question, rating) {
+  try {
+    fetch('/admin/feedback', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({question: _lastUserQuestion || question, answer: answer.slice(0, 500), rating})
+    }).catch(() => {});
+  } catch(_) {}
+}
+
 // ===== Create message =====
 function addMessage(text, role, opts = {}) {
   // Hide welcome on first message
@@ -910,6 +922,22 @@ function addMessage(text, role, opts = {}) {
         });
     };
     actions.appendChild(copyBtn);
+
+    // 反馈按钮
+    const likeBtn = document.createElement('span');
+    likeBtn.className = 'bubble-action';
+    likeBtn.textContent = '👍';
+    likeBtn.title = '回答有帮助';
+    likeBtn.onclick = () => { _sendFeedback(text, question, 'good'); likeBtn.style.opacity='0.5'; toast('感谢反馈', 'success'); };
+
+    const dislikeBtn = document.createElement('span');
+    dislikeBtn.className = 'bubble-action';
+    dislikeBtn.textContent = '👎';
+    dislikeBtn.title = '回答需改进';
+    dislikeBtn.onclick = () => { _sendFeedback(text, question, 'bad'); dislikeBtn.style.opacity='0.5'; toast('感谢反馈，我们会改进', 'success'); };
+
+    actions.appendChild(likeBtn);
+    actions.appendChild(dislikeBtn);
     bubble.appendChild(actions);
   }
 
@@ -975,6 +1003,7 @@ async function ask() {
   input.value = '';
   autoResize(input);
 
+  _lastUserQuestion = question;
   addMessage(question, 'user');
   showTyping();
   setStatus('thinking');
