@@ -1375,6 +1375,65 @@
       <pre class="out" id="systemStatusOut" style="display:none;max-height:600px;overflow:auto"></pre>
     </div>
 
+    <!-- 系统监控面板 -->
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>系统监控</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
+            <input type="checkbox" id="monitorAutoRefresh" onchange="_toggleMonitorRefresh()"> 自动刷新(10秒)
+          </label>
+          <button class="btn btn-outline btn-sm" onclick="loadMonitorData()">刷新</button>
+        </div>
+      </div>
+
+      <!-- 实时指标 -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+        <div style="background:var(--bg);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:24px;font-weight:700;color:var(--primary)" id="monQaTotal">-</div>
+          <div style="font-size:11px;color:var(--text-sec)">总问答数</div>
+        </div>
+        <div style="background:var(--bg);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:24px;font-weight:700;color:var(--success)" id="monHitRate">-</div>
+          <div style="font-size:11px;color:var(--text-sec)">命中率</div>
+        </div>
+        <div style="background:var(--bg);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:24px;font-weight:700;color:var(--info)" id="monAvgMs">-</div>
+          <div style="font-size:11px;color:var(--text-sec)">平均耗时</div>
+        </div>
+        <div style="background:var(--bg);border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:24px;font-weight:700;color:var(--danger)" id="monErrCount">-</div>
+          <div style="font-size:11px;color:var(--text-sec)">错误数</div>
+        </div>
+      </div>
+
+      <!-- 最近操作日志 -->
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">最近操作</div>
+      <div class="table-wrap" style="max-height:300px;overflow-y:auto">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:140px">时间</th>
+              <th style="width:80px">类型</th>
+              <th>内容</th>
+              <th style="width:80px">状态</th>
+            </tr>
+          </thead>
+          <tbody id="monitorLogBody">
+            <tr><td colspan="4" class="empty">点击刷新加载</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 用户反馈统计 -->
+      <div style="font-size:13px;font-weight:600;margin:16px 0 8px">用户反馈</div>
+      <div style="display:flex;gap:24px;font-size:13px">
+        <span>👍 <strong id="monFeedGood">-</strong></span>
+        <span>👎 <strong id="monFeedBad">-</strong></span>
+        <span style="color:var(--text-sec)" id="monFeedRecent">最近反馈：无</span>
+      </div>
+    </div>
+
   </div>
 
   <!-- 文件编辑弹窗 -->
@@ -2124,6 +2183,99 @@
         out.style.display = 'block';
         out.textContent = JSON.stringify(d, null, 2);
       } catch(e) { summary.textContent = '加载失败：' + e.message; }
+    }
+
+    /* ===== 系统监控 ===== */
+    let _monitorTimer = null;
+    function _toggleMonitorRefresh() {
+      if (document.getElementById('monitorAutoRefresh').checked) {
+        loadMonitorData();
+        _monitorTimer = setInterval(loadMonitorData, 10000);
+      } else {
+        if (_monitorTimer) clearInterval(_monitorTimer);
+        _monitorTimer = null;
+      }
+    }
+
+    async function loadMonitorData() {
+      try {
+        // 并行加载各类数据
+        const [qaR, errR, sysR, statsR] = await Promise.all([
+          apiFetch('/admin/logs/qa?limit=50').then(r => r.json()).catch(() => ({items:[]})),
+          apiFetch('/admin/logs/error?limit=20').then(r => r.json()).catch(() => ({items:[]})),
+          apiFetch('/admin/logs/system?limit=30').then(r => r.json()).catch(() => ({items:[]})),
+          apiFetch('/admin/stats').then(r => r.json()).catch(() => ({})),
+        ]);
+
+        const qaItems = qaR.items || [];
+        const errItems = errR.items || [];
+        const sysItems = sysR.items || [];
+
+        // 指标
+        document.getElementById('monQaTotal').textContent = qaItems.length || '0';
+        const hits = qaItems.filter(q => q.hit).length;
+        document.getElementById('monHitRate').textContent = qaItems.length
+          ? Math.round(100 * hits / qaItems.length) + '%' : '-';
+        const avgMs = qaItems.length
+          ? Math.round(qaItems.reduce((s, q) => s + (q.latency_ms || 0), 0) / qaItems.length) : 0;
+        document.getElementById('monAvgMs').textContent = avgMs ? avgMs + 'ms' : '-';
+        document.getElementById('monErrCount').textContent = errItems.length || '0';
+
+        // 合并所有日志按时间排序
+        const allLogs = [];
+        for (const q of qaItems.slice(0, 15)) {
+          allLogs.push({
+            ts: q.ts, type: 'QA',
+            msg: q.question?.slice(0, 40) + (q.question?.length > 40 ? '…' : ''),
+            status: q.hit ? '命中' : '未命中',
+            statusClass: q.hit ? 'badge-success' : 'badge-warn',
+          });
+        }
+        for (const e of errItems.slice(0, 10)) {
+          allLogs.push({
+            ts: e.ts, type: '错误',
+            msg: (e.stage || '') + ': ' + (e.error || '').slice(0, 50),
+            status: '异常', statusClass: 'badge-danger',
+          });
+        }
+        for (const s of sysItems.slice(0, 10)) {
+          const isErr = (s.event || '').includes('error');
+          allLogs.push({
+            ts: s.ts, type: '系统',
+            msg: (s.event || '') + ': ' + (s.message || '').slice(0, 50),
+            status: isErr ? '异常' : '正常',
+            statusClass: isErr ? 'badge-danger' : 'badge-info',
+          });
+        }
+        allLogs.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+
+        const tbody = document.getElementById('monitorLogBody');
+        if (!allLogs.length) {
+          tbody.innerHTML = '<tr><td colspan="4" class="empty">暂无记录</td></tr>';
+        } else {
+          tbody.innerHTML = allLogs.slice(0, 20).map(l => `<tr>
+            <td style="white-space:nowrap;font-size:11px">${_esc(_shortTs(l.ts))}</td>
+            <td><span class="badge ${l.type==='错误'?'badge-danger':l.type==='QA'?'badge-info':'badge-warn'}">${l.type}</span></td>
+            <td style="font-size:12px">${_esc(l.msg)}</td>
+            <td><span class="badge ${l.statusClass}">${l.status}</span></td>
+          </tr>`).join('');
+        }
+
+        // 用户反馈统计
+        const feedLogs = sysItems.filter(s => (s.event || '').includes('user_feedback'));
+        const goodCount = feedLogs.filter(s => (s.meta || {}).rating === 'good').length;
+        const badCount = feedLogs.filter(s => (s.meta || {}).rating === 'bad').length;
+        document.getElementById('monFeedGood').textContent = goodCount;
+        document.getElementById('monFeedBad').textContent = badCount;
+        if (feedLogs.length > 0) {
+          const recent = feedLogs[0];
+          const emoji = (recent.meta || {}).rating === 'good' ? '👍' : '👎';
+          document.getElementById('monFeedRecent').textContent =
+            `最近反馈：${emoji} ${(recent.meta || {}).question?.slice(0, 30) || ''}`;
+        }
+      } catch(e) {
+        console.error('监控数据加载失败:', e);
+      }
     }
 
     /* ===== URL 抓取 ===== */
