@@ -1793,6 +1793,7 @@ async def admin_upload(request: "Request"):
         # LLM 处理模式：与 URL 抓取一致的完整处理流程
         llm_process = str(form.get("llm_process", "false")).lower() == "true"
         entity_type = str(form.get("entity_type", "lecture")).strip() or "lecture"
+        treatise_name = str(form.get("treatise_name", "")).strip()
 
         llm_results = []
         if llm_process and uploaded:
@@ -1806,9 +1807,11 @@ async def admin_upload(request: "Request"):
                     continue
                 orig_fname = item["file"]
                 try:
-                    # 推断 entity_id
+                    # 推断 entity_id：使用用户指定的论典名
                     stem = Path(orig_fname).stem
-                    if entity_type == "lecture":
+                    if entity_type == "lecture" and treatise_name:
+                        entity_id = f"{treatise_name}/{stem}"
+                    elif entity_type == "lecture":
                         entity_id = f"ruxinglun/{stem}"
                     else:
                         entity_id = stem

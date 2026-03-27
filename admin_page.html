@@ -484,9 +484,9 @@
         <input type="file" id="knUploadInput" multiple accept=".txt,.json,.md,.doc,.docx" style="display:none" onchange="uploadFiles(this.files)">
         <input type="file" id="knZipInput"    accept=".zip"                    style="display:none" onchange="uploadZip(this.files[0])">
         <!-- LLM 处理选项 -->
-        <div style="display:flex;gap:12px;align-items:center;margin:8px 0;font-size:13px">
+        <div style="display:flex;gap:12px;align-items:center;margin:8px 0;font-size:13px;flex-wrap:wrap">
           <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
-            <input type="checkbox" id="knLlmProcess"> LLM 智能整理（与URL抓取一致：结构化整理+生成FAQ+提取关键词+自动建索引）
+            <input type="checkbox" id="knLlmProcess"> LLM 智能整理
           </label>
           <select id="knEntityType" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px">
             <option value="lecture">讲记 (lecture)</option>
@@ -494,6 +494,14 @@
             <option value="talk">开示 (talk)</option>
             <option value="general">通用 (general)</option>
           </select>
+          <div id="knTreatiseWrap" style="display:none">
+            <label style="font-size:12px;margin-right:4px">论典/目录名：</label>
+            <input type="text" id="knTreatiseName" placeholder="如 ruxinglun_shengxi" style="padding:3px 8px;font-size:12px;width:200px;border:1px solid var(--border);border-radius:4px">
+          </div>
+          <button class="btn btn-outline btn-sm" id="knStopUpload" style="display:none;color:var(--danger);border-color:var(--danger)" onclick="_knStopUpload=true">停止上传</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-sec);margin-bottom:6px" id="knLlmHint" style="display:none">
+          勾选 LLM 后请填写论典/目录名，用于区分不同法师或不同版本的讲记
         </div>
         <div id="knUploadProgress" style="display:none;font-size:12px;color:var(--primary);margin-bottom:8px"></div>
         <div id="knFileArea">
@@ -3852,25 +3860,48 @@
       }
     }
 
+    // LLM 勾选联动
+    let _knStopUpload = false;
+    document.getElementById('knLlmProcess').addEventListener('change', function() {
+      document.getElementById('knTreatiseWrap').style.display = this.checked ? '' : 'none';
+      document.getElementById('knLlmHint').style.display = this.checked ? '' : 'none';
+    });
+
     async function uploadFiles(files) {
       if (!files.length || !_knProduct) return;
       const prog = document.getElementById('knUploadProgress');
+      const stopBtn = document.getElementById('knStopUpload');
       const llmProcess = document.getElementById('knLlmProcess').checked;
       const entityType = document.getElementById('knEntityType').value;
+      const treatiseName = document.getElementById('knTreatiseName').value.trim();
+
+      // 验证：LLM 模式下必须填论典名
+      if (llmProcess && !treatiseName) {
+        toast('请填写论典/目录名（如 ruxinglun_shengxi）', 4000);
+        return;
+      }
+
       prog.style.display = '';
+      stopBtn.style.display = '';
+      _knStopUpload = false;
       const total = files.length;
       let okCount = 0, errCount = 0, llmOk = 0, llmErr = 0;
 
-      // 逐个文件上传（避免大批量一次请求超时）
       for (let i = 0; i < total; i++) {
+        if (_knStopUpload) {
+          prog.textContent = `已停止（${i}/${total}已处理，${okCount}成功，${errCount}失败）`;
+          toast('上传已停止', 3000);
+          break;
+        }
         const f = files[i];
         prog.textContent = llmProcess
-          ? `LLM 处理中（${i+1}/${total}）：${f.name}… 每个约 30-60 秒`
+          ? `LLM 处理中（${i+1}/${total}）：${f.name}… 每个约30-60秒 [点击"停止上传"可中断]`
           : `上传中（${i+1}/${total}）：${f.name}…`;
         const form = new FormData();
         form.append('product', _knProduct);
         form.append('llm_process', llmProcess ? 'true' : 'false');
         form.append('entity_type', entityType);
+        if (treatiseName) form.append('treatise_name', treatiseName);
         form.append('file_' + f.name, f);
         try {
           const r = await apiFetch('/admin/upload', { method: 'POST', body: form });
@@ -3881,21 +3912,21 @@
             llmOk += d.llm_results.filter(r => r.status === 'ok').length;
             llmErr += d.llm_results.filter(r => r.status === 'error').length;
           }
-          if (d.errors && d.errors.length) {
-            console.warn('上传错误:', d.errors);
-          }
         } catch(e) {
           errCount++;
           console.error('上传失败:', f.name, e);
         }
       }
 
-      let msg = `完成：${okCount}/${total} 文件上传成功`;
-      if (errCount) msg += `，${errCount} 失败`;
-      if (llmProcess) msg += ` | LLM 整理：${llmOk} 成功`;
-      if (llmErr) msg += `，${llmErr} 失败`;
-      prog.textContent = msg;
-      toast(msg, 5000);
+      if (!_knStopUpload) {
+        let msg = `完成：${okCount}/${total} 文件上传成功`;
+        if (errCount) msg += `，${errCount} 失败`;
+        if (llmProcess) msg += ` | LLM 整理：${llmOk} 成功`;
+        if (llmErr) msg += `，${llmErr} 失败`;
+        prog.textContent = msg;
+        toast(msg, 5000);
+      }
+      stopBtn.style.display = 'none';
       loadKnowledgeFiles();
       document.getElementById('knUploadInput').value = '';
       setTimeout(() => { prog.style.display = 'none'; }, 8000);
