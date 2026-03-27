@@ -3859,37 +3859,46 @@
       const entityType = document.getElementById('knEntityType').value;
       prog.style.display = '';
       const total = files.length;
-      prog.textContent = llmProcess
-        ? `LLM 处理上传中（0/${total}）… 每个文件需要 30-60 秒`
-        : `上传中（0/${total}）…`;
-      const form = new FormData();
-      form.append('product', _knProduct);
-      form.append('llm_process', llmProcess ? 'true' : 'false');
-      form.append('entity_type', entityType);
-      for (const f of files) form.append('file_' + f.name, f);
-      try {
-        const r = await apiFetch('/admin/upload', { method: 'POST', body: form });
-        const d = await r.json();
-        const ok = (d.uploaded || []).length;
-        const err = (d.errors || []).length;
-        let msg = `完成：${ok} 文件上传成功`;
-        if (err) msg += `，${err} 失败`;
-        if (d.llm_results) {
-          const llmOk = d.llm_results.filter(r => r.status === 'ok').length;
-          const llmErr = d.llm_results.filter(r => r.status === 'error').length;
-          msg += ` | LLM 整理：${llmOk} 成功`;
-          if (llmErr) msg += `，${llmErr} 失败`;
+      let okCount = 0, errCount = 0, llmOk = 0, llmErr = 0;
+
+      // 逐个文件上传（避免大批量一次请求超时）
+      for (let i = 0; i < total; i++) {
+        const f = files[i];
+        prog.textContent = llmProcess
+          ? `LLM 处理中（${i+1}/${total}）：${f.name}… 每个约 30-60 秒`
+          : `上传中（${i+1}/${total}）：${f.name}…`;
+        const form = new FormData();
+        form.append('product', _knProduct);
+        form.append('llm_process', llmProcess ? 'true' : 'false');
+        form.append('entity_type', entityType);
+        form.append('file_' + f.name, f);
+        try {
+          const r = await apiFetch('/admin/upload', { method: 'POST', body: form });
+          const d = await r.json();
+          okCount += (d.uploaded || []).length;
+          errCount += (d.errors || []).length;
+          if (d.llm_results) {
+            llmOk += d.llm_results.filter(r => r.status === 'ok').length;
+            llmErr += d.llm_results.filter(r => r.status === 'error').length;
+          }
+          if (d.errors && d.errors.length) {
+            console.warn('上传错误:', d.errors);
+          }
+        } catch(e) {
+          errCount++;
+          console.error('上传失败:', f.name, e);
         }
-        prog.textContent = msg;
-        if (err) toast(d.errors.map(e => e.file + ': ' + e.error).join('\n'), 5000);
-        else toast(msg, 3000);
-        loadKnowledgeFiles();
-      } catch(e) {
-        prog.textContent = '上传失败';
-        if (e.message !== '403') toast('上传失败：' + e.message, 4000);
       }
+
+      let msg = `完成：${okCount}/${total} 文件上传成功`;
+      if (errCount) msg += `，${errCount} 失败`;
+      if (llmProcess) msg += ` | LLM 整理：${llmOk} 成功`;
+      if (llmErr) msg += `，${llmErr} 失败`;
+      prog.textContent = msg;
+      toast(msg, 5000);
+      loadKnowledgeFiles();
       document.getElementById('knUploadInput').value = '';
-      setTimeout(() => { prog.style.display = 'none'; }, 5000);
+      setTimeout(() => { prog.style.display = 'none'; }, 8000);
     }
 
     async function uploadZip(file) {
