@@ -1041,11 +1041,11 @@
       </div>
     </div>
 
-    <!-- 文件上传 -->
+    <!-- 文件上传（单个提取文本） -->
     <div class="card">
-      <div class="card-title">文件上传
+      <div class="card-title">单文件提取
         <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
-          支持 .txt .md .pdf .doc .docx，提取文本后可预览编辑再导入
+          选择单个文件，提取文本后可预览编辑再导入
         </span>
       </div>
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -1060,6 +1060,48 @@
         </button>
       </div>
       <div id="impFileStatus" style="display:none;margin-top:10px;font-size:13px"></div>
+    </div>
+
+    <!-- 批量文件导入（LLM 自动整理） -->
+    <div class="card">
+      <div class="card-title">批量文件导入
+        <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
+          选择多个 .doc/.docx/.txt 文件，LLM 自动整理为结构化知识文件
+        </span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+        <div>
+          <label>知识类型</label>
+          <select id="batchFileType" style="width:100%">
+            <option value="lecture" selected>lecture — 论典讲记</option>
+            <option value="talk">talk — 法师开示/演讲</option>
+            <option value="doctrine">doctrine — 教义</option>
+            <option value="scripture">scripture — 经典</option>
+            <option value="general">general — 通用知识</option>
+          </select>
+        </div>
+        <div>
+          <label>论典/目录名 <span style="color:var(--danger)">*必填</span></label>
+          <input type="text" id="batchFileTreatise" placeholder="如 ruxinglun_shengxi" style="width:100%">
+          <div style="font-size:11px;color:var(--text-sec);margin-top:2px">用于区分不同法师/版本</div>
+        </div>
+        <div>
+          <label>产品</label>
+          <input type="text" id="batchFileProduct" value="buddhism" style="width:100%">
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <input type="file" id="batchFileInput" multiple accept=".txt,.doc,.docx"
+               style="display:none" onchange="doBatchFileImport(this.files)">
+        <button class="btn btn-primary" onclick="document.getElementById('batchFileInput').click()">
+          选择文件（可多选）
+        </button>
+        <button class="btn btn-outline" id="batchFileStop" style="display:none;color:var(--danger);border-color:var(--danger)" onclick="_batchFileStop=true">
+          停止导入
+        </button>
+        <span id="batchFileProgress" style="font-size:13px;color:var(--primary)"></span>
+      </div>
+      <pre class="out" id="batchFileResult" style="display:none;margin-top:10px;max-height:300px;overflow-y:auto"></pre>
     </div>
 
     <!-- 文本导入表单 -->
@@ -2953,6 +2995,73 @@
         status.innerHTML = '<span style="color:var(--danger)">读取失败</span>';
       };
       reader.readAsText(file, 'utf-8');
+    }
+
+    // ===== 批量文件导入 =====
+    let _batchFileStop = false;
+    async function doBatchFileImport(files) {
+      if (!files.length) return;
+      const treatise = document.getElementById('batchFileTreatise').value.trim();
+      const entityType = document.getElementById('batchFileType').value;
+      const product = document.getElementById('batchFileProduct').value.trim() || 'buddhism';
+      if (!treatise) { toast('请填写论典/目录名', 4000); return; }
+
+      const prog = document.getElementById('batchFileProgress');
+      const stopBtn = document.getElementById('batchFileStop');
+      const result = document.getElementById('batchFileResult');
+      stopBtn.style.display = '';
+      result.style.display = '';
+      _batchFileStop = false;
+
+      const total = files.length;
+      let okCount = 0, errCount = 0;
+      const logs = [];
+
+      for (let i = 0; i < total; i++) {
+        if (_batchFileStop) {
+          logs.push(`[停止] 用户中断，已处理 ${i}/${total}`);
+          break;
+        }
+        const f = files[i];
+        prog.textContent = `处理中（${i+1}/${total}）：${f.name}… 每个约 30-60 秒`;
+
+        const form = new FormData();
+        form.append('product', product);
+        form.append('llm_process', 'true');
+        form.append('entity_type', entityType);
+        form.append('treatise_name', treatise);
+        form.append('file_' + f.name, f);
+
+        try {
+          const r = await apiFetch('/admin/upload', { method: 'POST', body: form });
+          const d = await r.json();
+          if (d.llm_results && d.llm_results.length) {
+            const lr = d.llm_results[0];
+            if (lr.status === 'ok') {
+              okCount++;
+              logs.push(`[OK] ${f.name} → ${lr.output_dir}`);
+            } else {
+              errCount++;
+              logs.push(`[ERR] ${f.name}: ${lr.error}`);
+            }
+          } else if (d.uploaded && d.uploaded.length) {
+            okCount++;
+            logs.push(`[OK] ${f.name} (上传成功)`);
+          } else {
+            errCount++;
+            logs.push(`[ERR] ${f.name}: ${(d.errors||[]).map(e=>e.error).join('; ') || '未知错误'}`);
+          }
+        } catch(e) {
+          errCount++;
+          logs.push(`[ERR] ${f.name}: ${e.message}`);
+        }
+        result.textContent = logs.join('\n');
+      }
+
+      prog.textContent = `完成：${okCount} 成功，${errCount} 失败（共 ${total} 个）`;
+      stopBtn.style.display = 'none';
+      if (okCount > 0) toast(`批量导入完成：${okCount} 成功`, 5000);
+      document.getElementById('batchFileInput').value = '';
     }
 
     async function doFileExtract() {
