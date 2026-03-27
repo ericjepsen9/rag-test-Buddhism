@@ -1116,7 +1116,17 @@
         </div>
       </div>
       </div>
-      <pre class="out" id="batchFileResult" style="display:none;margin-top:10px;max-height:300px;overflow-y:auto"></pre>
+      <!-- 日志筛选 + 重试 -->
+      <div id="batchFileLogWrap" style="display:none;margin-top:10px">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+          <button class="btn btn-outline btn-sm" onclick="_filterBatchLog('all')" id="batchLogAll">全部</button>
+          <button class="btn btn-outline btn-sm" onclick="_filterBatchLog('ok')" id="batchLogOk" style="color:var(--success)">成功</button>
+          <button class="btn btn-outline btn-sm" onclick="_filterBatchLog('err')" id="batchLogErr" style="color:var(--danger)">失败</button>
+          <button class="btn btn-primary btn-sm" id="batchRetryBtn" style="display:none" onclick="doBatchRetryFailed()">重新导入失败文件</button>
+          <span id="batchLogCount" style="font-size:12px;color:var(--text-sec)"></span>
+        </div>
+        <pre class="out" id="batchFileResult" style="max-height:300px;overflow-y:auto"></pre>
+      </div>
     </div>
 
     <!-- 文本导入表单 -->
@@ -3015,6 +3025,34 @@
     // ===== 批量文件导入 =====
     let _batchFileStop = false;
     let _batchFilePaused = false;
+    let _batchFileLogs = [];      // [{status:'ok'|'err', file:'xxx.docx', msg:'...', fileObj:File}]
+    let _batchFileFailedFiles = []; // 失败文件的 File 对象
+
+    function _filterBatchLog(filter) {
+      const result = document.getElementById('batchFileResult');
+      let filtered = _batchFileLogs;
+      if (filter === 'ok') filtered = _batchFileLogs.filter(l => l.status === 'ok');
+      if (filter === 'err') filtered = _batchFileLogs.filter(l => l.status === 'err');
+      result.textContent = filtered.map(l => l.msg).join('\n');
+      document.getElementById('batchLogCount').textContent = `显示 ${filtered.length}/${_batchFileLogs.length} 条`;
+      // 高亮当前筛选按钮
+      ['All','Ok','Err'].forEach(k => {
+        const btn = document.getElementById('batchLog' + k);
+        btn.className = (k.toLowerCase() === filter || (filter === 'all' && k === 'All'))
+          ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+      });
+    }
+
+    async function doBatchRetryFailed() {
+      if (!_batchFileFailedFiles.length) { toast('没有失败文件', 3000); return; }
+      toast(`重新导入 ${_batchFileFailedFiles.length} 个失败文件…`, 3000);
+      // 把失败文件列表传给导入函数
+      const failedList = [..._batchFileFailedFiles];
+      _batchFileFailedFiles = [];
+      _batchFileLogs = _batchFileLogs.filter(l => l.status === 'ok'); // 保留成功的日志
+      await doBatchFileImport(failedList);
+    }
+
     async function doBatchFileImport(files) {
       if (!files.length) return;
       const treatise = document.getElementById('batchFileTreatise').value.trim();
@@ -3038,8 +3076,9 @@
       pauseBtn.textContent = '暂停';
       startBtn.disabled = true;
       barWrap.style.display = '';
-      result.style.display = '';
+      document.getElementById('batchFileLogWrap').style.display = '';
       _batchFileStop = false;
+      _batchFileFailedFiles = [];
       _batchFilePaused = false;
 
       const total = files.length;
@@ -3090,23 +3129,27 @@
             const lr = d.llm_results[0];
             if (lr.status === 'ok') {
               okCount++;
-              logs.push(`[OK] ${f.name} → ${lr.output_dir}`);
+              _batchFileLogs.push({status:'ok', file:f.name, msg:`[OK] ${f.name} → ${lr.output_dir}`, fileObj:f});
             } else {
               errCount++;
-              logs.push(`[ERR] ${f.name}: ${lr.error}`);
+              _batchFileLogs.push({status:'err', file:f.name, msg:`[ERR] ${f.name}: ${lr.error}`, fileObj:f});
+              _batchFileFailedFiles.push(f);
             }
           } else if (d.uploaded && d.uploaded.length) {
             okCount++;
-            logs.push(`[OK] ${f.name} (上传成功)`);
+            _batchFileLogs.push({status:'ok', file:f.name, msg:`[OK] ${f.name} (上传成功)`, fileObj:f});
           } else {
             errCount++;
-            logs.push(`[ERR] ${f.name}: ${(d.errors||[]).map(e=>e.error).join('; ') || '未知错误'}`);
+            const errMsg = (d.errors||[]).map(e=>e.error).join('; ') || '未知错误';
+            _batchFileLogs.push({status:'err', file:f.name, msg:`[ERR] ${f.name}: ${errMsg}`, fileObj:f});
+            _batchFileFailedFiles.push(f);
           }
         } catch(e) {
           errCount++;
-          logs.push(`[ERR] ${f.name}: ${e.message}`);
+          _batchFileLogs.push({status:'err', file:f.name, msg:`[ERR] ${f.name}: ${e.message}`, fileObj:f});
+          _batchFileFailedFiles.push(f);
         }
-        result.textContent = logs.join('\n');
+        result.textContent = _batchFileLogs.map(l => l.msg).join('\n');
         result.scrollTop = result.scrollHeight;
       }
 
@@ -3119,6 +3162,9 @@
       stopBtn.style.display = 'none';
       pauseBtn.style.display = 'none';
       startBtn.disabled = false;
+      // 显示重试按钮（如果有失败）
+      document.getElementById('batchRetryBtn').style.display = _batchFileFailedFiles.length > 0 ? '' : 'none';
+      document.getElementById('batchLogCount').textContent = `${_batchFileLogs.length} 条记录（${okCount} 成功，${errCount} 失败）`;
       if (okCount > 0) toast(`批量导入完成：${okCount} 成功`, 5000);
       document.getElementById('batchFileInput').value = '';
     }
