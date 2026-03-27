@@ -1093,13 +1093,28 @@
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
         <input type="file" id="batchFileInput" multiple accept=".txt,.doc,.docx"
                style="display:none" onchange="doBatchFileImport(this.files)">
-        <button class="btn btn-primary" onclick="document.getElementById('batchFileInput').click()">
+        <button class="btn btn-primary" id="batchFileStartBtn" onclick="document.getElementById('batchFileInput').click()">
           选择文件（可多选）
         </button>
+        <button class="btn btn-outline" id="batchFilePause" style="display:none;color:var(--warning);border-color:var(--warning)" onclick="_batchFilePaused=!_batchFilePaused; this.textContent=_batchFilePaused?'继续':'暂停'">
+          暂停
+        </button>
         <button class="btn btn-outline" id="batchFileStop" style="display:none;color:var(--danger);border-color:var(--danger)" onclick="_batchFileStop=true">
-          停止导入
+          终止
         </button>
         <span id="batchFileProgress" style="font-size:13px;color:var(--primary)"></span>
+      </div>
+      <!-- 进度条 -->
+      <div id="batchFileBarWrap" style="display:none;margin-top:8px">
+        <div style="background:#e5e7eb;border-radius:6px;height:20px;overflow:hidden;position:relative">
+          <div id="batchFileBar" style="background:var(--primary);height:100%;width:0%;transition:width 0.3s;border-radius:6px"></div>
+          <span id="batchFileBarText" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:11px;font-weight:600;color:#fff">0%</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-sec);margin-top:3px">
+          <span id="batchFileStats">0/0 完成</span>
+          <span id="batchFileEta">预计剩余：计算中…</span>
+        </div>
+      </div>
       </div>
       <pre class="out" id="batchFileResult" style="display:none;margin-top:10px;max-height:300px;overflow-y:auto"></pre>
     </div>
@@ -2999,6 +3014,7 @@
 
     // ===== 批量文件导入 =====
     let _batchFileStop = false;
+    let _batchFilePaused = false;
     async function doBatchFileImport(files) {
       if (!files.length) return;
       const treatise = document.getElementById('batchFileTreatise').value.trim();
@@ -3008,22 +3024,57 @@
 
       const prog = document.getElementById('batchFileProgress');
       const stopBtn = document.getElementById('batchFileStop');
+      const pauseBtn = document.getElementById('batchFilePause');
+      const startBtn = document.getElementById('batchFileStartBtn');
       const result = document.getElementById('batchFileResult');
+      const barWrap = document.getElementById('batchFileBarWrap');
+      const bar = document.getElementById('batchFileBar');
+      const barText = document.getElementById('batchFileBarText');
+      const stats = document.getElementById('batchFileStats');
+      const eta = document.getElementById('batchFileEta');
+
       stopBtn.style.display = '';
+      pauseBtn.style.display = '';
+      pauseBtn.textContent = '暂停';
+      startBtn.disabled = true;
+      barWrap.style.display = '';
       result.style.display = '';
       _batchFileStop = false;
+      _batchFilePaused = false;
 
       const total = files.length;
       let okCount = 0, errCount = 0;
       const logs = [];
+      const startTime = Date.now();
 
       for (let i = 0; i < total; i++) {
+        // 暂停等待
+        while (_batchFilePaused && !_batchFileStop) {
+          prog.textContent = `已暂停（${i}/${total}）— 点"继续"恢复`;
+          await new Promise(r => setTimeout(r, 500));
+        }
         if (_batchFileStop) {
           logs.push(`[停止] 用户中断，已处理 ${i}/${total}`);
           break;
         }
+
         const f = files[i];
-        prog.textContent = `处理中（${i+1}/${total}）：${f.name}… 每个约 30-60 秒`;
+        prog.textContent = `处理中（${i+1}/${total}）：${f.name}…`;
+
+        // 更新进度条
+        const pct = Math.round((i / total) * 100);
+        bar.style.width = pct + '%';
+        barText.textContent = pct + '%';
+        stats.textContent = `${i}/${total} 完成（${okCount} 成功，${errCount} 失败）`;
+        // 预估剩余时间
+        if (i > 0) {
+          const elapsed = (Date.now() - startTime) / 1000;
+          const perFile = elapsed / i;
+          const remaining = Math.round(perFile * (total - i));
+          const mins = Math.floor(remaining / 60);
+          const secs = remaining % 60;
+          eta.textContent = `预计剩余：${mins > 0 ? mins + '分' : ''}${secs}秒`;
+        }
 
         const form = new FormData();
         form.append('product', product);
@@ -3056,10 +3107,18 @@
           logs.push(`[ERR] ${f.name}: ${e.message}`);
         }
         result.textContent = logs.join('\n');
+        result.scrollTop = result.scrollHeight;
       }
 
+      // 完成
+      bar.style.width = '100%';
+      barText.textContent = '100%';
+      stats.textContent = `${total}/${total} 完成（${okCount} 成功，${errCount} 失败）`;
+      eta.textContent = _batchFileStop ? '已终止' : '已完成';
       prog.textContent = `完成：${okCount} 成功，${errCount} 失败（共 ${total} 个）`;
       stopBtn.style.display = 'none';
+      pauseBtn.style.display = 'none';
+      startBtn.disabled = false;
       if (okCount > 0) toast(`批量导入完成：${okCount} 成功`, 5000);
       document.getElementById('batchFileInput').value = '';
     }
