@@ -1092,9 +1092,13 @@
       </div>
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
         <input type="file" id="batchFileInput" multiple accept=".txt,.doc,.docx"
-               style="display:none" onchange="doBatchFileImport(this.files)">
-        <button class="btn btn-primary" id="batchFileStartBtn" onclick="document.getElementById('batchFileInput').click()">
+               style="display:none" onchange="_onBatchFilesSelected(this.files)">
+        <button class="btn btn-outline" onclick="document.getElementById('batchFileInput').click()">
           选择文件（可多选）
+        </button>
+        <span id="batchFileCount" style="font-size:13px;color:var(--text-sec)">未选择文件</span>
+        <button class="btn btn-primary" id="batchFileStartBtn" style="display:none" onclick="_startBatchImport()">
+          开始导入
         </button>
         <button class="btn btn-outline" id="batchFilePause" style="display:none;color:var(--warning);border-color:var(--warning)" onclick="_batchFilePaused=!_batchFilePaused; this.textContent=_batchFilePaused?'继续':'暂停'">
           暂停
@@ -3051,6 +3055,22 @@
       _batchFileFailedFiles = [];
       _batchFileLogs = _batchFileLogs.filter(l => l.status === 'ok'); // 保留成功的日志
       await doBatchFileImport(failedList);
+    }
+
+    let _pendingBatchFiles = null;
+    function _onBatchFilesSelected(files) {
+      if (!files.length) return;
+      _pendingBatchFiles = files;
+      const count = document.getElementById('batchFileCount');
+      count.textContent = `已选择 ${files.length} 个文件`;
+      count.style.color = 'var(--primary)';
+      document.getElementById('batchFileStartBtn').style.display = '';
+    }
+    function _startBatchImport() {
+      if (_pendingBatchFiles && _pendingBatchFiles.length) {
+        doBatchFileImport(_pendingBatchFiles);
+        _pendingBatchFiles = null;
+      }
     }
 
     async function doBatchFileImport(files) {
