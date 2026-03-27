@@ -1711,7 +1711,11 @@ def admin_delete_product(product: str):
 async def admin_upload(request: "Request"):
     """通用文件上传：支持上传 txt/json/doc/docx 文件到指定产品目录。
     doc/docx 文件会自动转为 txt 存储。
-    Form fields: product (str), files (UploadFile[])
+    Form fields: product (str), files (UploadFile[]),
+                 llm_process (str, "true"/"false", 默认 "false"),
+                 entity_type (str, 默认 "lecture")
+    当 llm_process=true 时，上传的文件会经过 LLM 整理（与 URL 抓取一致），
+    包括：结构化整理、生成 FAQ、提取关键词、自动建索引。
     """
     content_type = request.headers.get("content-type", "")
     if "multipart/form-data" not in content_type:
@@ -1785,8 +1789,66 @@ async def admin_upload(request: "Request"):
                 except Exception:
                     tmp.unlink(missing_ok=True)
                     raise
-                uploaded.append({"file": fname, "size": len(text)})
-        return {"ok": True, "product": product, "uploaded": uploaded, "errors": errors}
+                uploaded.append({"file": fname, "size": len(text), "text": text})
+        # LLM 处理模式：与 URL 抓取一致的完整处理流程
+        llm_process = str(form.get("llm_process", "false")).lower() == "true"
+        entity_type = str(form.get("entity_type", "lecture")).strip() or "lecture"
+
+        llm_results = []
+        if llm_process and uploaded:
+            from import_knowledge import (
+                _ENTITY_TYPES, _get_openai_client, _generate_knowledge,
+                _write_knowledge_files,
+            )
+            for item in uploaded:
+                raw_text = item.get("text", "")
+                if not raw_text or len(raw_text.strip()) < 50:
+                    continue
+                orig_fname = item["file"]
+                try:
+                    # 推断 entity_id
+                    stem = Path(orig_fname).stem
+                    if entity_type == "lecture":
+                        entity_id = f"ruxinglun/{stem}"
+                    else:
+                        entity_id = stem
+
+                    # LLM 整理
+                    client = _get_openai_client()
+                    result = _generate_knowledge(client, raw_text, entity_type, entity_id)
+
+                    # 写入结构化文件
+                    out_dir = _write_knowledge_files(result, entity_type, entity_id, dry_run=False)
+
+                    # 提取关键词
+                    _extract_keywords_from_content(raw_text, entity_type, entity_id)
+
+                    llm_results.append({
+                        "file": orig_fname, "status": "ok",
+                        "entity_type": entity_type, "entity_id": entity_id,
+                        "output_dir": str(out_dir),
+                    })
+                except Exception as e:
+                    llm_results.append({"file": orig_fname, "status": "error", "error": str(e)})
+
+            # 重建索引
+            if any(r["status"] == "ok" for r in llm_results):
+                try:
+                    from build_faiss import build_for_product
+                    build_for_product(product)
+                    invalidate_store_cache(product)
+                except Exception as e:
+                    log_error("upload_llm_build", repr(e))
+
+        # 清理返回数据中的 text 字段（太大）
+        for item in uploaded:
+            item.pop("text", None)
+
+        resp = {"ok": True, "product": product, "uploaded": uploaded, "errors": errors}
+        if llm_process:
+            resp["llm_process"] = True
+            resp["llm_results"] = llm_results
+        return resp
     finally:
         await form.close()
 

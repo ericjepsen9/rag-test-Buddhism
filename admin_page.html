@@ -481,8 +481,20 @@
           </div>
         </div>
         <!-- 隐藏 file input -->
-        <input type="file" id="knUploadInput" multiple accept=".txt,.json,.md" style="display:none" onchange="uploadFiles(this.files)">
+        <input type="file" id="knUploadInput" multiple accept=".txt,.json,.md,.doc,.docx" style="display:none" onchange="uploadFiles(this.files)">
         <input type="file" id="knZipInput"    accept=".zip"                    style="display:none" onchange="uploadZip(this.files[0])">
+        <!-- LLM 处理选项 -->
+        <div style="display:flex;gap:12px;align-items:center;margin:8px 0;font-size:13px">
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+            <input type="checkbox" id="knLlmProcess"> LLM 智能整理（与URL抓取一致：结构化整理+生成FAQ+提取关键词+自动建索引）
+          </label>
+          <select id="knEntityType" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px">
+            <option value="lecture">讲记 (lecture)</option>
+            <option value="doctrine">教义 (doctrine)</option>
+            <option value="talk">开示 (talk)</option>
+            <option value="general">通用 (general)</option>
+          </select>
+        </div>
         <div id="knUploadProgress" style="display:none;font-size:12px;color:var(--primary);margin-bottom:8px"></div>
         <div id="knFileArea">
           <div class="empty">← 从左侧选择产品</div>
@@ -3843,26 +3855,41 @@
     async function uploadFiles(files) {
       if (!files.length || !_knProduct) return;
       const prog = document.getElementById('knUploadProgress');
+      const llmProcess = document.getElementById('knLlmProcess').checked;
+      const entityType = document.getElementById('knEntityType').value;
       prog.style.display = '';
-      prog.textContent = `上传中（0/${files.length}）…`;
+      const total = files.length;
+      prog.textContent = llmProcess
+        ? `LLM 处理上传中（0/${total}）… 每个文件需要 30-60 秒`
+        : `上传中（0/${total}）…`;
       const form = new FormData();
       form.append('product', _knProduct);
+      form.append('llm_process', llmProcess ? 'true' : 'false');
+      form.append('entity_type', entityType);
       for (const f of files) form.append('file_' + f.name, f);
       try {
         const r = await apiFetch('/admin/upload', { method: 'POST', body: form });
         const d = await r.json();
         const ok = (d.uploaded || []).length;
         const err = (d.errors || []).length;
-        prog.textContent = `完成：${ok} 成功${err ? '，' + err + ' 失败' : ''}`;
+        let msg = `完成：${ok} 文件上传成功`;
+        if (err) msg += `，${err} 失败`;
+        if (d.llm_results) {
+          const llmOk = d.llm_results.filter(r => r.status === 'ok').length;
+          const llmErr = d.llm_results.filter(r => r.status === 'error').length;
+          msg += ` | LLM 整理：${llmOk} 成功`;
+          if (llmErr) msg += `，${llmErr} 失败`;
+        }
+        prog.textContent = msg;
         if (err) toast(d.errors.map(e => e.file + ': ' + e.error).join('\n'), 5000);
-        else toast(`上传 ${ok} 个文件成功 ✓`);
+        else toast(msg, 3000);
         loadKnowledgeFiles();
       } catch(e) {
         prog.textContent = '上传失败';
         if (e.message !== '403') toast('上传失败：' + e.message, 4000);
       }
       document.getElementById('knUploadInput').value = '';
-      setTimeout(() => { prog.style.display = 'none'; }, 3000);
+      setTimeout(() => { prog.style.display = 'none'; }, 5000);
     }
 
     async function uploadZip(file) {
