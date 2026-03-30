@@ -814,6 +814,19 @@ def _build_context(hits: List[Dict], max_chars: int = 5000, min_score: float = 0
         if text_key in seen_texts:
             continue
         seen_texts.add(text_key)
+
+        # 预处理：清除科判标记、讲记格式标签，让 LLM 无法复制原始格式
+        _KEPAN_RE = re.compile(r"【[甲乙丙丁戊己庚辛壬癸][一二三四五六七八九十百]+[（(][^）)]*[）)].*?[：:]?】")
+        _TAG_RE = re.compile(r"【(颂词|讲解|引用|公案|科判)】")
+        _KEPAN_LINE_RE = re.compile(r"^[甲乙丙丁戊己庚辛壬癸][一二三四五六七八九十]+[（(].+$", re.MULTILINE)
+        text = _KEPAN_RE.sub("", text)
+        text = _TAG_RE.sub("", text)
+        text = _KEPAN_LINE_RE.sub("", text)
+        # 清理多余空行
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        if not text or len(text) < 20:
+            continue
+
         if i <= 3:
             meta = h.get("meta") or {}
             source = meta.get("source_file", "unknown")
@@ -1868,7 +1881,7 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
     # Strategy 1: LLM RAG (primary) with context from hits
     if USE_OPENAI:
         # 根据问题类型调整 context 大小：颂词/定义类问题用少量精确内容
-        _ctx_size = {"verse": 3000, "original_text": 6000, "definition": 3000, "who": 2000, "howmany": 2000}
+        _ctx_size = {"verse": 3000, "original_text": 6000, "definition": 3000, "who": 2000, "howmany": 2000, "method": 3000, "reason": 3000, "list": 3500}
         _max_ctx = _ctx_size.get(_qtype, 5000)
         context = _build_context(hits, max_chars=_max_ctx)
         if context:
