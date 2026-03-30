@@ -295,10 +295,17 @@ class ClarificationData(BaseModel):
     fallback_option: Optional[ClarificationOption] = None
 
 
+class RawSource(BaseModel):
+    source: str = ""
+    kepan: str = ""
+    text: str = ""
+
+
 class AskResponse(BaseModel):
     ok: bool
     answer: str
     media: List[MediaItem] = []
+    raw_sources: List[RawSource] = []
     latency_ms: Optional[int] = None
     debug: Optional[Dict[str, Any]] = None
     needs_clarification: bool = False
@@ -595,10 +602,29 @@ def ask(request: Request, req: AskRequest):
                 fallback_option=cl_fb,
             )
 
+        # 构建原文来源（供前端"查看讲记原文"功能）
+        from rag_answer import get_last_hits
+        _hits = get_last_hits()
+        _raw_sources = []
+        _seen_src = set()
+        for h in _hits:
+            meta = h.get("meta") or {}
+            src = meta.get("source_file", "")
+            txt = (h.get("text") or "").strip()
+            if not src or not txt or src in _seen_src:
+                continue
+            _seen_src.add(src)
+            _raw_sources.append(RawSource(
+                source=src,
+                kepan=meta.get("kepan_breadcrumb", ""),
+                text=txt[:2000],  # 限制单个原文长度
+            ))
+
         resp = AskResponse(
             ok=True,
             answer=answer,
             media=media,
+            raw_sources=_raw_sources[:5],  # 最多5个来源
             latency_ms=latency_ms,
             debug=debug,
             needs_clarification=needs_clarification,

@@ -1656,6 +1656,11 @@ def get_last_route_product():
             getattr(_thread_local, "product", ""))
 
 
+def get_last_hits():
+    """Return the most recent search hits from the current thread."""
+    return getattr(_thread_local, "last_hits", [])
+
+
 # ===================================================================
 # answer_one: main single-question pipeline
 # ===================================================================
@@ -1847,6 +1852,9 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
     # 3. CrossEncoder rerank (Buddhist feature)
     if USE_RERANK and hits:
         hits = rerank_hits(question, hits, top_k=RERANK_TOP_K)
+
+    # 存储原始 hits 到 thread_local，供 API 层构建 raw_sources
+    _thread_local.last_hits = hits[:6] if hits else []
 
     # Precompute question bigrams for FAQ fast path
     _q_norm = _normalize_for_bigram(question)

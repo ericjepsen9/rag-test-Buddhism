@@ -712,7 +712,7 @@ function addMessage(text, role, opts = {}) {
   const welcome = $('welcomeBlock');
   if (welcome) welcome.style.display = 'none';
 
-  const { media, debug, latency, clarification } = opts;
+  const { media, debug, latency, clarification, raw_sources } = opts;
   const row = document.createElement('div');
   row.className = 'msg-row ' + role;
 
@@ -939,6 +939,46 @@ function addMessage(text, role, opts = {}) {
     actions.appendChild(likeBtn);
     actions.appendChild(dislikeBtn);
     bubble.appendChild(actions);
+
+    // 讲记原文折叠面板
+    if (raw_sources && raw_sources.length > 0) {
+      const srcWrap = document.createElement('div');
+      srcWrap.style.cssText = 'margin-top:8px';
+
+      const srcBtn = document.createElement('div');
+      srcBtn.style.cssText = 'cursor:pointer;font-size:12px;color:var(--primary);user-select:none;padding:4px 0';
+      srcBtn.textContent = `▶ 查看讲记原文（${raw_sources.length}个来源）`;
+
+      const srcPanel = document.createElement('div');
+      srcPanel.style.cssText = 'display:none;margin-top:6px;border-top:1px solid #e5e7eb;padding-top:8px';
+
+      for (const src of raw_sources) {
+        const srcItem = document.createElement('div');
+        srcItem.style.cssText = 'margin-bottom:12px';
+
+        const srcTitle = document.createElement('div');
+        srcTitle.style.cssText = 'font-size:11px;font-weight:600;color:var(--primary);margin-bottom:4px';
+        srcTitle.textContent = '📖 ' + (src.source || '未知来源') + (src.kepan ? ' | ' + src.kepan : '');
+        srcItem.appendChild(srcTitle);
+
+        const srcText = document.createElement('div');
+        srcText.style.cssText = 'font-size:12px;color:#555;line-height:1.6;white-space:pre-wrap;max-height:200px;overflow-y:auto;background:#f9fafb;border-radius:6px;padding:8px';
+        srcText.textContent = src.text || '';
+        srcItem.appendChild(srcText);
+
+        srcPanel.appendChild(srcItem);
+      }
+
+      srcBtn.onclick = () => {
+        const shown = srcPanel.style.display !== 'none';
+        srcPanel.style.display = shown ? 'none' : '';
+        srcBtn.textContent = (shown ? '▶' : '▼') + ` 查看讲记原文（${raw_sources.length}个来源）`;
+      };
+
+      srcWrap.appendChild(srcBtn);
+      srcWrap.appendChild(srcPanel);
+      bubble.appendChild(srcWrap);
+    }
   }
 
   body.appendChild(bubble);
@@ -1043,6 +1083,7 @@ async function ask() {
       debug: data.debug || null,
       latency: data.latency_ms,
       clarification: data.needs_clarification ? data.clarification : null,
+      raw_sources: data.raw_sources || [],
     });
 
     // Update history
