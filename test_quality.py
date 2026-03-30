@@ -235,6 +235,34 @@ TEST_CASES = [
     {"q": "karma是什么意思", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "梵文"},
 
     # ================================================================
+    # R. 回答质量检查（检查科判/重复/结构/长度）
+    # ================================================================
+    {"q": "如何断除烦恼", "must_not_offtopic": True, "must_not_contain": ["所南德义檀嘉热巴涅", "甲一", "乙一", "丙一", "丁一", "戊一", "己一", "庚一", "辛一", "壬一"], "must_contain": ["烦恼"], "category": "回答质量"},
+    {"q": "嗔恨心怎么对治", "must_not_offtopic": True, "must_not_contain": ["所南德义", "本课就讲到这里"], "must_contain": ["嗔"], "category": "回答质量"},
+    {"q": "什么是菩提心", "must_not_offtopic": True, "must_not_contain": ["甲一", "乙一", "丙一"], "must_contain": ["菩提心"], "category": "回答质量"},
+    {"q": "入行论中如何修安忍", "must_not_offtopic": True, "must_not_contain": ["辛一", "辛二", "辛三", "壬一"], "must_contain": ["安忍"], "category": "回答质量"},
+    {"q": "修行中遇到懈怠怎么办", "must_not_offtopic": True, "must_not_contain": ["本课就讲到这里"], "category": "回答质量"},
+    {"q": "如何生起出离心", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "回答质量"},
+    {"q": "佛说一切善", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "回答质量"},
+    {"q": "什么是六度", "must_not_offtopic": True, "must_contain": ["布施|持戒"], "category": "回答质量"},
+
+    # ================================================================
+    # S. 跨法师检索（验证多法师内容共存）
+    # ================================================================
+    {"q": "不放逸的重要性", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "跨法师"},
+    {"q": "发菩提心的功德", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "must_contain": ["菩提心"], "category": "跨法师"},
+    {"q": "轮回的过患有哪些", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "must_contain": ["轮回"], "category": "跨法师"},
+
+    # ================================================================
+    # T. 综合深度问题
+    # ================================================================
+    {"q": "入行论中讲了哪些对治嗔恨心的方法", "must_not_offtopic": True, "must_contain": ["安忍|嗔"], "must_not_contain": ["领导", "职场"], "category": "综合深度"},
+    {"q": "为什么说暇满人身比如意宝还珍贵", "must_not_offtopic": True, "must_contain": ["暇满|人身"], "category": "综合深度"},
+    {"q": "入行论对修行次第是如何安排的", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "综合深度"},
+    {"q": "寂天菩萨为什么说烦恼是纸老虎", "must_not_offtopic": True, "must_contain": ["烦恼"], "category": "综合深度"},
+    {"q": "菩萨戒和别解脱戒有什么关系", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "综合深度"},
+
+    # ================================================================
     # I. 应被拒绝的离题问题
     # ================================================================
     {"q": "今天天气怎么样", "expect_offtopic": True, "category": "离题"},
