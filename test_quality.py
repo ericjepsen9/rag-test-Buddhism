@@ -263,6 +263,63 @@ TEST_CASES = [
     {"q": "菩萨戒和别解脱戒有什么关系", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "综合深度"},
 
     # ================================================================
+    # U. 入行论十品深入问题
+    # ================================================================
+    # 第一品
+    {"q": "菩提心的功德有多大", "must_not_offtopic": True, "must_contain": ["菩提心|功德"], "category": "十品深入"},
+    {"q": "犹如乌云暗夜中这句颂词什么意思", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "十品深入"},
+    # 第二品
+    {"q": "供养三宝有什么功德", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "十品深入"},
+    {"q": "随喜功德怎么修", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "十品深入"},
+    # 第三品
+    {"q": "受持菩提心的仪轨是什么", "must_not_offtopic": True, "must_contain": ["菩提心"], "category": "十品深入"},
+    {"q": "发了菩提心后应该怎么做", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "十品深入"},
+    # 第四品
+    {"q": "放逸有什么过患", "must_not_offtopic": True, "must_contain": ["放逸|过患"], "category": "十品深入"},
+    {"q": "烦恼是怎么产生的", "must_not_offtopic": True, "must_contain": ["烦恼"], "category": "十品深入"},
+    # 第五品
+    {"q": "怎么守护自己的三门", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "十品深入"},
+    {"q": "护心和护身有什么区别", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "十品深入"},
+    # 第六品
+    {"q": "别人伤害我时应该怎么想", "must_not_offtopic": True, "must_contain": ["安忍|忍辱|嗔"], "category": "十品深入"},
+    {"q": "苦有什么功德", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "十品深入"},
+    # 第七品
+    {"q": "懒惰有几种", "must_not_offtopic": True, "must_contain": ["懒惰|懈怠"], "category": "十品深入"},
+    {"q": "怎么生起欢喜心来修行", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "十品深入"},
+    # 第八品
+    {"q": "为什么要远离散乱", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "十品深入"},
+    {"q": "自他平等怎么修", "must_not_offtopic": True, "must_contain": ["自他"], "category": "十品深入"},
+    # 第九品
+    {"q": "什么是世俗谛和胜义谛", "must_not_offtopic": True, "must_contain": ["世俗|胜义"], "category": "十品深入"},
+    {"q": "中观怎么破实有", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "十品深入"},
+    # 第十品
+    {"q": "回向的意义是什么", "must_not_offtopic": True, "must_contain": ["回向"], "category": "十品深入"},
+    {"q": "功德应该怎么回向", "must_not_offtopic": True, "must_contain": ["回向"], "category": "十品深入"},
+
+    # ================================================================
+    # V. 引用经论相关问题
+    # ================================================================
+    {"q": "入行论引用了中论的哪些内容", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "经论引用"},
+    {"q": "大圆满前行引导文和入行论有什么关系", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "经论引用"},
+    {"q": "入行论和现观庄严论分别讲什么", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "经论引用"},
+
+    # ================================================================
+    # W. 人物相关问题
+    # ================================================================
+    {"q": "无著菩萨对入行论有什么贡献", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "人物"},
+    {"q": "法王如意宝和入行论有什么因缘", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "人物"},
+    {"q": "善说海是谁造的", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "人物"},
+
+    # ================================================================
+    # X. 实际修行场景
+    # ================================================================
+    {"q": "念经时走神了怎么办", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "实际场景"},
+    {"q": "别人批评我时内心很愤怒怎么对治", "must_not_offtopic": True, "must_contain": ["安忍|忍辱|嗔"], "category": "实际场景"},
+    {"q": "看到别人成功我很嫉妒怎么办", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "实际场景"},
+    {"q": "修行中总是怀疑自己能不能成就", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "实际场景"},
+    {"q": "家人反对我学佛怎么办", "must_not_offtopic": True, "must_not_contain": ["不在我的服务范围"], "category": "实际场景"},
+
+    # ================================================================
     # I. 应被拒绝的离题问题
     # ================================================================
     {"q": "今天天气怎么样", "expect_offtopic": True, "category": "离题"},
