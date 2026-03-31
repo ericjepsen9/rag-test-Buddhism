@@ -2031,8 +2031,13 @@ def admin_diagnose(request: Request, req: DiagnoseRequest):
         VECTOR_TOP_K, KEYWORD_TOP_K, SCORE_THRESHOLD,
         HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT,
     )
-    import rag_runtime_config as _rtcfg
-    USE_OPENAI = _rtcfg.USE_OPENAI  # 读运行时动态值，非模块加载时的初始值
+    # 检查 LLM 是否可用（不依赖 USE_OPENAI 标志，直接检查 client）
+    try:
+        from llm_client import is_enabled as _llm_enabled
+        USE_OPENAI = _llm_enabled("chat")
+    except Exception:
+        import rag_runtime_config as _rtcfg
+        USE_OPENAI = _rtcfg.USE_OPENAI
     from rag_runtime_config import FAQ_KEYWORD_MAP
 
     q = req.question.strip()
