@@ -2028,9 +2028,10 @@ def admin_diagnose(request: Request, req: DiagnoseRequest):
         detect_product, detect_route, vector_search, keyword_search,
         merge_hybrid, filter_by_score, _build_context, llm_generate_answer,
         _clean_llm_output, load_store, get_last_hits,
-        USE_OPENAI, VECTOR_TOP_K, KEYWORD_TOP_K, SCORE_THRESHOLD,
+        VECTOR_TOP_K, KEYWORD_TOP_K, SCORE_THRESHOLD,
         HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT,
     )
+    from rag_runtime_config import USE_OPENAI
     from rag_runtime_config import FAQ_KEYWORD_MAP
 
     q = req.question.strip()
