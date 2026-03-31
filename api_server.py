@@ -314,7 +314,7 @@ class AskResponse(BaseModel):
 
 class RebuildRequest(BaseModel):
     product: str = Field(..., min_length=1, max_length=50)
-    timeout_sec: int = Field(default=120, ge=10, le=600)
+    timeout_sec: int = Field(default=600, ge=10, le=3600)
 
 
 # ===== OpenAI 兼容数据模型 =====
