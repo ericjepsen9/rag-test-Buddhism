@@ -2031,7 +2031,8 @@ def admin_diagnose(request: Request, req: DiagnoseRequest):
         VECTOR_TOP_K, KEYWORD_TOP_K, SCORE_THRESHOLD,
         HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT,
     )
-    from rag_runtime_config import USE_OPENAI
+    import rag_runtime_config as _rtcfg
+    USE_OPENAI = _rtcfg.USE_OPENAI  # 读运行时动态值，非模块加载时的初始值
     from rag_runtime_config import FAQ_KEYWORD_MAP
 
     q = req.question.strip()
