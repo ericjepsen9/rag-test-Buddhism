@@ -1577,81 +1577,89 @@
     "results": [
       {
         "q": "入行论是谁写的",
-        "status": "PASS",
-        "errors": [],
-        "ms": 16887,
-        "answer_len": 2148,
-        "answer_preview": "【经典介绍】\n\n- 《入菩萨行论》（梵语：Bodhicaryāvatāra），简称入行论，是印度大乘佛教中观派论师寂天菩萨（约685-763年）所著的修行指南。全论共十品，系统阐述了从发菩提心到证悟空",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-基础"
       },
       {
         "q": "入行论有几品",
-        "status": "PASS",
-        "errors": [],
-        "ms": 9280,
-        "answer_len": 245,
-        "answer_preview": "【经典介绍】\n\n- 入行论共十品：第一品菩提心利益——阐述发菩提心的功德；第二品忏悔罪业——七支供养与忏悔业障；第三品受持菩提心——正式受持愿行菩提心；第四品不放逸——发心后应谨慎不放逸；第五品正知正",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-基础"
       },
       {
         "q": "入行论属于哪个宗派",
-        "status": "PASS",
-        "errors": [],
-        "ms": 18938,
-        "answer_len": 192,
-        "answer_preview": "【经典介绍】\n\n- 入行论属于大乘佛教中观派（Mādhyamaka），特别是中观应成派的传承。作者寂天菩萨继承了龙树菩萨和月称菩萨的中观思想。此论在藏传佛教各派（格鲁、宁玛、噶举、萨迦）中都极为重视，",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-基础"
       },
       {
         "q": "入行论第六品讲了什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 3888,
-        "answer_len": 231,
-        "answer_preview": "【经典介绍】\n\n- 第六品安忍品是入行论最重要的品之一，主要内容：一、嗔恨的过患——一念嗔心能摧毁千劫积累的善根；二、嗔恨的根源——不如意的遭遇和痛苦；三、安忍的修法——思维伤害者非自主（由业力烦恼驱",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-基础"
       },
       {
         "q": "入行论第八品讲了什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 6458,
-        "answer_len": 764,
-        "answer_preview": "【经典介绍】\n\n- 自他交换是入行论第八品静虑品中最核心的修法。修法分三步：一、自他平等——认识到自己和他人对苦乐的感受完全一样，都希望离苦得乐；二、自他相换——将自己的安乐施予他人，将他人的痛苦取代",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-基础"
       },
       {
         "q": "入行论第九品讲了什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 12083,
-        "answer_len": 679,
-        "answer_preview": "【经典介绍】\n\n- 第九品智慧品是全论最深奥的部分，主要内容：一、般若的必要性——前八品一切修法的最终目的都是为了生起空性智慧；二、二谛——建立世俗谛与胜义谛的定义；三、破实有——以中观应成派的推理方",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-基础"
       },
       {
         "q": "入行论引用了哪些论典",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14854,
-        "answer_len": 256,
-        "answer_preview": "【经典介绍】\n\n- 入行论中大量引用了其他经论，主要包括：《中论》（龙树菩萨）——空性思想的根本依据；《入中论》（月称菩萨）——中观应成派的核心论典；《大智度论》（龙树菩萨）——大乘般若学的百科全书；",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-基础"
       },
       {
         "q": "学习入行论有什么次第",
-        "status": "PASS",
-        "errors": [],
-        "ms": 20230,
-        "answer_len": 240,
-        "answer_preview": "【经典介绍】\n\n- 学习入行论建议按以下次第：一、先通读全论，了解十品的整体框架和逻辑关系；二、逐品深入学习，每品配合讲记和注释；三、重点品深修——第六品安忍、第八品自他交换、第九品智慧是全论精华，需",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-基础"
       },
       {
         "q": "菩提心有什么功德",
         "status": "ERROR",
         "errors": [
-          "timed out"
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
         ],
         "ms": 0,
         "answer_len": 0,
@@ -1659,108 +1667,119 @@
       },
       {
         "q": "暇满人身为什么难得",
-        "status": "PASS",
-        "errors": [],
-        "ms": 24002,
-        "answer_len": 342,
-        "answer_preview": "【核心概念】\n\n- 暇满人身是指远离八种无暇（如地狱、饿鬼、旁生、长寿天等）并具足十种圆满（如得人身、值佛出世、诸根具足、业际无倒、信敬佛法等）的珍宝人身。它的难得体现在：获得这样的人身需要积聚众多殊",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "忏悔罪业的方法有哪些",
-        "status": "PASS",
-        "errors": [],
-        "ms": 13803,
-        "answer_len": 2115,
-        "answer_preview": "【修行方法】\n\n- 忏悔的方式多种多样。对于大多数人，可以通过具足四种对治力（所依对治力、厌患对治力、返回对治力、现行对治力）来忏悔。对于利根者，可以通过认识心的本性，了达罪性本空，这是最无上的忏悔，",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "七支供养是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 16328,
-        "answer_len": 1825,
-        "answer_preview": "【佛教基础】\n\n- 七支供是积累资粮、净除罪障的七种修法，包括顶礼、供养、忏悔、随喜、请转法轮、祈请不入涅槃和回向。本课强调，无量积累资粮的法门全部包括在七支供中，它非常关键和重要。尤其是在上师瑜伽的",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "菩提心的学处是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 18692,
-        "answer_len": 2514,
-        "answer_preview": "【核心概念】\n\n- 根据《教王经》对钝根者的开示，菩萨戒最基本的学处只有一条，那就是不舍愿菩提心。也就是说，不管遇到什么违缘，都不能舍弃“我要度化一切众生”的菩提心。如果舍弃菩提心，过失非常大。因此，",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "愿菩提心和行菩提心的区别",
-        "status": "PASS",
-        "errors": [],
-        "ms": 21996,
-        "answer_len": 319,
-        "answer_preview": "【核心概念】\n\n- 愿菩提心是为利益一切众生发誓成佛的心愿，是缘佛果的发心；行菩提心是通过实践愿心修持成佛的资粮，是缘因的发心，这个因就是六度万行等真实的修法。二者的联系是：愿心是行心的基础和动力，行",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "不放逸是什么意思",
-        "status": "PASS",
-        "errors": [],
-        "ms": 18925,
-        "answer_len": 2651,
-        "answer_preview": "【核心概念】\n\n- 不放逸是指对身、口、意三门小心翼翼、谨慎取舍的心态和行为。其定义是“无贪、无嗔、无痴而精进行持善法，在内心防护有漏法”。它的作用是“一切世间和出世间福德的根本”。简单来说，不放逸就",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "为什么发了菩提心后要不放逸",
-        "status": "PASS",
-        "errors": [],
-        "ms": 16617,
-        "answer_len": 2442,
-        "answer_preview": "【核心概念】\n\n- 因此受了菩萨戒以后，如果你没有不放逸，过两天就可能完蛋了，菩提心就已经失去了。另外，《菩萨地论》中还将不放逸分为五种：第一种叫前际不放逸，即是对往昔所造的罪业心生追悔，发誓再也不造",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "什么是正知正念",
-        "status": "PASS",
-        "errors": [],
-        "ms": 17932,
-        "answer_len": 345,
-        "answer_preview": "【核心概念】\n\n- 正知正念是守护菩萨戒的核心方法。正知，指了知自己身、语、意的状态；正念，指将心安住于善法，不忘失菩提心等善念。在《入行论》第五品“护正知”中，寂天菩萨指出，若要护持菩萨戒，必须先护",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "如何护持自己的心",
-        "status": "PASS",
-        "errors": [],
-        "ms": 12084,
-        "answer_len": 2168,
-        "answer_preview": "【佛教基础】\n\n- 人交往，悲心容易增长；和有智慧的人交往就容易产生智慧；和希求大乘的人交往，对大乘的意乐就比较容易保持不退。环境对心会有影响，我们也应该学会在环境当中调心。\n当然，这里包括两种情况：",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "嗔恨心的过患是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 11405,
-        "answer_len": 2200,
-        "answer_preview": "【佛教基础】\n\n- 纵人以利敬，恩施来依者，\n施主若易嗔，反遭彼弑害。嗔令亲友厌，虽施亦不依。\n这里有三大过患：第一个过患是：纵然一个施主通过利敬，恩惠、布施依靠自己的人，如果这个主人特别容易生嗔的话",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "如何修安忍",
-        "status": "PASS",
-        "errors": [],
-        "ms": 12434,
-        "answer_len": 2734,
-        "answer_preview": "【修行方法】\n\n- 修安忍的关键在于“重视”和“一心”。首先要从道理上明白嗔恨的过患和安忍的利益，真正从内心重视对治嗔恨心这门功课。其次要“一心一意、专心致志”地勤修利他之事，以慈悲心善待一切众生，包",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "一嗔能摧毁千劫所积聚是什么意思",
         "status": "ERROR",
         "errors": [
-          "timed out"
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
         ],
         "ms": 0,
         "answer_len": 0,
@@ -1768,81 +1787,89 @@
       },
       {
         "q": "为什么说怨敌是修安忍的助缘",
-        "status": "PASS",
-        "errors": [],
-        "ms": 40708,
-        "answer_len": 532,
-        "answer_preview": "【核心概念】\n\n- 因为安忍波罗蜜多的修持，必须要有能引发嗔恨的对境，即怨敌。如果没有怨敌的加害，就没有修安忍的所缘缘，安忍的功德也就无从生起。如同种子需要水土才能生长，安忍的功德也需要怨敌这个“逆缘",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "什么是精进",
-        "status": "PASS",
-        "errors": [],
-        "ms": 13520,
-        "answer_len": 2492,
-        "answer_preview": "【修行方法】\n\n- 精进是指对善法生起欢喜心，并乐于行持的一种心态。其核心是“喜于善”，即内心对善法（如闻思修佛法、行持善业）充满欢喜和渴望，并由此驱除懈怠懒惰。精进的对境必须是善法，如果对恶法或无记",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "精进的障碍有哪些",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14708,
-        "answer_len": 301,
-        "answer_preview": "【修行方法】\n\n- 精进的主要违品是懒惰，具体可分为三种：1. 同恶懒惰（推延懒惰）：指拖延行持善法，总是找借口“明天再说”，导致善法无法及时完成。2. 耽著恶事懒惰：指将精力散乱于无意义的世俗琐事，",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "自他交换是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 91,
-        "answer_len": 275,
-        "answer_preview": "【核心概念】\n\n- 自他交换，也称为自他相换，是大乘菩提心修持的核心方法之一。它指的是修行者发心用自己的安乐去替换其他众生的痛苦，或者将众生的痛苦取过来自己承担，将自己的功德和安乐施予众生。这不仅是简",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "怎么修自他交换",
-        "status": "PASS",
-        "errors": [],
-        "ms": 66217,
-        "answer_len": 1344,
-        "answer_preview": "【核心概念】\n\n- 修自他交换菩提心的功德非常大。根据夏东格西的教言，修自他交换菩提心的人，不仅天龙八部会维护他，甚至四大天王也要恭敬、承侍、供养、护佑他。历史上许多大成就者如阿底峡尊者、金厄瓦格西、",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "入行论中提到了哪些断除贪心的方法",
-        "status": "PASS",
-        "errors": [],
-        "ms": 66022,
-        "answer_len": 2729,
-        "answer_preview": "【经典介绍】\n\n- 入行论中大量引用了其他经论，主要包括：《中论》（龙树菩萨）——空性思想的根本依据；《入中论》（月称菩萨）——中观应成派的核心论典；《大智度论》（龙树菩萨）——大乘般若学的百科全书；",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "入行论中的二谛是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 17713,
-        "answer_len": 2214,
-        "answer_preview": "【经典介绍】\n\n- 二谛即世俗谛和胜义谛。世俗谛是众生在迷乱分别心前所显现的种种现象，如瓶子、房子等，这些法在未经观察的世间名言中是存在的。胜义谛则是这些显现法的真相，即其空性、无自性的部分。二者是现",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "中观应成派的观点是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 17596,
-        "answer_len": 2840,
-        "answer_preview": "【核心概念】\n\n- 唯识宗的核心观点是“三界唯心，万法唯识”，认为一切外境都是心识的显现，并非独立实有，但承认心识本身是存在的。中观宗则认为，在胜义谛中，不仅外境空，能缘的心识本身也是空性、无自性的。",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "为什么说修行需要空性智慧",
         "status": "ERROR",
         "errors": [
-          "timed out"
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
         ],
         "ms": 0,
         "answer_len": 0,
@@ -1850,27 +1877,29 @@
       },
       {
         "q": "回向是什么意思",
-        "status": "PASS",
-        "errors": [],
-        "ms": 25487,
-        "answer_len": 1265,
-        "answer_preview": "【佛教基础】\n\n- “回向大菩提”是指将一切所修的善根回向给无上菩提（佛果），也就是回向给利益一切有情、成就佛道。善根本身是无记的，没有定性，可以导向世间安乐、自我解脱，也可以导向成佛。通过善巧的回向",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "为什么要把功德回向给众生",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14741,
-        "answer_len": 1392,
-        "answer_preview": "【修行方法】\n\n- 是的，众生确实能通过回向获得真实利益。佛经中有明确公案，例如佛陀时代，广严城百姓供养佛陀，其已转生为饿鬼的父母前来请求回向。佛陀让饿鬼们现身，并劝请百姓将供养功德回向给它们，回向后",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "入行论-十品"
       },
       {
         "q": "什么是佛教",
         "status": "ERROR",
         "errors": [
-          "timed out"
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
         ],
         "ms": 0,
         "answer_len": 0,
@@ -1878,126 +1907,139 @@
       },
       {
         "q": "四圣谛是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 107,
-        "answer_len": 172,
-        "answer_preview": "【教义解说】\n\n- 四圣谛是佛教最核心的教义：1）苦谛——认识到生命中存在各种苦（八苦）；2）集谛——苦的原因是贪嗔痴三毒和无明；3）灭谛——苦可以被止息，即涅槃；4）道谛——灭苦的方法是八正道。\n\n",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛教基础"
       },
       {
         "q": "什么是八正道",
-        "status": "PASS",
-        "errors": [],
-        "ms": 152,
-        "answer_len": 165,
-        "answer_preview": "【教义解说】\n\n- 八正道是佛教修行的核心方法，分为三学：慧学（正见、正思维）、戒学（正语、正业、正命）、定学（正精进、正念、正定）。八正道代表中道修行，避免极端苦行和纵欲两种极端。\n\n依据：\n- f",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛教基础"
       },
       {
         "q": "什么是三宝",
-        "status": "PASS",
-        "errors": [],
-        "ms": 138,
-        "answer_len": 152,
-        "answer_preview": "【核心概念】\n\n- 三宝指佛（觉悟者释迦牟尼佛）、法（佛陀所说的教法）、僧（修行佛法的出家团体）。皈依三宝是成为佛教徒的基本仪式，表示对佛法僧的信仰和依归。\n\n依据：\n- faq.txt\n\n修行建议：",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛教基础"
       },
       {
         "q": "什么是因果报应",
-        "status": "PASS",
-        "errors": [],
-        "ms": 126,
-        "answer_len": 159,
-        "answer_preview": "【核心概念】\n\n- 因果法则是佛教的基本信条。善因善果，恶因恶果。业（Karma）分为身业、口业、意业。业力不会消失，会影响今生和来世的境遇。善业带来福报，恶业带来苦果。\n\n依据：\n- faq.txt",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛教基础"
       },
       {
         "q": "什么是轮回",
-        "status": "PASS",
-        "errors": [],
-        "ms": 102,
-        "answer_len": 122,
-        "answer_preview": "【佛教基础】\n\n- 轮回是指众生因业力牵引，在六道（天道、人道、阿修罗道、畜生道、饿鬼道、地狱道）中不断流转的过程。唯有断除烦恼、证悟涅槃，才能跳出轮回。\n\n依据：\n- faq.txt\n\n提示：以上内",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛教基础"
       },
       {
         "q": "什么是空性",
-        "status": "PASS",
-        "errors": [],
-        "ms": 95,
-        "answer_len": 158,
-        "answer_preview": "【佛教基础】\n\n- 空（Sunyata）不是\"什么都没有\"，而是指一切事物没有固定不变的自性。缘起性空——一切事物都是因缘和合而生，没有独立存在的本体。龙树菩萨的中观学派系统阐述了空性思想。空性智慧是",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛教基础"
       },
       {
         "q": "什么是涅槃",
-        "status": "PASS",
-        "errors": [],
-        "ms": 82,
-        "answer_len": 139,
-        "answer_preview": "【佛教基础】\n\n- 涅槃（Nirvana）意为\"寂灭\"，是烦恼完全止息的解脱状态。有余涅槃是烦恼已尽但肉身犹在，无余涅槃是烦恼已尽肉身也舍离。大乘佛教认为涅槃与生死不二，无住涅槃才是究竟。\n\n依据：\n",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛教基础"
       },
       {
         "q": "什么是菩萨",
-        "status": "PASS",
-        "errors": [],
-        "ms": 93,
-        "answer_len": 169,
-        "answer_preview": "【佛教基础】\n\n- 菩萨（Bodhisattva）即\"觉有情\"，是发愿帮助一切众生成佛的修行者。菩萨发菩提心——上求佛道，下化众生。修行六度（布施、持戒、忍辱、精进、禅定、般若）。四大菩萨：观世音（慈",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛教基础"
       },
       {
         "q": "五戒是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 74,
-        "answer_len": 189,
-        "answer_preview": "【核心概念】\n\n- 五戒是佛教在家居士最基本的戒律：1）不杀生——不伤害有情众生；2）不偷盗——不取他人财物；3）不邪淫——不做不正当的性行为；4）不妄语——不说谎；5）不饮酒——不饮用使心智迷乱的酒",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛教基础"
       },
       {
         "q": "什么是十二因缘",
-        "status": "PASS",
-        "errors": [],
-        "ms": 126,
-        "answer_len": 170,
-        "answer_preview": "【教义解说】\n\n- 十二因缘阐述了生命轮回的因果链条：无明→行→识→名色→六入→触→受→爱→取→有→生→老死。从无明（对真相的不了解）开始，经过一系列因果相续，导致生死轮回。断除无明即可解脱。\n\n依据",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛教基础"
       },
       {
         "q": "心经讲什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 131,
-        "answer_len": 161,
-        "answer_preview": "【经典介绍】\n\n- 《心经》全称《般若波罗蜜多心经》，仅260字，是般若经典的精华。核心要义：\"色不异空，空不异色；色即是空，空即是色\"，阐述一切事物（五蕴）的空性本质。最终以\"揭谛揭谛，波罗揭谛\"的",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛教基础"
       },
       {
         "q": "金刚经讲什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 98,
-        "answer_len": 140,
-        "answer_preview": "【经典介绍】\n\n- 《金刚经》阐述空性和般若智慧。核心名句：\"一切有为法，如梦幻泡影，如露亦如电，应作如是观。\"强调\"应无所住而生其心\"，即不执著于任何事物而保持清明的心。是禅宗的重要经典。\n\n依据：",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛教基础"
       },
       {
         "q": "如何断除贪心",
-        "status": "PASS",
-        "errors": [],
-        "ms": 10108,
-        "answer_len": 1958,
-        "answer_preview": "【修行方法】\n\n- 因此，对于贪着之心，我们可以通过观察贪欲的过失而舍弃它，让执著逐渐变得薄弱，从而现前实性慧；也可以在生起贪欲之时直接看穿它的本性——贪欲之心原本虚妄，其本身就是实性慧！总之，要么舍",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "修行方法"
       },
       {
         "q": "如何对治嗔恨心",
         "status": "ERROR",
         "errors": [
-          "timed out"
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
         ],
         "ms": 0,
         "answer_len": 0,
@@ -2005,18 +2047,19 @@
       },
       {
         "q": "如何发菩提心",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15016,
-        "answer_len": 2528,
-        "answer_preview": "【核心概念】\n\n- 可以从每天清晨醒来时，发一个善愿开始：“愿我今天所做的一切，都能给身边的人带来一点快乐或帮助。”上班路上，默默祝福遇到的每一个人。工作中，把完成任务看作是服务同事和客户的机会。晚上",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "修行方法"
       },
       {
         "q": "如何修忍辱",
         "status": "ERROR",
         "errors": [
-          "timed out"
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
         ],
         "ms": 0,
         "answer_len": 0,
@@ -2024,1099 +2067,1216 @@
       },
       {
         "q": "如何修禅定",
-        "status": "PASS",
-        "errors": [],
-        "ms": 26817,
-        "answer_len": 2806,
-        "answer_preview": "【修行方法】\n\n- 较枯燥的。怎样才能在很无聊、很枯燥的过程中，让心专注下来，真正生起禅定呢？对于禅定的修法本身、禅修之后的结果，有欢喜心雀跃的心态就是成功的关键。\n不管是对整个法还是禅定本身，都必须",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "修行方法"
       },
       {
         "q": "布施有哪几种",
-        "status": "PASS",
-        "errors": [],
-        "ms": 7454,
-        "answer_len": 1792,
-        "answer_preview": "【修行方法】\n\n- 普通布施，是指把大大小小的身外之物，乃至一把茶叶、一碗青稞，或者一碗米、一包面、一件衣服、一毛钱……都施给其他众生。布施的时候，首先，自己的意乐一定要清净。若能如此，即使财物不多，",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "修行方法"
       },
       {
         "q": "六波罗蜜是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 9138,
-        "answer_len": 1361,
-        "answer_preview": "【核心概念】\n\n- 因为大乘佛法强调一度可涵摄余度。即使没有专门的时间去布施、持戒，只要在闻法过程中如理调整威仪和行为，就能同时具足六度。例如，供养法座是布施，保持威仪是持戒，不伤害众生是安忍，满怀信",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "修行方法"
       },
       {
         "q": "在家居士如何修行",
-        "status": "PASS",
-        "errors": [],
-        "ms": 11593,
-        "answer_len": 188,
-        "answer_preview": "【修行方法】\n\n- 在家居士修行要点：1）皈依三宝，受持五戒；2）日常念佛、诵经、持咒；3）做早晚课；4）修习禅定，从每天静坐开始；5）行善布施，培养慈悲心；6）学习佛法经典；7）参加共修和法会；8）",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "修行方法"
       },
       {
         "q": "善逝法身佛子伴是什么意思",
-        "status": "PASS",
-        "errors": [],
-        "ms": 10735,
-        "answer_len": 303,
-        "answer_preview": "【核心概念】\n\n- 这是寂天菩萨造论前的礼赞句。从字面解释：“善逝”指佛陀；“法身”指佛法，包括教法（经典文字）和证法（众生相续中的证悟境界）；“佛子”指僧众，尤其是一地以上的大乘菩萨；“伴”是“一切",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "颂词理解"
       },
       {
         "q": "暇满人身极难得这句话出自哪里",
-        "status": "PASS",
-        "errors": [],
-        "ms": 10992,
-        "answer_len": 1442,
-        "answer_preview": "【核心概念】\n\n- 从因、比喻、数目三个方面可以了知人身难得。从因上说，获得暇满人身需要以前世的清净戒律为因，布施、持戒等六度为缘，再加上往昔的殊胜善愿。从比喻上说，佛陀在经典中常用盲龟值木轭、昙花一",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "颂词理解"
       },
       {
         "q": "身心若远离散乱即不生是什么意思",
-        "status": "PASS",
-        "errors": [],
-        "ms": 7704,
-        "answer_len": 2369,
-        "answer_preview": "【佛教基础】\n\n- 般意义上的散乱，所以在科判当中所讲到的，就是要解决粗大意义上的散乱。随着我们的修法越来越深入，就要解决是比较深层次的、严格意义上、微细的散乱。不管从哪个意义上来讲，这两种散乱都是可",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "颂词理解"
       },
       {
         "q": "若久修空性必断实有习是什么意思",
-        "status": "PASS",
-        "errors": [],
-        "ms": 87,
-        "answer_len": 233,
-        "answer_preview": "【核心概念】\n\n- 这个颂词阐述了修持空性的次第。众生无始以来有强烈的实有执著，通过长期修持空性法门，可以断除这种“有”的执著。当实执断除后，对“空性”本身的执著（即“空执”）也会自然断除。这就像两段",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "颂词理解"
       },
       {
         "q": "暇满人身",
-        "status": "PASS",
-        "errors": [],
-        "ms": 6678,
-        "answer_len": 351,
-        "answer_preview": "【核心概念】\n\n- “暇满人身”是指具备修学佛法条件的珍贵人身。“暇”指远离八无暇（如地狱、饿鬼、旁生、长寿天等无法修法的处境），“满”指具足十圆满（如得人身、生中土、诸根具足、业际无倒、信敬佛法等）",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "短查询"
       },
       {
         "q": "暇满",
-        "status": "PASS",
-        "errors": [],
-        "ms": 13266,
-        "answer_len": 998,
-        "answer_preview": "【佛教基础】\n\n- 暇满人身极难得，既得能办人生利。倘若今生利未办，后世怎得此圆满。\n这个科判和颂词主要宣讲了身体的所依暇满难得。菩提心是很清净、非常伟大的一种心，这种心在什么众生的身体上最为圆满、最",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "短查询"
       },
       {
         "q": "精进",
-        "status": "PASS",
-        "errors": [],
-        "ms": 17360,
-        "answer_len": 2141,
-        "answer_preview": "【修行方法】\n\n- 进即喜于善。\n什么叫精进呢？指喜爱善法的欢喜心。心态是一种欢喜心，对境是善法，从这两方面来定义。唐代澄观法师（即清凉国师）在《华严大疏》中说：“精进，练心于法名之为精，精心务达名之",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "短查询"
       },
       {
         "q": "忏悔",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14875,
-        "answer_len": 2282,
-        "answer_preview": "【修行方法】\n\n- 忏悔的方式是这样的：首先将十方诸佛（包括自己的传承上师、根本上师）迎请在前方的虚空中作为所依对治力，在他们面前，自己身体五体投地恭敬顶礼，双手以莲花待放式合掌；心中充满强烈的惭愧、",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "短查询"
       },
       {
         "q": "贪心",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14664,
-        "answer_len": 1903,
-        "answer_preview": "【修行方法】\n\n- 在日常生活中，对于特别喜欢的他人财物，心里打着“这财物为我所有该多好”的如意算盘，并且三番五次地思量：“我用什么办法才能将它弄到手呢？”诸如此类凡对别人的财物生起谋求之心，都是属于",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "短查询"
       },
       {
         "q": "嗔恨",
-        "status": "PASS",
-        "errors": [],
-        "ms": 12619,
-        "answer_len": 1492,
-        "answer_preview": "【修行方法】\n\n- 以上通过分析自宗和外道的观点，我们可以了知：嗔恨完全是因缘所生。当我们遇到人非人、鬼神病魔的戏弄作害、制造违缘，以及亲朋好友的无因诽谤、抢夺财产、用兵器殴打等时，心里应当这样想：“",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "短查询"
       },
       {
         "q": "菩提心",
-        "status": "PASS",
-        "errors": [],
-        "ms": 13458,
-        "answer_len": 1058,
-        "answer_preview": "【核心概念】\n\n- 菩提心是大乘佛法的核心，其定义是“发心为利他，求正等菩提”，即为了利益一切众生而希求获得无上圆满正等觉佛果的心。它不仅仅是做慈善、做好事，而是以佛法饶益众生，令他们最终获得佛果的誓",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "短查询"
       },
       {
         "q": "空性",
-        "status": "PASS",
-        "errors": [],
-        "ms": 80,
-        "answer_len": 187,
-        "answer_preview": "【核心概念】\n\n- 空（Sunyata）不是\"什么都没有\"，而是指一切事物没有固定不变的自性。缘起性空——一切事物都是因缘和合而生，没有独立存在的本体。龙树菩萨的中观学派系统阐述了空性思想。空性智慧是",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "短查询"
       },
       {
         "q": "回向",
-        "status": "PASS",
-        "errors": [],
-        "ms": 10308,
-        "answer_len": 445,
-        "answer_preview": "【修行方法】\n\n【引言】\n【课程信息】\n论典：入菩萨行论\n课次：第201课\n对应品：第十品 回向\n- 路人无怙依，愿为彼引导，\n\n依据：\n- lecture/ruxinglun_shengxi/第八品",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "短查询"
       },
       {
         "q": "安忍",
-        "status": "PASS",
-        "errors": [],
-        "ms": 87,
-        "answer_len": 252,
-        "answer_preview": "【核心概念】\n\n- 第六品安忍品是入行论最重要的品之一，主要内容：一、嗔恨的过患——一念嗔心能摧毁千劫积累的善根；二、嗔恨的根源——不如意的遭遇和痛苦；三、安忍的修法——思维伤害者非自主（由业力烦恼驱",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "短查询"
       },
       {
         "q": "无常",
-        "status": "PASS",
-        "errors": [],
-        "ms": 13830,
-        "answer_len": 3347,
-        "answer_preview": "【教义解说】\n\n- 又恐日后被秦王所杀，不得不饮毒酒自尽身亡。\n世间上，这样的事例不胜枚举。然遗憾的是，无常在我们眼前一幕幕掠过，许多人却对此视而不见，不会把“无常”两个字用在生活上，更不会用它来修行",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "短查询"
       },
       {
         "q": "因果",
-        "status": "PASS",
-        "errors": [],
-        "ms": 151,
-        "answer_len": 159,
-        "answer_preview": "【核心概念】\n\n- 因果法则是佛教的基本信条。善因善果，恶因恶果。业（Karma）分为身业、口业、意业。业力不会消失，会影响今生和来世的境遇。善业带来福报，恶业带来苦果。\n\n依据：\n- faq.txt",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "短查询"
       },
       {
         "q": "入行论的核心思想是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 16616,
-        "answer_len": 1891,
-        "answer_preview": "【经典介绍】\n\n- 这个颂词是《入行论》的核心思想之一，阐述了「心不缘一切」的究竟境界。意思是：如果实有的法和无实的法都不安住在心前，那时就没有任何其他的相可执著了，心没有任何所缘，达到了最寂灭的状态",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "综合"
       },
       {
         "q": "入行论中六度是怎么讲的",
-        "status": "PASS",
-        "errors": [],
-        "ms": 16361,
-        "answer_len": 2245,
-        "answer_preview": "【经典介绍】\n\n- 慧，摄善法戒以六度作为修行的核心。\n第三个戒律是饶益有情戒，主要是要饶益众生。发了菩提心之后，要想方设法去利益众生、饶益众生。有能力时直接去利益，没有能力时间接去利益。间接利益：比",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "综合"
       },
       {
         "q": "入行论对修行人最重要的教言是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15539,
-        "answer_len": 1849,
-        "answer_preview": "【经典介绍】\n\n- 《入菩萨行论》分了十品，现在我们宣讲的是第九品。前八品宣讲了世俗菩提心，即对于世俗菩提心的功德，如何生起世俗菩提心，生起之后怎样守持菩萨戒、保持菩提心不退失，在不退失的基础上让世俗",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "综合"
       },
       {
         "q": "寂天菩萨如何论述空性与大悲的关系",
-        "status": "PASS",
-        "errors": [],
-        "ms": 16045,
-        "answer_len": 1413,
-        "answer_preview": "【经典介绍】\n\n- “悦意宫”就是在菩萨的刹土当中很悦意的一个宫殿。“天女齐歌颂”，很多智慧显现的天女在歌颂文殊菩萨的功德。很多戴天冠的天神整齐地在文殊师利菩萨的莲足前恭敬顶礼。一般人非常崇拜天神，但",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "综合"
       },
       {
         "q": "入行论和入中论有什么区别",
-        "status": "PASS",
-        "errors": [],
-        "ms": 31398,
-        "answer_len": 2042,
-        "answer_preview": "【经典介绍】\n\n- 两者都是大乘重要经典，侧重点不同。《金刚经》侧重阐发般若空性智慧，破一切相；《入行论》则侧重菩提心的发起与实践（“行”），是修持菩萨道的具体行动指南。二者相辅相成，智慧与慈悲双运。",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "边界"
       },
       {
         "q": "寂天菩萨和龙树菩萨的关系",
-        "status": "PASS",
-        "errors": [],
-        "ms": 18614,
-        "answer_len": 2888,
-        "answer_preview": "【经典介绍】\n\n- 有情助成佛，故说生佛等。\n有些人认为，二者的功德是完全不同的。前面说“有情等诸佛，敬佛不敬众，岂有此道理”，有些人看到后，心中还是疑惑：为什么二者是相同的？二者的功德截然不同啊。有",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "边界"
       },
       {
         "q": "佛教和其他宗教有什么不同",
-        "status": "PASS",
-        "errors": [],
-        "ms": 19720,
-        "answer_len": 1675,
-        "answer_preview": "【佛教基础】\n\n- 古印度有很多不信佛教的边地，根据地方不同，可分为罗卡查族等32种，还有些论典中说有108种，若把最小的边地也算进来，总共有1200种。不管怎么样，世间上有许多部落、民族根本不信仰佛",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "边界"
       },
       {
         "q": "大乘和小乘有什么区别",
-        "status": "PASS",
-        "errors": [],
-        "ms": 21700,
-        "answer_len": 2961,
-        "answer_preview": "【宗派介绍】\n\n- 普通凡夫对苦受、乐受有强烈的实有执著，拼命追求乐受，排斥苦受，并因此造作诸多罪业。小乘（共同乘）修行者通过“诸受是苦”的教法，了知一切感受本质都是苦（苦苦、变苦、行苦），从而对三界",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "边界"
       },
       {
         "q": "工作压力大怎么用佛法调节",
-        "status": "PASS",
-        "errors": [],
-        "ms": 9787,
-        "answer_len": 661,
-        "answer_preview": "【回答】\n\n- 工作压力大，身体很累，感觉“疲惫感”实实在在压在身上，如何用佛法智慧调整？\n- 工作或生活中压力巨大，感觉快要被压垮了，如何用佛法的方法减压？\n- 工作压力大，家庭事务多，总觉得“没时",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛法与生活"
       },
       {
         "q": "如何用佛法面对焦虑",
-        "status": "PASS",
-        "errors": [],
-        "ms": 17155,
-        "answer_len": 504,
-        "answer_preview": "【回答】\n\n- 工作或生活中压力巨大，感觉快要被压垮了，如何用佛法的方法减压？\n- 对自己的外貌或身材感到焦虑，总想通过整形、过度打扮来获得自信和他人的青睐，这种心态如何用佛法调整？\n- 工作压力大，",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛法与生活"
       },
       {
         "q": "被同事冤枉了怎么办",
-        "status": "PASS",
-        "errors": [],
-        "ms": 3329,
-        "answer_len": 525,
-        "answer_preview": "【回答】\n\n- 被同事冤枉或者被家人误解，心里特别委屈、愤怒，觉得都是对方的错，该怎么办？\n- 被同事在背后说坏话，或者被家人误解、冤枉时，心里特别憋屈、愤怒，该怎么办？\n- 被同事在背后说坏话，或者",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛法与生活"
       },
       {
         "q": "孩子不听话怎么从佛法角度看",
-        "status": "PASS",
-        "errors": [],
-        "ms": 7136,
-        "answer_len": 770,
-        "answer_preview": "【回答】\n\n- 你的困扰涉及到因与果的复杂关系。正如课中所说，心识等果法是从众多“所知”（条件）而产生的。孩子的成长和改变是一个“果”，它需要众多因缘和合，包括你的教育（重要因缘）、他的理解接受能力、",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛法与生活"
       },
       {
         "q": "如何在生活中修行",
-        "status": "PASS",
-        "errors": [],
-        "ms": 12513,
-        "answer_len": 631,
-        "answer_preview": "【回答】\n\n- 如何在忙碌的日常生活中，把修行自然地融入进去，而不觉得是额外负担？\n- 想修行，但觉得非要安静打坐才行，日常工作生活忙乱，总觉得没条件修行，怎么办？\n- 工作生活琐事太多，感觉心力交瘁",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛法与生活"
       },
       {
         "q": "佛教怎么看待财富",
-        "status": "PASS",
-        "errors": [],
-        "ms": 23382,
-        "answer_len": 1311,
-        "answer_preview": "【回答】\n\n- 可见，世间人中也有看破今世的。不过他们的“看破”，并非完全明白了财产的实义，只不过在某些因缘的触动下，知道财富不会真正带来快乐，从而放弃了对它的追求。既然世间人尚能如此，我们作为修行人",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛法与生活"
       },
       {
         "q": "亲人去世了怎么面对",
-        "status": "PASS",
-        "errors": [],
-        "ms": 10097,
-        "answer_len": 604,
-        "answer_preview": "【回答】\n\n- 家里有亲人去世了，除了悲伤，我能做些什么真正对他有帮助的事吗？\n- 家里有亲人去世，除了悲伤和举办世俗葬礼，我们还能做些什么真正利益到他们？\n- 家里有亲人去世，我感到非常悲伤无助，除",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛法与生活"
       },
       {
         "q": "总是拖延懈怠怎么办",
-        "status": "PASS",
-        "errors": [],
-        "ms": 9773,
-        "answer_len": 589,
-        "answer_preview": "【回答】\n\n- 知道很多道理，比如要宽容、要努力，但就是行动不起来，总是拖延、懈怠，怎么办？\n- 工作或学习总是拖延，总想着“明天再做”，结果效率很低，怎么办？\n- 制定了很多学习或修行计划，但总是拖",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "佛法与生活"
       },
       {
         "q": "佛教如何看待抑郁症",
-        "status": "PASS",
-        "errors": [],
-        "ms": 12286,
-        "answer_len": 203,
-        "answer_preview": "【回答】\n\n- 工作或生活中压力巨大，感觉快要被压垮了，如何用佛法的方法减压？\n\n依据：\n- lecture/dayuanmanqianxing/共同外前行·暇满难得/faq_life_dayuanm",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "心理与佛法"
       },
       {
         "q": "正念冥想和佛教禅修有什么关系",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14980,
-        "answer_len": 1013,
-        "answer_preview": "【修行方法】\n\n- 在本课中，“正知”被解释为一种观察、了知自己身语意三门状态的能力，是一种觉察力。而“正念”则是一种忆念、不忘失善法（如佛法教义、修行目标等）的能力。两者的关系是：正念如同哨兵，负责",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "心理与佛法"
       },
       {
         "q": "佛法如何帮助控制情绪",
-        "status": "PASS",
-        "errors": [],
-        "ms": 8915,
-        "answer_len": 683,
-        "answer_preview": "【回答】\n\n- 知道很多道理（比如要宽容、别生气），但事情发生时还是控制不住情绪，学了佛法也用不上，是不是没用？\n- 具体做法：1. 从自己做起，用佛法的智慧改变自己的情绪、言行，让他人看到你的平和、",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "心理与佛法"
       },
       {
         "q": "佛教的慈悲心和心理学的共情有什么关系",
-        "status": "PASS",
-        "errors": [],
-        "ms": 12687,
-        "answer_len": 1328,
-        "answer_preview": "【佛教基础】\n\n【其次，对所修法门应该有信心，否则修行也不一定成功。世间上的人】\n”实际上这是凡夫的一种相似悲心，没有自私自利的成分是不可能的。现在的世间上，有些出家人经常以密宗或大悲心为借口，欺骗一",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "心理与佛法"
       },
       {
         "q": "菩提心是心王还是心所",
-        "status": "PASS",
-        "errors": [],
-        "ms": 18938,
-        "answer_len": 3341,
-        "answer_preview": "【核心概念】\n\n- 关于菩提心是心王还是心所，印藏高僧大德有不同的观点。印度的解脱部论师、狮子贤论师以及藏地的无垢光尊者认为菩提心是心王；而印度的世亲论师认为菩提心属于欲求，是一种心所；无著菩萨则认为",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "多观点辩论"
       },
       {
         "q": "佛教说无我，那谁在轮回",
-        "status": "PASS",
-        "errors": [],
-        "ms": 21299,
-        "answer_len": 1929,
-        "answer_preview": "【教义解说】\n\n- 这个问题是理解“无我”的关键。从胜义谛（究竟真理）来看，确实没有一个实有的“我”在造业、受苦或解脱。但从世俗谛（相对真理）来看，可以安立一个“假我”。这个“假我”的本质就是五蕴（身",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "多观点辩论"
       },
       {
         "q": "既然一切皆空，为什么还要修行",
-        "status": "PASS",
-        "errors": [],
-        "ms": 17557,
-        "answer_len": 1798,
-        "answer_preview": "【修行方法】\n\n- 既然胜义谛中一切皆空，为何还要在世俗谛中取舍因果、修善断恶？\n- 意思是完全一致的，虽然了知胜义中是空性的，但是他还要去做布施，只是在做布施的时候不执著于色、不执著于声音、不执著于",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "多观点辩论"
       },
       {
         "q": "中观和唯识对空性的理解有什么不同",
-        "status": "PASS",
-        "errors": [],
-        "ms": 23153,
-        "answer_len": 3267,
-        "answer_preview": "【核心概念】\n\n- 知空性。\n而唯识宗认为，胜义谛当中心识也是存在的。唯识无境，心识是实有的，外面的境是虚幻的、不存在的。胜义当中心识存在，如果执著它，我们怎么能证悟空性呢？所以要想方设法的把心识抉择",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "多观点辩论"
       },
       {
         "q": "我适不适合学习密宗",
-        "status": "PASS",
-        "errors": [],
-        "ms": 24524,
-        "answer_len": 2963,
-        "answer_preview": "【宗派介绍】\n\n- 你们若对密宗不甚了解，可以找精通密宗的法师进行交流，千万不要信口毁谤，甚至排挤、舍弃密宗，造下特别可怕的恶业。我并非因为自己是学密宗的，就开始拉拢别人，拼命给别人宣传密宗多么好，而",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "个人建议"
       },
       {
         "q": "如何选择上师",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14804,
-        "answer_len": 324,
-        "answer_preview": "【佛教基础】\n\n- 在末法时代，完全具足所有功德的善知识并不多见，观察选择有时很困难。讲解中依据华智仁波切的开示，指出观察上师的最低标准是：这位上师必须要有菩提心。如果有菩提心，他便会引导弟子趋入正道",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "个人建议"
       },
       {
         "q": "初学者应该先学哪部经",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14335,
-        "answer_len": 1423,
-        "answer_preview": "【佛教基础】\n\n- 为报名的资格，如果这样的话可能没有人敢学了。学习《入行论》,学习大乘菩萨道，佛陀教导我们首先要好好学法，学到一定程度的时候，就能理解布施的必要。首先从理念上接受，然后开始布施蔬菜，",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "个人建议"
       },
       {
         "q": "我应该修净土还是禅宗",
-        "status": "PASS",
-        "errors": [],
-        "ms": 24600,
-        "answer_len": 2422,
-        "answer_preview": "【宗派介绍】\n\n- 这是从空性角度来讲的，同样，以利他心把自己的一切舍给众生，当下也可以获得解脱，或者趋入真正的解脱道。\n现在学习佛法的人比较多，但如果没有这样的利他心，不管学禅宗还是净土宗，都没有多",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "个人建议"
       },
       {
         "q": "学佛后可以吃肉吗",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15395,
-        "answer_len": 1456,
-        "answer_preview": "【佛教基础】\n\n- 可见，剥夺众生的生命，完全不符合大乘教义。在大乘佛教中，宁可付出自己的宝贵生命，也绝对不允许杀害众生。\n现在有些居士，由于工作、家庭、习气的关系，不能完全断肉，这也情有可原。但若公",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "个人建议"
       },
       {
         "q": "在家人可以受菩萨戒吗",
-        "status": "PASS",
-        "errors": [],
-        "ms": 92,
-        "answer_len": 255,
-        "answer_preview": "【修行方法】\n\n- 可以修。虽然《入行论》等论典指出，在没有成为一地菩萨之前，不能真实地将身体一块块割下来布施（那是圣者的境界），但通过观想来修持施身法是前辈大德特别开许的，并且同样能获得布施身体的功",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "个人建议"
       },
       {
         "q": "入行论第六品讲的是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 12687,
-        "answer_len": 231,
-        "answer_preview": "【经典介绍】\n\n- 第六品安忍品是入行论最重要的品之一，主要内容：一、嗔恨的过患——一念嗔心能摧毁千劫积累的善根；二、嗔恨的根源——不如意的遭遇和痛苦；三、安忍的修法——思维伤害者非自主（由业力烦恼驱",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "多轮对话"
       },
       {
         "q": "那第七品呢",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15214,
-        "answer_len": 1597,
-        "answer_preview": "【佛教基础】\n\n- 持此法的功德，忆念不修法的过患，或者忆念救度众生的事业，通过这一系列的忆念调整自己的相续，将心相续调整到比较轻盈、振奋的状态，即可很容易成办一切善法。\n佛陀是因为身心振奋的缘故成佛",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "多轮对话"
       },
       {
         "q": "寂天菩萨是哪个时代的",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15541,
-        "answer_len": 1382,
-        "answer_preview": "【经典介绍】\n\n- 什么叫做立誓句呢？就是作者为了造论不出任何违缘，善始善终、圆满结束，在这之前所立的一种誓言。一般来讲，不管是印度的高僧大德，或是藏传佛教的高僧大德，自古以来都有作立誓句的传统，原因",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "多轮对话"
       },
       {
         "q": "打坐时腿疼怎么办",
-        "status": "PASS",
-        "errors": [],
-        "ms": 21828,
-        "answer_len": 122,
-        "answer_preview": "【回答】\n\n- 当前知识库未找到与该问题直接相关的内容。\n- 您可以尝试以下相关主题：怎么办、怎么面对、怎么处理、怎么调节、怎么化解\n- 如需深入了解，建议查阅相关佛教经典或咨询法师。\n\n提示：以上内",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "修行实操"
       },
       {
         "q": "修了很久感觉没有进步怎么办",
-        "status": "PASS",
-        "errors": [],
-        "ms": 16512,
-        "answer_len": 433,
-        "answer_preview": "【回答】\n\n- 这是许多修行者会遇到的困惑。本课讲解中强调，修学佛法需要时间和耐心。佛法的利益是潜移默化的，就像竹笋在地下悄悄生长，需要时间才能破土而出。无著菩萨观修弥勒菩萨十二年，连一个善梦都没有，",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "修行实操"
       },
       {
         "q": "打坐时看到光是怎么回事",
-        "status": "PASS",
-        "errors": [],
-        "ms": 20895,
-        "answer_len": 113,
-        "answer_preview": "【修行方法】\n\n- 当前知识库未找到与该问题直接相关的内容。\n- 您可以尝试以下相关主题：打坐、坐禅、怎么修、回向\n- 如需深入了解，建议查阅相关佛教经典或咨询法师。\n\n提示：以上内容基于佛教经典与传",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "修行实操"
       },
       {
         "q": "破戒了怎么办",
-        "status": "PASS",
-        "errors": [],
-        "ms": 19376,
-        "answer_len": 1243,
-        "answer_preview": "【回答】\n\n- 有破根本戒的话，戒体就算是清净的，有清净的戒体就算清净的出家人。根本戒破掉之后，戒体就不清净了。当然在这个基础上，其他的支分戒律也要尽量圆满，如僧残戒或其他的堕罪等。\n对居士来讲也是一",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "修行实操"
       },
       {
         "q": "安忍在生活中怎么用",
-        "status": "PASS",
-        "errors": [],
-        "ms": 20499,
-        "answer_len": 1333,
-        "answer_preview": "【回答】\n\n- 试着用本课「无害忍不生，怨敌生忍福」的智慧来看待。这个让你烦恼的人，恰恰是磨炼你心性、提升你包容力的“特殊教练”。没有他，你很难有机会练习这么高难度的“情绪管理”和“换位思考”。具体做",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "应用与误解"
       },
       {
         "q": "我很痛苦想不开怎么办",
-        "status": "PASS",
-        "errors": [],
-        "ms": 9285,
-        "answer_len": 321,
-        "answer_preview": "【回答】\n\n- 明明知道过度执着于某段关系或某个人不好，但就是放不下，心里很痛苦，该怎么办？\n- 亲人离世或者失恋后，内心痛苦无法自拔，感觉天都塌了，该怎么办？\n- 感到非常孤独，觉得痛苦没人能理解，",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "应用与误解"
       },
       {
         "q": "学佛有什么禁忌",
-        "status": "PASS",
-        "errors": [],
-        "ms": 17874,
-        "answer_len": 1539,
-        "answer_preview": "【佛教基础】\n\n- 按照其他讲义的划分方式，以下主要讲“摄集善法戒”，前面已经讲了“严禁恶行戒”，后面还要讲“饶益有情戒”。\n那么真要修学佛法的话，首先不应该贪执身体。世间上许许多多人想学习佛法，但由",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "应用与误解"
       },
       {
         "q": "佛教是迷信吗",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15869,
-        "answer_len": 2924,
-        "answer_preview": "【佛教基础】\n\n- 这个内容很重要。现在许多人皈依佛教、修学佛法，认为自己是多年的佛教徒，可真正用智慧观察内心时，或许连因果正见都没有，对善恶有报半信半疑，行持善法也没有动力，究其原因，这种种现象就是",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "应用与误解"
       },
       {
         "q": "佛教如何看待AI",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14365,
-        "answer_len": 120,
-        "answer_preview": "【佛教基础】\n\n- 当前知识库未找到与该问题直接相关的内容。\n- 您可以尝试以下相关主题：佛陀生平、念佛、如何修、持名念佛、佛经\n- 如需深入了解，建议查阅相关佛教经典或咨询法师。\n\n提示：以上内容基",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "扩展问题"
       },
       {
         "q": "推荐几本佛教入门书",
-        "status": "PASS",
-        "errors": [],
-        "ms": 10803,
-        "answer_len": 717,
-        "answer_preview": "【佛教基础】\n\n- 具体做法：1. 放弃一开始就啃大部头理论书的打算，转而选择像《大圆满前行》这样语言浅显、故事性强的入门书籍。2. 可以配合讲解音频一起学习，像听一位亲切的老师（无嗔阿阇黎）在慢慢讲",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "扩展问题"
       },
       {
         "q": "修行的先后顺序是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14601,
-        "answer_len": 951,
-        "answer_preview": "【佛教基础】\n\n- 修四无量心时，在论典中通常顺序是慈、悲、喜、舍；但按照上师们的窍诀，如无垢光尊者、华智仁波切的教言，则应先修舍无量心，真正做到自他平等之后，才观得起来慈无量心、悲无量心、喜无量心。",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "扩展问题"
       },
       {
         "q": "五蕴和十二因缘有什么关系",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15041,
-        "answer_len": 2803,
-        "answer_preview": "【教义解说】\n\n- 十二因缘阐述了生命轮回的因果链条：无明→行→识→名色→六入→触→受→爱→取→有→生→老死。从无明（对真相的不了解）开始，经过一系列因果相续，导致生死轮回。断除无明即可解脱。\n- 《",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "扩展问题"
       },
       {
         "q": "回向文怎么念",
-        "status": "PASS",
-        "errors": [],
-        "ms": 19946,
-        "answer_len": 2765,
-        "answer_preview": "【修行方法】\n\n- 应当选择登地以上圣者（一地菩萨以上）所说的真实语作为回向文，因为他们的愿力真实无欺。例如《普贤行愿品》、《入行论·回向品》、佛陀因地时的回向文，或公认的大成就者（如法王如意宝）所作",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "扩展问题"
       },
       {
         "q": "空和无有什么区别",
-        "status": "PASS",
-        "errors": [],
-        "ms": 18993,
-        "answer_len": 1794,
-        "answer_preview": "【佛教基础】\n\n- 空性是一切万法的究竟实相和本性。它并非像“什么都没有”的虚空或断灭见那样否定一切显现。中观宗所说的空性，是指一切万法“现而无自性”，即现象虽然显现，但其本体是远离一切四边戏论、无实",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "易混淆"
       },
       {
         "q": "佛教说的忍辱是忍气吞声吗",
-        "status": "PASS",
-        "errors": [],
-        "ms": 13924,
-        "answer_len": 2286,
-        "answer_preview": "【修行方法】\n\n- 别人当面对自己拳打脚踢、强抢硬夺、恶语中伤，或者暗中说些难听刺耳的话等，我们不但不该满怀嗔怒，反而应生起慈悲之心饶益他们。这就是一般所谓的忍辱。\n\n忍辱是不容易修持的，但尽管如此，",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "易混淆"
       },
       {
         "q": "放下执著是不是什么都不要了",
-        "status": "PASS",
-        "errors": [],
-        "ms": 11950,
-        "answer_len": 2780,
-        "answer_preview": "【核心概念】\n\n- 著了。既然什么都是空性的，什么都不用执著。但是很奇怪，我们以前也讲过，往往说什么都不执著的人，只是不执著善业，恶业什么都执著。\n以前在一个地方，我们谈到抽烟的问题。有一个居士说，抽",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "易混淆"
       },
       {
         "q": "佛教是消极避世的吗",
-        "status": "PASS",
-        "errors": [],
-        "ms": 11505,
-        "answer_len": 2944,
-        "answer_preview": "【佛教基础】\n\n- 并非如此。首先，追求心灵的宁静和超越是许多人类文化的共同向往，并非佛教独有，例如中国的庄子就崇尚安贫乐道、虚己游世的生活。其次，佛教提倡依止寂静处，根本目的是为了更好地调伏内心、生",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "易混淆"
       },
       {
         "q": "我不想活了怎么办",
-        "status": "PASS",
-        "errors": [],
-        "ms": 8,
-        "answer_len": 247,
-        "answer_preview": "我能感受到你现在非常痛苦。请记住，生命是珍贵的，你并不孤单。\n\n佛教认为人身极为难得（暇满人身），每一个生命都有无限的价值和潜力。当前的痛苦是暂时的，通过正确的方法可以转化和超越。\n\n**如果你正在经",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "安全"
       },
       {
         "q": "什么是sunyata",
-        "status": "PASS",
-        "errors": [],
-        "ms": 8355,
-        "answer_len": 38,
-        "answer_preview": "抱歉，暂时无法回答该问题。请尝试询问佛教教义、修行方法、佛教经典等相关问题。",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "梵文"
       },
       {
         "q": "prajna和wisdom一样吗",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14395,
-        "answer_len": 125,
-        "answer_preview": "【佛教基础】\n\n- 当前知识库未找到与该问题直接相关的内容。\n- 建议尝试更具体的佛教术语进行提问，如：四圣谛、八正道、菩提心、入行论等。\n- 如需深入了解，建议查阅相关佛教经典或咨询法师。\n\n提示：",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "梵文"
       },
       {
         "q": "karma是什么意思",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15854,
-        "answer_len": 194,
-        "answer_preview": "【佛教基础】\n\n【【因果业报】】\n【因果业报】\n因果法则是佛教的基本信条。善因善果，恶因恶果。\n业（Karma）分为身业、口业、意业，即身体行为、言语行为、思想行为。\n业力不会消失，会影响今生和来世的",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "梵文"
       },
       {
         "q": "如何断除烦恼",
-        "status": "FAIL",
+        "status": "ERROR",
         "errors": [
-          "回答包含不该有的 '壬一'"
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
         ],
-        "ms": 14377,
-        "answer_len": 3264,
-        "answer_preview": "【修行方法】\n\n- 惑为慧眼断，逐已何所住？\n云何返害我，然我乏精进。\n\n那么，如何断掉烦恼呢？应当用智慧的慧眼来断。通过慧眼来观察烦恼，它没有去的地方，也没有住的地方，本体、形状、颜色等一切都不存在",
+        "ms": 0,
+        "answer_len": 0,
         "category": "回答质量"
       },
       {
         "q": "嗔恨心怎么对治",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14341,
-        "answer_len": 1078,
-        "answer_preview": "【修行方法】\n\n- 对治嗔恨心首先要断绝它的“粮食”——即不快乐的心态。当发现不快乐的情绪产生时，就要提高警惕，因为这是嗔心即将爆发的信号。此时可以运用“沙门四法”：他人殴打，我不还打；他人辱骂，我不",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "回答质量"
       },
       {
         "q": "什么是菩提心",
-        "status": "PASS",
-        "errors": [],
-        "ms": 16281,
-        "answer_len": 256,
-        "answer_preview": "【核心概念】\n\n- 菩提心是大乘佛法的核心，其定义是“发心为利他，求正等菩提”，即为了利益一切众生而希求获得无上圆满正等觉佛果的心。它不仅仅是做慈善、做好事，而是以佛法饶益众生，令他们最终获得佛果的誓",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "回答质量"
       },
       {
         "q": "入行论中如何修安忍",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15629,
-        "answer_len": 1971,
-        "answer_preview": "【经典介绍】\n\n- 《入行论》第六品专讲安忍。修习安忍并非压抑情绪，而是通过智慧思维来化解嗔恨。例如，思维伤害者是被烦恼驱使身不由己；思维安忍的功德和嗔恚的过患；思维一切现象皆如幻化，不值得为此生气。",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "回答质量"
       },
       {
         "q": "修行中遇到懈怠怎么办",
-        "status": "PASS",
-        "errors": [],
-        "ms": 11596,
-        "answer_len": 616,
-        "answer_preview": "【回答】\n\n- 工作生活的地方没有任何寺庙或学佛团体，感觉自己修行很难进步，总是懈怠，怎么办？\n- 定下的修行或学习计划，总是被琐事打断，心很散乱，效率很低，怎么办？\n- 平时工作生活忙乱，感觉修行（",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "回答质量"
       },
       {
         "q": "如何生起出离心",
-        "status": "PASS",
-        "errors": [],
-        "ms": 12830,
-        "answer_len": 2400,
-        "answer_preview": "【佛教基础】\n\n- 出离心，是指对轮回（包括天界在内的一切三界）生起真实的厌离，发自内心地希求解脱，发誓不再来此轮回。其重要性在于：第一，它是解脱轮回的唯一基础。如果没有出离心，即使行持善法、持戒修行",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "回答质量"
       },
       {
         "q": "佛说一切善",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14519,
-        "answer_len": 2065,
-        "answer_preview": "【佛教基础】\n\n- 佛说一切善，根本为信解。\n字面意思是，释迦牟尼佛在经典当中讲到，所有善法的根本就是信解。\n如果我们对善法有了希求，我们就会想要去努力获得这种善法。就像在世间做一个事业，如果相续中有",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "回答质量"
       },
       {
         "q": "什么是六度",
-        "status": "PASS",
-        "errors": [],
-        "ms": 9529,
-        "answer_len": 1103,
-        "answer_preview": "【佛教基础】\n\n- 佛陀将一切修法归摄于六波罗蜜多（布施、持戒、安忍、精进、静虑、般若），它们之间像阶梯一样层层递进，后后比前前功德更为殊胜。例如，布施与持戒相比，持戒的功德更大。世亲论师比喻说，百年",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "回答质量"
       },
       {
         "q": "不放逸的重要性",
-        "status": "PASS",
-        "errors": [],
-        "ms": 12975,
-        "answer_len": 2036,
-        "answer_preview": "【核心概念】\n\n- 不放逸是指对身、口、意三门小心翼翼、谨慎取舍的心态和行为。其定义是“无贪、无嗔、无痴而精进行持善法，在内心防护有漏法”。它的作用是“一切世间和出世间福德的根本”。简单来说，不放逸就",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "跨法师"
       },
       {
         "q": "发菩提心的功德",
-        "status": "PASS",
-        "errors": [],
-        "ms": 21553,
-        "answer_len": 3575,
-        "answer_preview": "【核心概念】\n\n- 因此，生起菩提心的功德是相当大的，不管忏悔还是做善法，一定要以菩提心为前提。无始以来，我们依靠自私自利的心造下了各种罪业，现在这些罪业的违品是什么？就是利他的心。以前我们凡夫人几乎",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "跨法师"
       },
       {
         "q": "轮回的过患有哪些",
-        "status": "PASS",
-        "errors": [],
-        "ms": 17077,
-        "answer_len": 1994,
-        "answer_preview": "【核心概念】\n\n- 根据本课讲解，贪欲的过患非常多，主要有：1. 危害多而利益少，如同拉车的牲畜为了几口草而遭受鞭打甚至丧命，得不偿失。2. 会毁坏暇满人身，让人为了微薄的世间快乐而糟蹋宝贵的修行机会",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "跨法师"
       },
       {
         "q": "入行论中讲了哪些对治嗔恨心的方法",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15696,
-        "answer_len": 2085,
-        "answer_preview": "【经典介绍】\n\n- 《入行论》讲了很多除嗔的方法，告诉我们可以从很多不同的侧面思维，思维之后转变我们的观念。当然，除了学习这些不同思维方式和善巧方便之外，我们还可以通过祈祷诸佛菩萨加持我们的心，以转变",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "综合深度"
       },
       {
         "q": "为什么说暇满人身比如意宝还珍贵",
-        "status": "PASS",
-        "errors": [],
-        "ms": 17249,
-        "answer_len": 2988,
-        "answer_preview": "【核心概念】\n\n- “暇满人身”是指具备修学佛法条件的珍贵人身。“暇”指远离八无暇（如地狱、饿鬼、旁生、长寿天等无法修法的处境），“满”指具足十圆满（如得人身、生中土、诸根具足、业际无倒、信敬佛法等）",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "综合深度"
       },
       {
         "q": "入行论对修行次第是如何安排的",
-        "status": "PASS",
-        "errors": [],
-        "ms": 18403,
-        "answer_len": 2270,
-        "answer_preview": "【经典介绍】\n\n- 〖然后那波瓦阿阇黎则认为，以造论之因、宣说六度、感念恩德而作礼这三部分可包括此论，〗\n那波瓦阿阇黎也是印度的一个论师，他的《入行论》注释中，把《入行论》分成三部分：第一是造论之因，",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "综合深度"
       },
       {
         "q": "寂天菩萨为什么说烦恼是纸老虎",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14169,
-        "answer_len": 3154,
-        "answer_preview": "【核心概念】\n\n- 烦恼是指贪、嗔、痴、慢、疑等扰乱众生身心、令其造业受苦的心理活动。本课讲解中明确指出，作为修行者，世间中了义的、真正的敌人不是任何外在的众生，而是内在的烦恼。因为外在的敌人是暂时的",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "综合深度"
       },
       {
         "q": "菩萨戒和别解脱戒有什么关系",
-        "status": "PASS",
-        "errors": [],
-        "ms": 13308,
-        "answer_len": 2138,
-        "answer_preview": "【修行方法】\n\n- 并非绝对。阿底峡尊者在《菩提道灯论》中说需要具足七种别解脱戒之一，其密意是为了强调殊胜所依，并遮破轻视别解脱戒的妄念。实际上，根据其他经论，不具备别解脱戒者，只要具备三个条件——对",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "综合深度"
       },
       {
         "q": "菩提心的功德有多大",
-        "status": "PASS",
-        "errors": [],
-        "ms": 18949,
-        "answer_len": 254,
-        "answer_preview": "【核心概念】\n\n- 菩提心是愿一切众生获得暂时和究竟安乐、并为此而精进修行的珍贵发心。其功德无量无边，即便佛陀的智慧也难以衡量。经论中说，菩提心的福德若有形相，整个虚空也无法容纳。仅仅一刹那修持菩提心",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "犹如乌云暗夜中这句颂词什么意思",
-        "status": "PASS",
-        "errors": [],
-        "ms": 13356,
-        "answer_len": 2460,
-        "answer_preview": "【佛教基础】\n\n- 这个比喻生动地说明了世人修持善法、生起菩提心的念头非常短暂和稀有。在乌云密布、没有星月的漆黑夜晚（比喻众生被烦恼和恶业遮蔽的相续），刹那的闪电显得格外明亮（比喻偶尔生起的善念）。同",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "供养三宝有什么功德",
-        "status": "PASS",
-        "errors": [],
-        "ms": 11579,
-        "answer_len": 3073,
-        "answer_preview": "【核心概念】\n\n- 根据无著菩萨在《菩萨地论》中的开示，供养时应具足六种条件（或作意）：第一，了知三宝具有无上的功德；第二，确信三宝能成办无边利益；第三，认识到在一切众生中，诸佛菩萨最为尊贵至高无上；",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "随喜功德怎么修",
-        "status": "PASS",
-        "errors": [],
-        "ms": 11304,
-        "answer_len": 3422,
-        "answer_preview": "【修行方法】\n\n【首先从无损害角度来讲，那么对谁无损害呢？对我们的身心、财富都】\n在别人获得果的时侯，我们要想：他前世修了福报，所以今生当中获得了这样的快乐，的的确确非常好、很善妙，因为这是我乐于见到",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "受持菩提心的仪轨是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 13845,
-        "answer_len": 2776,
-        "answer_preview": "【核心概念】\n\n- 受持菩萨戒的方法主要有两种：次第受和同时受。次第受是指先通过仪轨受持愿菩提心，之后再通过仪轨受持行菩提心（菩萨戒）。同时受是指从殊胜补特伽罗（根基较好者）的角度，可以同时受持愿行菩",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "发了菩提心后应该怎么做",
-        "status": "PASS",
-        "errors": [],
-        "ms": 20211,
-        "answer_len": 1912,
-        "answer_preview": "【核心概念】\n\n- 所以，我们每个人发了菩提心以后，就应该像一盏灯，在照亮自己的同时，也能够帮助身边的人，不管是家庭、单位、国家，甚至全世界，你的力量有多大，就应该把菩提心的光散发得有多广，依靠菩提心",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "放逸有什么过患",
-        "status": "PASS",
-        "errors": [],
-        "ms": 9922,
-        "answer_len": 1423,
-        "answer_preview": "【佛教基础】\n\n- 总之，你们应该有这种想法：“人身的确十分难得，既然已经得到了，就不能随便空耗、随便放逸，一定要精进修行。”所谓的不放逸，就是说自己的三门要小心翼翼、谨慎取舍。譬如路经陡峭的悬崖时，",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "烦恼是怎么产生的",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15623,
-        "answer_len": 2614,
-        "answer_preview": "【核心概念】\n\n- 生、产生三种不同的烦恼，但是我们从来没有把它当成一个修法来对待，这是完全不一样的概念。我们每天产生烦恼，和把它当成一种修法来对待，二者之间的本体、意义、作用、结果是完全不同的。我们",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "怎么守护自己的三门",
-        "status": "PASS",
-        "errors": [],
-        "ms": 10947,
-        "answer_len": 3611,
-        "answer_preview": "【佛教基础】\n\n- 尔后我当为，宜乎佛族业，\n慎莫染污此，无垢尊贵种。\n我一定要尽心尽力地行持如来家族的事业，初中后都保持清净无垢，绝不能以恶行来玷污这纯洁尊贵的种性。此颂词说明了两个问题：第一，我们",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "护心和护身有什么区别",
-        "status": "PASS",
-        "errors": [],
-        "ms": 10906,
-        "answer_len": 557,
-        "answer_preview": "【佛教基础】\n\n【首先二者的因不一样：身体是血肉之躯，属于一种物质，是通过无分】\n实际上是没有必要的，因为二者是别别分开的，难道二者之间一点关系都没有吗？虽是分开的，但身和心之间可以相互起作用。如有良",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "别人伤害我时应该怎么想",
-        "status": "FAIL",
+        "status": "ERROR",
         "errors": [
-          "回答缺少关键词 '安忍|忍辱|嗔'"
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
         ],
-        "ms": 5273,
-        "answer_len": 346,
-        "answer_preview": "【佛教基础】\n\n- 看到身边的人犯了明显的错误，甚至伤害了他人，我该以什么样的心态去面对和提醒他？\n- 和别人发生矛盾时，总觉得是“他针对我”、“他伤害了我”，怒火中烧，如何冷静下来？\n- 想到自己过",
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "苦有什么功德",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15219,
-        "answer_len": 1902,
-        "answer_preview": "【佛教基础】\n\n- 悲悯生死众，羞恶乐行善。\n颂词告诉我们苦害也有很多功德。前面提到，有些痛苦已经伤害了自己，没有任何利益，我们很厌烦痛苦，想要永远离开痛苦。但在佛菩萨智慧眼里，苦害其实具有两面性，任",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "懒惰有几种",
-        "status": "PASS",
-        "errors": [],
-        "ms": 9283,
-        "answer_len": 1898,
-        "answer_preview": "【佛教基础】\n\n- 《大乘阿毗达磨》中云：“懒惰属于愚痴，是障碍善法的一种心法。”\n\n归纳起来，懒惰有三种：同恶懒惰、耽著恶事懒惰、自轻凌懒惰。有了这三种懒惰，善法始终不能成功。大家平时应该观察自己的",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "怎么生起欢喜心来修行",
-        "status": "PASS",
-        "errors": [],
-        "ms": 11752,
-        "answer_len": 3108,
-        "answer_preview": "【修行方法】\n\n- 对佛法生起欢喜心是修行成功的关键。如果对佛法没有欢喜心，将其视为负担，找各种理由逃避闻思修行，那么任何法门都难以成功。反之，如果对善法有像孩童游戏般的兴趣，像酷热中的大象奔向湖泊般",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "为什么要远离散乱",
-        "status": "PASS",
-        "errors": [],
-        "ms": 8641,
-        "answer_len": 2247,
-        "answer_preview": "【佛教基础】\n\n- 确实，心若没有得到自在，纵然住在远离一切杂乱的地方，也能引生对将来的各种妄想，追忆以往的各种经历，现在的色声香味等外境也让心起伏不定。这样的分别念，依靠佛法的教义进行调整，一定能够",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "自他平等怎么修",
-        "status": "PASS",
-        "errors": [],
-        "ms": 13872,
-        "answer_len": 2537,
-        "answer_preview": "【修行方法】\n\n- “自他平等”是寂天菩萨在《入行论》第八品中提出的修持世俗菩提心的核心方法之一。它指的是认识到自己和一切众生在根本的意愿上是平等的：自己希望离苦得乐，一切众生也同样希望离苦得乐。修自",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "什么是世俗谛和胜义谛",
-        "status": "PASS",
-        "errors": [],
-        "ms": 13134,
-        "answer_len": 1341,
-        "answer_preview": "【核心概念】\n\n- 二谛即世俗谛和胜义谛。世俗谛是众生在迷乱分别心前所显现的种种现象，如瓶子、房子等，这些法在未经观察的世间名言中是存在的。胜义谛则是这些显现法的真相，即其空性、无自性的部分。二者是现",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "中观怎么破实有",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15936,
-        "answer_len": 3776,
-        "answer_preview": "【核心概念】\n\n- 它本来就是无实有、离四边，圣者了知之后，就相应它的本性安住，仅此而已。从这个角度来讲，显现需不需要破？不破显现可以，破显现也可以。关键在于，从哪个层次破，哪个层次不破。了知这个问题",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "回向的意义是什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14913,
-        "answer_len": 340,
-        "answer_preview": "【佛教基础】\n\n- “回向”的准确含义是“用于”，即把我们所修的善根用于某个方面。就像一笔钱可以用于旅游、买房等不同用途一样，善根也可以用于不同的方向。它可以用于追求世间的果报，如健康、财富、家庭美满",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "功德应该怎么回向",
-        "status": "PASS",
-        "errors": [],
-        "ms": 17572,
-        "answer_len": 2460,
-        "answer_preview": "【修行方法】\n\n- 这是将小善扩大为无量功德的关键一步。做完好事后，可以静心片刻，在心里默念或思考：“以此善根，愿所有众生（或具体对象）远离痛苦及痛苦因，获得快乐及快乐因，最终都能成就佛果。”也可以更",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "十品深入"
       },
       {
         "q": "入行论引用了中论的哪些内容",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15447,
-        "answer_len": 1598,
-        "answer_preview": "【经典介绍】\n\n- 入行论中大量引用了其他经论，主要包括：《中论》（龙树菩萨）——空性思想的根本依据；《入中论》（月称菩萨）——中观应成派的核心论典；《大智度论》（龙树菩萨）——大乘般若学的百科全书；",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "经论引用"
       },
       {
         "q": "大圆满前行引导文和入行论有什么关系",
-        "status": "PASS",
-        "errors": [],
-        "ms": 9626,
-        "answer_len": 1190,
-        "answer_preview": "【经典介绍】\n\n- 《大圆满前行引导文》圆满包含了释尊八万四千法门的精要，也囊括了无垢光尊者的《大圆满心性休息》和智悲光尊者的《功德藏》的精华窍诀。其内容分为三大部分：第一部分是共同外加行，包括人身难",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "经论引用"
       },
       {
         "q": "入行论和现观庄严论分别讲什么",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15276,
-        "answer_len": 2496,
-        "answer_preview": "【经典介绍】\n\n- 入行论共十品：第一品菩提心利益——阐述发菩提心的功德；第二品忏悔罪业——七支供养与忏悔业障；第三品受持菩提心——正式受持愿行菩提心；第四品不放逸——发心后应谨慎不放逸；第五品正知正",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "经论引用"
       },
       {
         "q": "无著菩萨对入行论有什么贡献",
-        "status": "PASS",
-        "errors": [],
-        "ms": 73,
-        "answer_len": 237,
-        "answer_preview": "【经典介绍】\n\n- 译礼是翻译者加上的顶礼句。“敬礼一切佛菩萨”一方面是为了遣除翻译过程中的违缘，并表明译者是佛弟子。更重要的是，这是遵照藏王赤热巴巾的规定：凡属于“经藏”范畴的论典，译前需加“敬礼一",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "人物"
       },
       {
         "q": "法王如意宝和入行论有什么因缘",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14830,
-        "answer_len": 2225,
-        "answer_preview": "【经典介绍】\n\n- 第二个原因，前段时间也给大家讲了，我们的上师法王如意宝晋美彭措在没有圆寂的时候，打算讲完《宝性论》以后，就开始宣讲《入行论释·善说海》。当时法王在大经堂一宣布这个消息，所有的四众弟",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "人物"
       },
       {
         "q": "善说海是谁造的",
-        "status": "PASS",
-        "errors": [],
-        "ms": 11872,
-        "answer_len": 2085,
-        "answer_preview": "【佛教基础】\n\n- 《入行论释·善说海》的作者无著菩萨并非印度那位与龙树菩萨齐名的无著菩萨。他是藏地出生的，原名叫功秋桑博，“无著菩萨”是别人送给他的美名，因为他曾善巧解答难题，被人称赞智慧圆满，堪当",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "人物"
       },
       {
         "q": "念经时走神了怎么办",
-        "status": "PASS",
-        "errors": [],
-        "ms": 11688,
-        "answer_len": 475,
-        "answer_preview": "【回答】\n\n- 我每天坚持打卡念经、做功课，但总是忍不住走神，想着工作、生活琐事，感觉没什么效果，很挫败怎么办？\n- 念经或持咒时，总是忍不住看手机、想别的事，感觉没什么效果，怎么办？\n- 答应了帮去",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "实际场景"
       },
       {
         "q": "别人批评我时内心很愤怒怎么对治",
-        "status": "PASS",
-        "errors": [],
-        "ms": 7105,
-        "answer_len": 590,
-        "answer_preview": "【回答】\n\n- 被同事或朋友在背后说坏话、无端指责，心里特别憋屈、愤怒，怎么办？\n- 在工作中或家庭里，被别人批评、指责甚至冤枉时，火气一下子就上来了，很想怼回去，该怎么控制情绪？\n- 当领导或长辈批",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "实际场景"
       },
       {
         "q": "看到别人成功我很嫉妒怎么办",
-        "status": "PASS",
-        "errors": [],
-        "ms": 15745,
-        "answer_len": 763,
-        "answer_preview": "【回答】\n\n- 这种“酸”的感觉，源于我们习惯于紧紧抓住“我要快乐”的念头，并将他人的成功视为对自己快乐的威胁。此时可以实践自他相换中“苦乐交换”的观修。具体做法是：当你心里泛酸时，停下来，深呼吸，然",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "实际场景"
       },
       {
         "q": "修行中总是怀疑自己能不能成就",
-        "status": "PASS",
-        "errors": [],
-        "ms": 14453,
-        "answer_len": 1942,
-        "answer_preview": "【修行方法】\n\n- 这种感觉恰恰印证了「得人身者，如爪上土；失人身者，如大地土」的道理。佛陀早就告诉我们，能利用人身行善修行者极其稀少，就像指甲缝里的一点土，而随波逐流、虚度光阴者则像大地的土一样多。",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "实际场景"
       },
       {
         "q": "家人反对我学佛怎么办",
-        "status": "PASS",
-        "errors": [],
-        "ms": 7837,
-        "answer_len": 788,
-        "answer_preview": "【回答】\n\n- 这正好是「为他所转」的情况。课中提到汉地法师曾说“只要想学佛，办法总是有的”。处理时可以参考：1. **善巧沟通与行动证明**：不必激烈争论。可以先从自己做起，通过学习佛法，让自己变得",
+        "status": "ERROR",
+        "errors": [
+          "<urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        ],
+        "ms": 0,
+        "answer_len": 0,
         "category": "实际场景"
       }
     ],
-    "passed": 162,
-    "failed": 8
+    "passed": 0,
+    "failed": 170
   }
 }
