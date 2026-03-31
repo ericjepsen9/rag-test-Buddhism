@@ -829,58 +829,163 @@
 
   <div id="tab-import" class="tab-panel">
 
-    <!-- URL 抓取 -->
-    <div class="card">
-      <div class="card-title">URL 抓取
-        <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
-          抓取网页正文，自动填入下方导入框
-        </span>
-      </div>
-      <div class="row-flex">
-        <div style="flex:3">
-          <label>网页 URL</label>
-          <input type="url" id="fetchUrl" placeholder="https://mp.weixin.qq.com/…"
-                 onkeydown="if(event.key==='Enter')doFetchUrl()">
-        </div>
-        <button class="btn btn-info" id="fetchUrlBtn" onclick="doFetchUrl()">抓取正文</button>
-      </div>
-      <div id="fetchUrlResult" style="display:none;margin-top:12px">
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-          <span style="font-size:13px;font-weight:600" id="fetchUrlTitle"></span>
-          <span class="badge badge-info" id="fetchUrlLen"></span>
-        </div>
-        <div style="font-size:12px;color:var(--text-sec)">正文已填入下方文本框，可直接点击导入。</div>
-      </div>
-    </div>
+    <!-- 网页导入（合并：单URL抓取 + 自动爬取 + 批量URL模板）-->
+    <div class="card" id="webImportCard">
+      <div class="card-title">网页导入</div>
 
-    <!-- 自动爬取导入 v2 -->
-    <div class="card" id="crawlV2Card">
-      <div class="card-title">自动爬取导入
-        <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
-          输入任意一课的链接，自动发现全部文章 → 后台导入 → 实时进度
-        </span>
+      <!-- 模式切换 -->
+      <div style="display:flex;gap:16px;margin-bottom:14px;font-size:13px">
+        <label style="cursor:pointer"><input type="radio" name="webMode" value="single" checked onchange="_switchWebMode('single')"> 单个URL抓取</label>
+        <label style="cursor:pointer"><input type="radio" name="webMode" value="crawl" onchange="_switchWebMode('crawl')"> 自动爬取导入</label>
+        <label style="cursor:pointer"><input type="radio" name="webMode" value="batch" onchange="_switchWebMode('batch')"> 批量URL模板</label>
       </div>
 
-      <!-- 输入区 -->
-      <div id="crawlV2Input">
+      <!-- ===== 模式A：单个URL抓取 ===== -->
+      <div id="webModeSingle">
+        <div class="row-flex">
+          <div style="flex:3">
+            <label>网页 URL</label>
+            <input type="url" id="fetchUrl" placeholder="https://mp.weixin.qq.com/…"
+                   onkeydown="if(event.key==='Enter')doFetchUrl()">
+          </div>
+          <button class="btn btn-info" id="fetchUrlBtn" onclick="doFetchUrl()">抓取正文</button>
+        </div>
+        <div id="fetchUrlResult" style="display:none;margin-top:12px">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+            <span style="font-size:13px;font-weight:600" id="fetchUrlTitle"></span>
+            <span class="badge badge-info" id="fetchUrlLen"></span>
+          </div>
+          <div style="font-size:12px;color:var(--text-sec)">正文已填入下方文本框，可直接点击导入。</div>
+        </div>
+      </div>
+
+      <!-- ===== 模式B：自动爬取导入 v2 ===== -->
+      <div id="webModeCrawl" style="display:none">
+        <div id="crawlV2Input">
+          <div class="row-flex" style="flex-wrap:wrap;gap:10px">
+            <div style="flex:4;min-width:200px">
+              <label>起始页 URL（任意一课的链接）</label>
+              <input type="url" id="cv2Url"
+                     placeholder="https://mingguang.im/r/ru-xing-lun-jiang-jie-2006-nian-ban-di-1-ke/">
+            </div>
+            <div style="flex:2;min-width:150px">
+              <label>URL 过滤关键字</label>
+              <input type="text" id="cv2Filter" placeholder="ru-xing-lun-jiang-jie">
+            </div>
+          </div>
+          <div class="row-flex" style="margin-top:10px;flex-wrap:wrap;gap:10px;align-items:flex-end">
+            <div style="flex:2;min-width:120px">
+              <label>知识类型</label>
+              <select id="cv2Type" onchange="cv2TypeChanged()">
+                <option value="lecture">lecture — 论典讲记</option>
+                <option value="doctrine">doctrine — 教义</option>
+                <option value="scripture">scripture — 经典</option>
+                <option value="talk">talk — 法师开示/演讲</option>
+                <option value="practice">practice — 修行</option>
+                <option value="master">master — 人物</option>
+                <option value="history">history — 历史</option>
+                <option value="ritual">ritual — 仪轨</option>
+                <option value="sect">sect — 宗派</option>
+                <option value="glossary">glossary — 术语</option>
+              </select>
+            </div>
+            <div id="cv2TreatiseNameBox" style="flex:2;min-width:120px;display:none">
+              <label>论典名称 <span style="color:red">*</span></label>
+              <input type="text" id="cv2TreatiseName" placeholder="如：入行论" style="width:100%">
+            </div>
+            <div style="flex:1;min-width:80px">
+              <label>间隔(秒)</label>
+              <input type="number" id="cv2Delay" value="2" min="0" step="0.5">
+            </div>
+            <button class="btn btn-outline" id="cv2DiscoverBtn" onclick="cv2Discover()">发现链接</button>
+            <button class="btn btn-info" id="cv2StartBtn" onclick="cv2Start()" style="display:none">开始导入</button>
+          </div>
+        </div>
+
+        <!-- 发现结果预览 -->
+        <div id="cv2Preview" style="display:none;margin-top:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <span id="cv2PreviewTitle" style="font-weight:600;font-size:14px"></span>
+            <button class="btn btn-outline" onclick="cv2ClearPreview()" style="font-size:12px;padding:4px 10px">清除</button>
+          </div>
+          <div id="cv2PreviewList" style="font-size:12px;max-height:200px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px"></div>
+        </div>
+
+        <!-- 运行中的进度面板 -->
+        <div id="cv2Progress" style="display:none;margin-top:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span id="cv2StatusText" style="font-weight:600;font-size:14px"></span>
+            <span style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-outline" id="cv2PauseBtn" onclick="cv2Pause()" style="font-size:12px;padding:4px 10px">暂停</button>
+              <button class="btn btn-outline" id="cv2ResumeBtn" onclick="cv2Resume()" style="font-size:12px;padding:4px 10px;display:none">继续</button>
+              <button class="btn btn-outline" id="cv2StopBtn" onclick="cv2Stop()" style="font-size:12px;padding:4px 10px;color:var(--danger);border-color:var(--danger)">终止</button>
+              <button class="btn btn-outline" id="cv2RetryBtn" onclick="cv2RetryFailed()" style="font-size:12px;padding:4px 10px;display:none">重试失败项</button>
+              <button class="btn btn-outline" id="cv2RestartBtn" onclick="cv2Restart()" style="font-size:12px;padding:4px 10px;display:none">重新开始</button>
+            </span>
+          </div>
+          <div style="background:var(--border);border-radius:6px;height:20px;overflow:hidden;margin-bottom:8px">
+            <div id="cv2Bar" style="height:100%;background:var(--primary);border-radius:6px;transition:width 0.3s;width:0%;display:flex;align-items:center;justify-content:center">
+              <span id="cv2BarText" style="font-size:11px;color:#fff;font-weight:600"></span>
+            </div>
+          </div>
+          <div id="cv2Stats" style="font-size:12px;color:var(--text-sec);margin-bottom:8px"></div>
+          <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+            <button class="btn btn-outline cv2-filter-btn active" data-filter="all" onclick="cv2FilterTable('all')" style="font-size:11px;padding:3px 8px">全部</button>
+            <button class="btn btn-outline cv2-filter-btn" data-filter="pending" onclick="cv2FilterTable('pending')" style="font-size:11px;padding:3px 8px">等待中</button>
+            <button class="btn btn-outline cv2-filter-btn" data-filter="running" onclick="cv2FilterTable('running')" style="font-size:11px;padding:3px 8px">进行中</button>
+            <button class="btn btn-outline cv2-filter-btn" data-filter="ok" onclick="cv2FilterTable('ok')" style="font-size:11px;padding:3px 8px">成功</button>
+            <button class="btn btn-outline cv2-filter-btn" data-filter="failed" onclick="cv2FilterTable('failed')" style="font-size:11px;padding:3px 8px">失败</button>
+          </div>
+          <div id="cv2TableWrap" style="max-height:420px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg-card)">
+            <table id="cv2Table" style="width:100%;font-size:12px;border-collapse:collapse">
+              <thead style="position:sticky;top:0;background:var(--bg-card);z-index:1">
+                <tr style="border-bottom:2px solid var(--border);text-align:left">
+                  <th style="padding:6px 8px;width:40px">#</th>
+                  <th style="padding:6px 8px">标题 / URL</th>
+                  <th style="padding:6px 8px;width:100px">状态</th>
+                  <th style="padding:6px 8px;width:160px">阶段</th>
+                  <th style="padding:6px 8px;width:100px">耗时</th>
+                </tr>
+              </thead>
+              <tbody id="cv2TableBody"></tbody>
+            </table>
+          </div>
+          <details style="margin-top:8px">
+            <summary style="font-size:12px;color:var(--text-sec);cursor:pointer;user-select:none">原始日志</summary>
+            <div id="cv2Log" style="font-size:12px;max-height:200px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px;font-family:monospace;margin-top:4px"></div>
+          </details>
+        </div>
+
+        <!-- 历史任务 -->
+        <div style="margin-top:12px">
+          <button class="btn btn-outline" onclick="cv2LoadJobs()" style="font-size:12px;padding:4px 10px">查看历史任务</button>
+          <div id="cv2Jobs" style="display:none;margin-top:8px"></div>
+        </div>
+      </div>
+
+      <!-- ===== 模式C：批量URL模板 ===== -->
+      <div id="webModeBatch" style="display:none">
         <div class="row-flex" style="flex-wrap:wrap;gap:10px">
           <div style="flex:4;min-width:200px">
-            <label>起始页 URL（任意一课的链接）</label>
-            <input type="url" id="cv2Url"
-                   placeholder="https://mingguang.im/r/ru-xing-lun-jiang-jie-2006-nian-ban-di-1-ke/">
+            <label>URL 模板（用 <code>{n}</code> 表示序号）</label>
+            <input type="text" id="batchUrlPattern" placeholder="https://example.com/di-{n}-ke/">
           </div>
-          <div style="flex:2;min-width:150px">
-            <label>URL 过滤关键字</label>
-            <input type="text" id="cv2Filter" placeholder="ru-xing-lun-jiang-jie">
+          <div style="flex:1;min-width:80px">
+            <label>起始</label>
+            <input type="number" id="batchStart" value="1" min="1">
+          </div>
+          <div style="flex:1;min-width:80px">
+            <label>结束</label>
+            <input type="number" id="batchEnd" value="10">
           </div>
         </div>
-        <div class="row-flex" style="margin-top:10px;flex-wrap:wrap;gap:10px;align-items:flex-end">
+        <div class="row-flex" style="margin-top:10px;flex-wrap:wrap;gap:10px">
           <div style="flex:2;min-width:120px">
             <label>知识类型</label>
-            <select id="cv2Type" onchange="cv2TypeChanged()">
+            <select id="batchType">
+              <option value="lecture">lecture — 论典讲记</option>
               <option value="doctrine">doctrine — 教义</option>
               <option value="scripture">scripture — 经典</option>
-              <option value="lecture">lecture — 论典讲记</option>
               <option value="talk">talk — 法师开示/演讲</option>
               <option value="practice">practice — 修行</option>
               <option value="master">master — 人物</option>
@@ -890,228 +995,113 @@
               <option value="glossary">glossary — 术语</option>
             </select>
           </div>
-          <div id="cv2TreatiseNameBox" style="flex:2;min-width:120px;display:none">
-            <label>论典名称 <span style="color:red">*</span></label>
-            <input type="text" id="cv2TreatiseName" placeholder="如：入行论" style="width:100%">
-          </div>
           <div style="flex:1;min-width:80px">
-            <label>间隔(秒)</label>
-            <input type="number" id="cv2Delay" value="2" min="0" step="0.5">
+            <label>抓取间隔(秒)</label>
+            <input type="number" id="batchDelay" value="2" min="0" step="0.5">
           </div>
-          <button class="btn btn-outline" id="cv2DiscoverBtn" onclick="cv2Discover()">发现链接</button>
-          <button class="btn btn-info" id="cv2StartBtn" onclick="cv2Start()" style="display:none">开始导入</button>
+          <button class="btn btn-outline" id="batchPreviewBtn" onclick="doBatchPreview()">预览 URL</button>
+          <button class="btn btn-info" id="batchImportBtn" onclick="doBatchImport()">开始批量导入</button>
+        </div>
+        <div id="batchResult" style="display:none;margin-top:12px">
+          <div id="batchResultContent" style="font-size:13px;max-height:300px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px"></div>
         </div>
       </div>
+    </div>
 
-      <!-- 发现结果预览 -->
-      <div id="cv2Preview" style="display:none;margin-top:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <span id="cv2PreviewTitle" style="font-weight:600;font-size:14px"></span>
-          <span>
-            <button class="btn btn-outline" onclick="cv2ClearPreview()" style="font-size:12px;padding:4px 10px">清除</button>
-          </span>
-        </div>
-        <div id="cv2PreviewList" style="font-size:12px;max-height:200px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px"></div>
+    <!-- 文件导入（合并：单文件提取 + 批量文件导入） -->
+    <div class="card">
+      <div class="card-title">文件导入</div>
+
+      <!-- 模式切换 -->
+      <div style="display:flex;gap:16px;margin-bottom:14px;font-size:13px">
+        <label style="cursor:pointer"><input type="radio" name="fileMode" value="single" checked onchange="_switchFileMode('single')"> 单文件（预览编辑后导入）</label>
+        <label style="cursor:pointer"><input type="radio" name="fileMode" value="batch" onchange="_switchFileMode('batch')"> 批量导入（LLM 自动整理）</label>
       </div>
 
-      <!-- 运行中的进度面板 -->
-      <div id="cv2Progress" style="display:none;margin-top:12px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <span id="cv2StatusText" style="font-weight:600;font-size:14px"></span>
-          <span style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-outline" id="cv2PauseBtn" onclick="cv2Pause()" style="font-size:12px;padding:4px 10px">暂停</button>
-            <button class="btn btn-outline" id="cv2ResumeBtn" onclick="cv2Resume()" style="font-size:12px;padding:4px 10px;display:none">继续</button>
-            <button class="btn btn-outline" id="cv2StopBtn" onclick="cv2Stop()" style="font-size:12px;padding:4px 10px;color:var(--danger,#d9534f);border-color:var(--danger,#d9534f)">终止</button>
-            <button class="btn btn-outline" id="cv2RetryBtn" onclick="cv2RetryFailed()" style="font-size:12px;padding:4px 10px;display:none">重试失败项</button>
-            <button class="btn btn-outline" id="cv2RestartBtn" onclick="cv2Restart()" style="font-size:12px;padding:4px 10px;display:none">重新开始</button>
-          </span>
+      <!-- 模式A：单文件提取 -->
+      <div id="fileModeSingle">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <input type="file" id="impFileInput" accept=".txt,.md,.pdf,.doc,.docx"
+                 style="display:none" onchange="onImpFileSelected(this)">
+          <button class="btn btn-outline" onclick="document.getElementById('impFileInput').click()">
+            选择文件
+          </button>
+          <span id="impFileName" style="font-size:13px;color:var(--text-sec)">未选择文件</span>
+          <button class="btn btn-info" id="impFileUploadBtn" onclick="doFileExtract()" style="display:none">
+            提取文本
+          </button>
         </div>
+        <div id="impFileStatus" style="display:none;margin-top:10px;font-size:13px"></div>
+        <div style="font-size:11px;color:var(--text-sec);margin-top:6px">提取后文本将填入下方「文本导入」区域，可编辑后导入</div>
+      </div>
 
-        <!-- 进度条 -->
-        <div style="background:var(--border);border-radius:6px;height:20px;overflow:hidden;margin-bottom:8px">
-          <div id="cv2Bar" style="height:100%;background:var(--primary);border-radius:6px;transition:width 0.3s;width:0%;display:flex;align-items:center;justify-content:center">
-            <span id="cv2BarText" style="font-size:11px;color:#fff;font-weight:600"></span>
+      <!-- 模式B：批量文件导入 -->
+      <div id="fileModeBatch" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+          <div>
+            <label>知识类型</label>
+            <select id="batchFileType" style="width:100%">
+              <option value="lecture" selected>lecture — 论典讲记</option>
+              <option value="talk">talk — 法师开示/演讲</option>
+              <option value="doctrine">doctrine — 教义</option>
+              <option value="scripture">scripture — 经典</option>
+              <option value="practice">practice — 修行</option>
+              <option value="master">master — 人物</option>
+              <option value="history">history — 历史</option>
+              <option value="ritual">ritual — 仪轨</option>
+              <option value="sect">sect — 宗派</option>
+              <option value="glossary">glossary — 术语</option>
+              <option value="general">general — 通用知识</option>
+            </select>
+          </div>
+          <div>
+            <label>论典/目录名 <span style="color:var(--danger)">*必填</span></label>
+            <input type="text" id="batchFileTreatise" placeholder="如 ruxinglun_shengxi" style="width:100%">
+            <div style="font-size:11px;color:var(--text-sec);margin-top:2px">用于区分不同法师/版本</div>
+          </div>
+          <div>
+            <label>产品</label>
+            <input type="text" id="batchFileProduct" value="buddhism" style="width:100%">
           </div>
         </div>
-
-        <!-- 统计 -->
-        <div id="cv2Stats" style="font-size:12px;color:var(--text-sec);margin-bottom:8px"></div>
-
-        <!-- 筛选按钮 -->
-        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-          <button class="btn btn-outline cv2-filter-btn active" data-filter="all" onclick="cv2FilterTable('all')" style="font-size:11px;padding:3px 8px">全部</button>
-          <button class="btn btn-outline cv2-filter-btn" data-filter="pending" onclick="cv2FilterTable('pending')" style="font-size:11px;padding:3px 8px">等待中</button>
-          <button class="btn btn-outline cv2-filter-btn" data-filter="running" onclick="cv2FilterTable('running')" style="font-size:11px;padding:3px 8px">进行中</button>
-          <button class="btn btn-outline cv2-filter-btn" data-filter="ok" onclick="cv2FilterTable('ok')" style="font-size:11px;padding:3px 8px">成功</button>
-          <button class="btn btn-outline cv2-filter-btn" data-filter="failed" onclick="cv2FilterTable('failed')" style="font-size:11px;padding:3px 8px">失败</button>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <input type="file" id="batchFileInput" multiple accept=".txt,.doc,.docx"
+                 style="display:none" onchange="_onBatchFilesSelected(this.files)">
+          <button class="btn btn-outline" onclick="document.getElementById('batchFileInput').click()">
+            选择文件（可多选）
+          </button>
+          <span id="batchFileCount" style="font-size:13px;color:var(--text-sec)">未选择文件</span>
+          <button class="btn btn-primary" id="batchFileStartBtn" style="display:none" onclick="_startBatchImport()">
+            开始导入
+          </button>
+          <button class="btn btn-outline" id="batchFilePause" style="display:none;color:var(--warning);border-color:var(--warning)" onclick="_batchFilePaused=!_batchFilePaused; this.textContent=_batchFilePaused?'继续':'暂停'">
+            暂停
+          </button>
+          <button class="btn btn-outline" id="batchFileStop" style="display:none;color:var(--danger);border-color:var(--danger)" onclick="_batchFileStop=true">
+            终止
+          </button>
+          <span id="batchFileProgress" style="font-size:13px;color:var(--primary)"></span>
         </div>
-
-        <!-- 每链接进度表格 -->
-        <div id="cv2TableWrap" style="max-height:420px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg-card)">
-          <table id="cv2Table" style="width:100%;font-size:12px;border-collapse:collapse">
-            <thead style="position:sticky;top:0;background:var(--bg-card);z-index:1">
-              <tr style="border-bottom:2px solid var(--border);text-align:left">
-                <th style="padding:6px 8px;width:40px">#</th>
-                <th style="padding:6px 8px">标题 / URL</th>
-                <th style="padding:6px 8px;width:100px">状态</th>
-                <th style="padding:6px 8px;width:160px">阶段</th>
-                <th style="padding:6px 8px;width:100px">耗时</th>
-              </tr>
-            </thead>
-            <tbody id="cv2TableBody"></tbody>
-          </table>
+        <div id="batchFileBarWrap" style="display:none;margin-top:8px">
+          <div style="background:#e5e7eb;border-radius:6px;height:20px;overflow:hidden;position:relative">
+            <div id="batchFileBar" style="background:var(--primary);height:100%;width:0%;transition:width 0.3s;border-radius:6px"></div>
+            <span id="batchFileBarText" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:11px;font-weight:600;color:#fff">0%</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-sec);margin-top:3px">
+            <span id="batchFileStats">0/0 完成</span>
+            <span id="batchFileEta">预计剩余：计算中…</span>
+          </div>
         </div>
-
-        <!-- 滚动日志（折叠） -->
-        <details style="margin-top:8px">
-          <summary style="font-size:12px;color:var(--text-sec);cursor:pointer;user-select:none">原始日志</summary>
-          <div id="cv2Log" style="font-size:12px;max-height:200px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px;font-family:monospace;margin-top:4px"></div>
-        </details>
-      </div>
-
-      <!-- 历史任务 -->
-      <div style="margin-top:12px">
-        <button class="btn btn-outline" onclick="cv2LoadJobs()" style="font-size:12px;padding:4px 10px">查看历史任务</button>
-        <div id="cv2Jobs" style="display:none;margin-top:8px"></div>
-      </div>
-    </div>
-
-    <!-- 批量 URL 模板导入 -->
-    <div class="card" style="border-left:3px solid var(--border)">
-      <div class="card-title">批量 URL 模板导入
-        <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
-          已知 URL 规律时用模板 + 数字范围批量导入
-        </span>
-      </div>
-      <div class="row-flex" style="flex-wrap:wrap;gap:10px">
-        <div style="flex:4;min-width:200px">
-          <label>URL 模板（用 <code>{n}</code> 表示序号）</label>
-          <input type="text" id="batchUrlPattern"
-                 placeholder="https://example.com/di-{n}-ke/">
+        <div id="batchFileLogWrap" style="display:none;margin-top:10px">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+            <button class="btn btn-outline btn-sm" onclick="_filterBatchLog('all')" id="batchLogAll">全部</button>
+            <button class="btn btn-outline btn-sm" onclick="_filterBatchLog('ok')" id="batchLogOk" style="color:var(--success)">成功</button>
+            <button class="btn btn-outline btn-sm" onclick="_filterBatchLog('err')" id="batchLogErr" style="color:var(--danger)">失败</button>
+            <button class="btn btn-primary btn-sm" id="batchRetryBtn" style="display:none" onclick="doBatchRetryFailed()">重新导入失败文件</button>
+            <span id="batchLogCount" style="font-size:12px;color:var(--text-sec)"></span>
+          </div>
+          <pre class="out" id="batchFileResult" style="max-height:300px;overflow-y:auto"></pre>
         </div>
-        <div style="flex:1;min-width:80px">
-          <label>起始</label>
-          <input type="number" id="batchStart" value="1" min="1">
-        </div>
-        <div style="flex:1;min-width:80px">
-          <label>结束</label>
-          <input type="number" id="batchEnd" value="10">
-        </div>
-      </div>
-      <div class="row-flex" style="margin-top:10px;flex-wrap:wrap;gap:10px">
-        <div style="flex:2;min-width:120px">
-          <label>知识类型</label>
-          <select id="batchType">
-            <option value="doctrine">doctrine — 教义</option>
-            <option value="scripture">scripture — 经典</option>
-            <option value="practice">practice — 修行</option>
-            <option value="master">master — 人物</option>
-            <option value="history">history — 历史</option>
-            <option value="ritual">ritual — 仪轨</option>
-            <option value="sect">sect — 宗派</option>
-            <option value="term">term — 术语</option>
-          </select>
-        </div>
-        <div style="flex:1;min-width:80px">
-          <label>抓取间隔(秒)</label>
-          <input type="number" id="batchDelay" value="2" min="0" step="0.5">
-        </div>
-        <button class="btn btn-outline" id="batchPreviewBtn" onclick="doBatchPreview()">预览 URL</button>
-        <button class="btn btn-info" id="batchImportBtn" onclick="doBatchImport()">开始批量导入</button>
-      </div>
-      <div id="batchResult" style="display:none;margin-top:12px">
-        <div id="batchResultContent" style="font-size:13px;max-height:300px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px"></div>
-      </div>
-    </div>
-
-    <!-- 文件上传（单个提取文本） -->
-    <div class="card">
-      <div class="card-title">单文件提取
-        <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
-          选择单个文件，提取文本后可预览编辑再导入
-        </span>
-      </div>
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <input type="file" id="impFileInput" accept=".txt,.md,.pdf,.doc,.docx"
-               style="display:none" onchange="onImpFileSelected(this)">
-        <button class="btn btn-outline" onclick="document.getElementById('impFileInput').click()">
-          选择文件
-        </button>
-        <span id="impFileName" style="font-size:13px;color:var(--text-sec)">未选择文件</span>
-        <button class="btn btn-info" id="impFileUploadBtn" onclick="doFileExtract()" style="display:none">
-          提取文本
-        </button>
-      </div>
-      <div id="impFileStatus" style="display:none;margin-top:10px;font-size:13px"></div>
-    </div>
-
-    <!-- 批量文件导入（LLM 自动整理） -->
-    <div class="card">
-      <div class="card-title">批量文件导入
-        <span style="font-size:12px;font-weight:400;color:var(--text-sec);margin-left:8px">
-          选择多个 .doc/.docx/.txt 文件，LLM 自动整理为结构化知识文件
-        </span>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
-        <div>
-          <label>知识类型</label>
-          <select id="batchFileType" style="width:100%">
-            <option value="lecture" selected>lecture — 论典讲记</option>
-            <option value="talk">talk — 法师开示/演讲</option>
-            <option value="doctrine">doctrine — 教义</option>
-            <option value="scripture">scripture — 经典</option>
-            <option value="general">general — 通用知识</option>
-          </select>
-        </div>
-        <div>
-          <label>论典/目录名 <span style="color:var(--danger)">*必填</span></label>
-          <input type="text" id="batchFileTreatise" placeholder="如 ruxinglun_shengxi" style="width:100%">
-          <div style="font-size:11px;color:var(--text-sec);margin-top:2px">用于区分不同法师/版本</div>
-        </div>
-        <div>
-          <label>产品</label>
-          <input type="text" id="batchFileProduct" value="buddhism" style="width:100%">
-        </div>
-      </div>
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <input type="file" id="batchFileInput" multiple accept=".txt,.doc,.docx"
-               style="display:none" onchange="_onBatchFilesSelected(this.files)">
-        <button class="btn btn-outline" onclick="document.getElementById('batchFileInput').click()">
-          选择文件（可多选）
-        </button>
-        <span id="batchFileCount" style="font-size:13px;color:var(--text-sec)">未选择文件</span>
-        <button class="btn btn-primary" id="batchFileStartBtn" style="display:none" onclick="_startBatchImport()">
-          开始导入
-        </button>
-        <button class="btn btn-outline" id="batchFilePause" style="display:none;color:var(--warning);border-color:var(--warning)" onclick="_batchFilePaused=!_batchFilePaused; this.textContent=_batchFilePaused?'继续':'暂停'">
-          暂停
-        </button>
-        <button class="btn btn-outline" id="batchFileStop" style="display:none;color:var(--danger);border-color:var(--danger)" onclick="_batchFileStop=true">
-          终止
-        </button>
-        <span id="batchFileProgress" style="font-size:13px;color:var(--primary)"></span>
-      </div>
-      <!-- 进度条 -->
-      <div id="batchFileBarWrap" style="display:none;margin-top:8px">
-        <div style="background:#e5e7eb;border-radius:6px;height:20px;overflow:hidden;position:relative">
-          <div id="batchFileBar" style="background:var(--primary);height:100%;width:0%;transition:width 0.3s;border-radius:6px"></div>
-          <span id="batchFileBarText" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:11px;font-weight:600;color:#fff">0%</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-sec);margin-top:3px">
-          <span id="batchFileStats">0/0 完成</span>
-          <span id="batchFileEta">预计剩余：计算中…</span>
-        </div>
-      </div>
-      <!-- 日志筛选 + 重试 -->
-      <div id="batchFileLogWrap" style="display:none;margin-top:10px">
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-          <button class="btn btn-outline btn-sm" onclick="_filterBatchLog('all')" id="batchLogAll">全部</button>
-          <button class="btn btn-outline btn-sm" onclick="_filterBatchLog('ok')" id="batchLogOk" style="color:var(--success)">成功</button>
-          <button class="btn btn-outline btn-sm" onclick="_filterBatchLog('err')" id="batchLogErr" style="color:var(--danger)">失败</button>
-          <button class="btn btn-primary btn-sm" id="batchRetryBtn" style="display:none" onclick="doBatchRetryFailed()">重新导入失败文件</button>
-          <span id="batchLogCount" style="font-size:12px;color:var(--text-sec)"></span>
-        </div>
-        <pre class="out" id="batchFileResult" style="max-height:300px;overflow-y:auto"></pre>
       </div>
     </div>
 
@@ -3070,6 +3060,18 @@
         btn.disabled = false;
         btn.innerHTML = '开始批量导入';
       }
+    }
+
+    // ===== 导入模式切换 =====
+    function _switchFileMode(mode) {
+      document.getElementById('fileModeSingle').style.display = mode === 'single' ? '' : 'none';
+      document.getElementById('fileModeBatch').style.display = mode === 'batch' ? '' : 'none';
+    }
+
+    function _switchWebMode(mode) {
+      document.getElementById('webModeSingle').style.display = mode === 'single' ? '' : 'none';
+      document.getElementById('webModeCrawl').style.display = mode === 'crawl' ? '' : 'none';
+      document.getElementById('webModeBatch').style.display = mode === 'batch' ? '' : 'none';
     }
 
     async function doFetchUrl() {
