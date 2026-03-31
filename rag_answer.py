@@ -816,12 +816,21 @@ def _build_context(hits: List[Dict], max_chars: int = 5000, min_score: float = 0
         seen_texts.add(text_key)
 
         # 预处理：清除科判标记、讲记格式标签，让 LLM 无法复制原始格式
-        _KEPAN_RE = re.compile(r"【[甲乙丙丁戊己庚辛壬癸][一二三四五六七八九十百]+[（(][^）)]*[）)].*?[：:]?】")
-        _TAG_RE = re.compile(r"【(颂词|讲解|引用|公案|科判)】")
-        _KEPAN_LINE_RE = re.compile(r"^[甲乙丙丁戊己庚辛壬癸][一二三四五六七八九十]+[（(].+$", re.MULTILINE)
+        # 匹配所有 【甲乙丙丁...】 格式的科判（包括带、不带括号的各种变体）
+        _KEPAN_RE = re.compile(
+            r"【[甲乙丙丁戊己庚辛壬癸][一二三四五六七八九十百]*"
+            r"[（(、，][^】]*】")
+        # 匹配 【颂词】【讲解】【引用】等标签（包括双层 【【讲解】】）
+        _TAG_RE = re.compile(r"【+\s*(颂词|讲解|引用|公案|科判|仪轨)\s*】+")
+        # 匹配独立行的科判（甲一（...）、丁三、...等）
+        _KEPAN_LINE_RE = re.compile(
+            r"^[甲乙丙丁戊己庚辛壬癸][一二三四五六七八九十]+[（(、，].+$", re.MULTILINE)
+        # 匹配 ◎ 开头的小标题
+        _BULLET_TITLE_RE = re.compile(r"^◎\s*.+$", re.MULTILINE)
         text = _KEPAN_RE.sub("", text)
         text = _TAG_RE.sub("", text)
         text = _KEPAN_LINE_RE.sub("", text)
+        text = _BULLET_TITLE_RE.sub("", text)
         # 清理多余空行
         text = re.sub(r"\n{3,}", "\n\n", text).strip()
         if not text or len(text) < 20:
