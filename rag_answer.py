@@ -1001,6 +1001,7 @@ def _try_faq_fast_path(hits: List[Dict], question: str, route: str,
     body_lines = [a_part]
     evidence = build_evidence(hits[:1])
     add_risk = route in ("practice", "ritual")
+    body_lines = [_clean_llm_output(ln) for ln in body_lines]
     answer = format_structured_answer(route, body_lines, evidence, add_risk_note=add_risk)
 
     log_qa(question, answer, rewritten_query=rewrite.get("expanded", ""),
@@ -2027,6 +2028,7 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
         if len(media_refs) > 1:
             body_lines = body_lines + [""] + media_refs
 
+    body_lines = [_clean_llm_output(ln) for ln in body_lines]
     evidence = build_evidence(hits)
     text = format_structured_answer(route, body_lines, evidence,
                                     add_risk_note=(route == "practice"))
