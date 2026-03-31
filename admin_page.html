@@ -483,25 +483,8 @@
         <!-- 隐藏 file input -->
         <input type="file" id="knUploadInput" multiple accept=".txt,.json,.md,.doc,.docx" style="display:none" onchange="uploadFiles(this.files)">
         <input type="file" id="knZipInput"    accept=".zip"                    style="display:none" onchange="uploadZip(this.files[0])">
-        <!-- LLM 处理选项 -->
-        <div style="display:flex;gap:12px;align-items:center;margin:8px 0;font-size:13px;flex-wrap:wrap">
-          <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
-            <input type="checkbox" id="knLlmProcess"> LLM 智能整理
-          </label>
-          <select id="knEntityType" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px">
-            <option value="lecture">讲记 (lecture)</option>
-            <option value="doctrine">教义 (doctrine)</option>
-            <option value="talk">开示 (talk)</option>
-            <option value="general">通用 (general)</option>
-          </select>
-          <div id="knTreatiseWrap" style="display:none">
-            <label style="font-size:12px;margin-right:4px">论典/目录名：</label>
-            <input type="text" id="knTreatiseName" placeholder="如 ruxinglun_shengxi" style="padding:3px 8px;font-size:12px;width:200px;border:1px solid var(--border);border-radius:4px">
-          </div>
-          <button class="btn btn-outline btn-sm" id="knStopUpload" style="display:none;color:var(--danger);border-color:var(--danger)" onclick="_knStopUpload=true">停止上传</button>
-        </div>
-        <div style="font-size:11px;color:var(--text-sec);margin-bottom:6px" id="knLlmHint" style="display:none">
-          勾选 LLM 后请填写论典/目录名，用于区分不同法师或不同版本的讲记
+        <div style="font-size:11px;color:var(--text-sec);margin-bottom:6px">
+          纯文件上传（不经 LLM 处理）。如需 LLM 智能整理，请使用「知识导入」tab 的批量文件导入功能。
         </div>
         <div id="knUploadProgress" style="display:none;font-size:12px;color:var(--primary);margin-bottom:8px"></div>
         <div id="knFileArea">

@@ -2011,6 +2011,112 @@ def admin_update_config(req: ConfigUpdateRequest):
     return {"ok": True, "changed": changed}
 
 
+class DiagnoseRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=500)
+    mode: str = "full"
+    user_level: str = "experienced"
+
+
+@app.post("/admin/diagnose")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+def admin_diagnose(request: Request, req: DiagnoseRequest):
+    """完整问答诊断：返回每一步的详细处理信息，用于调试回答质量问题。"""
+    import time as _time
+    from query_rewrite import rewrite_query
+    from question_classifier import classify as _classify
+    from rag_answer import (
+        detect_product, detect_route, vector_search, keyword_search,
+        merge_hybrid, filter_by_score, _build_context, llm_generate_answer,
+        _clean_llm_output, load_store, get_last_hits,
+        USE_OPENAI, VECTOR_TOP_K, KEYWORD_TOP_K, SCORE_THRESHOLD,
+        HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT,
+    )
+    from rag_runtime_config import FAQ_KEYWORD_MAP
+
+    q = req.question.strip()
+    result = {"question": q, "steps": []}
+
+    # Step 1: 查询理解
+    t0 = _time.time()
+    rw = rewrite_query(q)
+    result["step1_rewrite"] = {
+        "ms": int((_time.time() - t0) * 1000),
+        "original": rw.get("original"),
+        "search_query": rw.get("search_query"),
+        "expanded": rw.get("expanded", "")[:200],
+        "routes": rw.get("detected_routes", []),
+        "is_offtopic": rw.get("is_offtopic"),
+        "is_chitchat": rw.get("is_chitchat"),
+        "needs_clarification": rw.get("needs_clarification"),
+    }
+
+    # Step 2: 问题分类
+    qclass = _classify(q)
+    result["step2_classify"] = {
+        "question_type": qclass["question_type"],
+        "strategy": qclass["strategy"],
+        "comparison_concepts": qclass.get("comparison_concepts"),
+    }
+
+    # Step 3: 产品和路由
+    product = detect_product(q)
+    route = detect_route(q)
+    result["step3_routing"] = {"product": product, "route": route}
+
+    # Step 4: 搜索
+    t0 = _time.time()
+    search_q = rw.get("search_query", q)
+    v_hits = vector_search(product, search_q, VECTOR_TOP_K)
+    _, d = load_store(product)
+    k_hits = keyword_search(rw.get("expanded", q), d, KEYWORD_TOP_K) if d else []
+    hits = merge_hybrid(v_hits, k_hits, HYBRID_VECTOR_WEIGHT, HYBRID_KEYWORD_WEIGHT, 12, route=route)
+    hits = filter_by_score(hits, SCORE_THRESHOLD)
+    result["step4_search"] = {
+        "ms": int((_time.time() - t0) * 1000),
+        "vector_hits": len(v_hits),
+        "keyword_hits": len(k_hits),
+        "merged_hits": len(hits),
+        "top_hits": [{
+            "score": round(h.get("hybrid_score", h.get("score", 0)), 3),
+            "source": (h.get("meta") or {}).get("source_file", "?"),
+            "text_preview": (h.get("text") or "")[:100],
+            "content_layer": (h.get("meta") or {}).get("content_layer", ""),
+        } for h in hits[:5]],
+    }
+
+    # Step 5: Context 构建
+    context = _build_context(hits, max_chars=3000)
+    result["step5_context"] = {
+        "length": len(context),
+        "preview": context[:300] if context else "(empty)",
+        "has_kepan_markers": bool(re.search(r"[甲乙丙丁戊己庚辛壬癸]", context)),
+        "has_tag_markers": bool(re.search(r"【(讲解|颂词|引用)】", context)),
+    }
+
+    # Step 6: LLM 生成
+    if USE_OPENAI and context:
+        t0 = _time.time()
+        llm_answer = llm_generate_answer(
+            q, context, route, req.mode,
+            user_level=req.user_level,
+            question_type=qclass["question_type"],
+        )
+        cleaned = _clean_llm_output(llm_answer) if llm_answer else ""
+        result["step6_llm"] = {
+            "ms": int((_time.time() - t0) * 1000),
+            "raw_length": len(llm_answer or ""),
+            "cleaned_length": len(cleaned),
+            "raw_preview": (llm_answer or "")[:200],
+            "cleaned_preview": cleaned[:200],
+            "has_kepan_after_clean": bool(re.search(r"[甲乙丙丁戊己庚辛壬癸][一二三四五六七八九十]", cleaned)),
+            "has_tags_after_clean": bool(re.search(r"【(讲解|颂词|引用)】", cleaned)),
+        }
+    else:
+        result["step6_llm"] = {"skipped": True, "reason": "USE_OPENAI=False or empty context"}
+
+    return result
+
+
 @app.get("/admin/config/model")
 def admin_get_model_config():
     """获取当前模型配置"""
