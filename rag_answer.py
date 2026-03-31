@@ -857,6 +857,27 @@ def _build_context(hits: List[Dict], max_chars: int = 5000, min_score: float = 0
     return "\n\n".join(parts)
 
 
+# 编译一次，全局复用
+_POST_CLEAN_PATTERNS = [
+    re.compile(r"【+\s*(颂词|讲解|引用|公案|科判|仪轨)\s*】+"),
+    re.compile(r"【[甲乙丙丁戊己庚辛壬癸][一二三四五六七八九十百]*[（(、，][^】]*】"),
+    re.compile(r"^[甲乙丙丁戊己庚辛壬癸][一二三四五六七八九十]+[（(、，].+$", re.MULTILINE),
+    re.compile(r"^◎\s*.+$", re.MULTILINE),
+    re.compile(r"所南德义檀嘉热巴涅.*?(?=\n|$)", re.DOTALL),
+    re.compile(r"本课就讲到这里.*?(?=\n|$)"),
+    re.compile(r"思考题：.*?(?=\n|$)"),
+]
+
+
+def _clean_llm_output(text: str) -> str:
+    """清理 LLM 输出中残留的讲记格式标记。
+    即使 context 预处理清除了标记，LLM 可能从训练数据中恢复这些格式。"""
+    for pattern in _POST_CLEAN_PATTERNS:
+        text = pattern.sub("", text)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text
+
+
 def extract_chunks_as_context(hits: List[Dict], max_chunks: int = 6) -> str:
     """Extract chunk text + metadata as LLM context (Buddhist kepan breadcrumbs)."""
     if not hits:
@@ -1756,7 +1777,7 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
             "source_type": "faq",
             "chunk_id": "faq_match",
         }}]
-        answer = format_structured_answer(route, [faq_answer], faq_evidence, add_risk_note=False)
+        answer = format_structured_answer(route, [_clean_llm_output(faq_answer)], faq_evidence, add_risk_note=False)
         log_qa(question, answer, rewritten_query=rewrite.get("expanded", ""),
                matched_sources=faq_evidence, hit=True,
                meta={**_log_meta, "method": "faq_exact"})
@@ -1795,7 +1816,7 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
                     )
                     if llm_answer and len(llm_answer.strip()) >= 15:
                         evidence = build_evidence(hits[:3])
-                        answer = format_structured_answer(route, [llm_answer], evidence)
+                        answer = format_structured_answer(route, [_clean_llm_output(llm_answer)], evidence)
                         log_qa(question, answer, rewritten_query=rewrite.get("expanded", ""),
                                matched_sources=evidence, hit=True,
                                meta={**_log_meta, "method": "comparison_split"})
@@ -1941,7 +1962,7 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
                     log_qa(question, llm_answer, rewritten_query=rewrite.get("expanded", ""),
                            matched_sources=evidence, hit=True,
                            meta={**_log_meta, "method": "llm_rag"})
-                    return format_structured_answer(route, [llm_answer.strip()], evidence,
+                    return format_structured_answer(route, [_clean_llm_output(llm_answer)], evidence,
                                                     add_risk_note=(route == "practice"))
 
     # Strategy 2: Rule extraction fallback
