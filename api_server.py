@@ -536,6 +536,8 @@ def ask(request: Request, req: AskRequest):
             set_trace_id(_tid)  # 传播 trace_id 到工作线程
             ans = answer_question(question, req.mode, history=history, rewrite=rw, user_level=req.user_level)
             _ctx["route"], _ctx["product"] = get_last_route_product()
+            from rag_answer import get_last_hits
+            _ctx["hits"] = get_last_hits()
             return ans
 
         future = _search_pool.submit(_run_with_trace)
@@ -603,8 +605,7 @@ def ask(request: Request, req: AskRequest):
             )
 
         # 构建原文来源（供前端"查看讲记原文"功能）
-        from rag_answer import get_last_hits
-        _hits = get_last_hits()
+        _hits = _ctx.get("hits", [])
         _raw_sources = []
         _seen_src = set()
         for h in _hits:
