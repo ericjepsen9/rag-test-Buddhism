@@ -1106,7 +1106,7 @@ async function ask() {
 
   // AbortController: timeout + clearChat cancellation
   _askAbort = new AbortController();
-  const timeoutId = setTimeout(() => _askAbort.abort(), 60000);
+  const timeoutId = setTimeout(() => _askAbort.abort(), 180000);
 
   try {
     const res = await fetch('/ask', {
