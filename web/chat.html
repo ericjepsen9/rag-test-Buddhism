@@ -255,6 +255,16 @@
     .toast-error { background: var(--danger); }
     .toast-info { background: var(--primary); }
     @keyframes toastIn { from { transform: translateX(60px); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+    /* 原文面板样式 */
+    .src-panel { display:none;margin-top:8px;border-top:1px solid #e5e7eb;padding-top:10px;animation:fadeIn 0.3s }
+    .src-btn { cursor:pointer;font-size:12px;color:var(--primary);user-select:none;padding:6px 12px;background:#f0f4ff;border-radius:6px;display:inline-flex;align-items:center;gap:4px;transition:background 0.2s }
+    .src-btn:hover { background:#e0e8ff }
+    .src-item { margin-bottom:14px;border:1px solid #e8eaed;border-radius:8px;overflow:hidden }
+    .src-title { font-size:12px;font-weight:600;color:#fff;background:var(--primary);padding:6px 10px;display:flex;align-items:center;gap:6px }
+    .src-text { font-size:12px;color:#444;line-height:1.7;white-space:pre-wrap;max-height:250px;overflow-y:auto;padding:10px;background:#fafbfc }
+    @keyframes fadeIn { from { opacity:0;transform:translateY(-4px) } to { opacity:1;transform:none } }
 
     /* New conversation button */
     .new-chat-btn { padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px;
@@ -570,6 +580,33 @@ function autoResize(el) {
 }
 
 // ===== Simple markdown rendering =====
+// 打字机效果：逐步显示回答内容
+function _typewriterRender(el, text, mdFn) {
+  const chars = text;
+  let idx = 0;
+  const chunkSize = 3; // 每次显示3个字符
+  const interval = 15; // 15ms 间隔
+  const cursor = document.createElement('span');
+  cursor.style.cssText = 'display:inline-block;width:2px;height:1em;background:var(--primary);animation:blink 0.8s infinite;vertical-align:text-bottom;margin-left:2px';
+  el.appendChild(cursor);
+
+  function step() {
+    if (idx >= chars.length) {
+      // 完成：用完整 markdown 替换，移除光标
+      el.innerHTML = mdFn(text);
+      return;
+    }
+    idx = Math.min(idx + chunkSize, chars.length);
+    el.innerHTML = mdFn(chars.slice(0, idx));
+    el.appendChild(cursor);
+    // 自动滚动到底部
+    const area = document.getElementById('chatArea');
+    if (area) area.scrollTop = area.scrollHeight;
+    requestAnimationFrame(() => setTimeout(step, interval));
+  }
+  step();
+}
+
 function renderMarkdown(text) {
   if (!$('setMarkdown').checked) return esc(text);
   // Escape HTML first
@@ -745,7 +782,14 @@ function addMessage(text, role, opts = {}) {
   if (role === 'user') {
     bubble.textContent = text;
   } else {
-    bubble.innerHTML = renderMarkdown(text);
+    // 打字效果：逐步渲染内容
+    const useTypewriter = $('setMarkdown')?.checked !== false;
+    if (useTypewriter && text.length > 30) {
+      bubble.innerHTML = '';
+      _typewriterRender(bubble, text, renderMarkdown);
+    } else {
+      bubble.innerHTML = renderMarkdown(text);
+    }
   }
 
   // Media
@@ -943,26 +987,29 @@ function addMessage(text, role, opts = {}) {
     // 讲记原文折叠面板
     if (raw_sources && raw_sources.length > 0) {
       const srcWrap = document.createElement('div');
-      srcWrap.style.cssText = 'margin-top:8px';
+      srcWrap.style.cssText = 'margin-top:10px';
 
       const srcBtn = document.createElement('div');
-      srcBtn.style.cssText = 'cursor:pointer;font-size:12px;color:var(--primary);user-select:none;padding:4px 0';
-      srcBtn.textContent = `▶ 查看讲记原文（${raw_sources.length}个来源）`;
+      srcBtn.className = 'src-btn';
+      srcBtn.innerHTML = `📖 查看讲记原文 <span style="font-size:11px;opacity:0.7">(${raw_sources.length}个来源)</span>`;
 
       const srcPanel = document.createElement('div');
-      srcPanel.style.cssText = 'display:none;margin-top:6px;border-top:1px solid #e5e7eb;padding-top:8px';
+      srcPanel.className = 'src-panel';
 
       for (const src of raw_sources) {
         const srcItem = document.createElement('div');
-        srcItem.style.cssText = 'margin-bottom:12px';
+        srcItem.className = 'src-item';
 
+        // 来源标题
         const srcTitle = document.createElement('div');
-        srcTitle.style.cssText = 'font-size:11px;font-weight:600;color:var(--primary);margin-bottom:4px';
-        srcTitle.textContent = '📖 ' + (src.source || '未知来源') + (src.kepan ? ' | ' + src.kepan : '');
+        srcTitle.className = 'src-title';
+        const srcName = (src.source || '未知来源').replace(/^lecture\//, '').replace(/\.txt$/, '');
+        srcTitle.innerHTML = `📖 ${srcName}${src.kepan ? ' <span style="opacity:0.8;font-weight:400">| ' + src.kepan + '</span>' : ''}`;
         srcItem.appendChild(srcTitle);
 
+        // 原文内容
         const srcText = document.createElement('div');
-        srcText.style.cssText = 'font-size:12px;color:#555;line-height:1.6;white-space:pre-wrap;max-height:200px;overflow-y:auto;background:#f9fafb;border-radius:6px;padding:8px';
+        srcText.className = 'src-text';
         srcText.textContent = src.text || '';
         srcItem.appendChild(srcText);
 
@@ -971,8 +1018,9 @@ function addMessage(text, role, opts = {}) {
 
       srcBtn.onclick = () => {
         const shown = srcPanel.style.display !== 'none';
+        srcPanel.style.display = shown ? '' : 'none';
         srcPanel.style.display = shown ? 'none' : '';
-        srcBtn.textContent = (shown ? '▶' : '▼') + ` 查看讲记原文（${raw_sources.length}个来源）`;
+        srcBtn.innerHTML = `${shown ? '📖' : '📕'} ${shown ? '查看' : '收起'}讲记原文 <span style="font-size:11px;opacity:0.7">(${raw_sources.length}个来源)</span>`;
       };
 
       srcWrap.appendChild(srcBtn);
