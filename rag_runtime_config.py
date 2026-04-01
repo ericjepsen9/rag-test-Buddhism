@@ -15,6 +15,17 @@ OUT_PATH = BASE_DIR / "answer.txt"
 #   export OPENAI_API_BASE=http://127.0.0.1:23333/v1
 #   export RAG_OPENAI_MODEL=your-model-name
 USE_OPENAI = _os.environ.get("RAG_USE_OPENAI", "").strip().lower() in ("1", "true", "yes")
+# 如果环境变量未设置但存在 LLM 配置文件，自动启用
+if not USE_OPENAI:
+    _llm_cfg_file = _Path(__file__).parent / "data" / "llm_configs.json"
+    if _llm_cfg_file.exists():
+        try:
+            import json as _json
+            _llm_data = _json.loads(_llm_cfg_file.read_text(encoding="utf-8"))
+            if any(v.get("api_key") for v in _llm_data.values() if isinstance(v, dict)):
+                USE_OPENAI = True
+        except Exception:
+            pass
 OPENAI_MODEL = _os.environ.get("RAG_OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_API_BASE = _os.environ.get("OPENAI_API_BASE", "").strip() or None
 
