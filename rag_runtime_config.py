@@ -17,7 +17,7 @@ OUT_PATH = BASE_DIR / "answer.txt"
 USE_OPENAI = _os.environ.get("RAG_USE_OPENAI", "").strip().lower() in ("1", "true", "yes")
 # 如果环境变量未设置但存在 LLM 配置文件，自动启用
 if not USE_OPENAI:
-    _llm_cfg_file = _Path(__file__).parent / "data" / "llm_configs.json"
+    _llm_cfg_file = Path(__file__).parent / "data" / "llm_configs.json"
     if _llm_cfg_file.exists():
         try:
             import json as _json
