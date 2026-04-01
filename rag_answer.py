@@ -860,8 +860,9 @@ def _build_context(hits: List[Dict], max_chars: int = 5000, min_score: float = 0
 # 编译一次，全局复用
 _POST_CLEAN_PATTERNS = [
     re.compile(r"【+\s*(颂词|讲解|引用|公案|科判|仪轨)\s*】+"),
-    re.compile(r"【[甲乙丙丁戊己庚辛壬癸][一二三四五六七八九十百]*[（(、，][^】]*】"),
+    re.compile(r"【[甲乙丙丁戊己庚辛壬癸][一二三四五六七八九十百]*[^】]*】"),
     re.compile(r"^[甲乙丙丁戊己庚辛壬癸][一二三四五六七八九十]+[（(、，].+$", re.MULTILINE),
+    re.compile(r"^[甲乙丙丁戊己庚辛壬癸][一二三四五六七八九十]+\s*$", re.MULTILINE),
     re.compile(r"^◎\s*.+$", re.MULTILINE),
     re.compile(r"所南德义檀嘉热巴涅.*?(?=\n|$)", re.DOTALL),
     re.compile(r"本课就讲到这里.*?(?=\n|$)"),
