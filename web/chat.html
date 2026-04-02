@@ -1010,9 +1010,8 @@ function addMessage(text, role, opts = {}) {
       }
 
       srcBtn.onclick = () => {
-        const shown = srcPanel.style.display !== 'none';
-        srcPanel.style.display = shown ? '' : 'none';
-        srcPanel.style.display = shown ? 'none' : '';
+        const shown = srcPanel.style.display === 'block';
+        srcPanel.style.display = shown ? 'none' : 'block';
         srcBtn.innerHTML = `${shown ? '📖' : '📕'} ${shown ? '查看' : '收起'}讲记原文 <span style="font-size:11px;opacity:0.7">(${raw_sources.length}个来源)</span>`;
       };
 
