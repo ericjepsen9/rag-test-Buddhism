@@ -261,10 +261,23 @@
     .src-panel { display:none;margin-top:8px;border-top:1px solid #e5e7eb;padding-top:10px;animation:fadeIn 0.3s }
     .src-btn { cursor:pointer;font-size:12px;color:var(--primary);user-select:none;padding:6px 12px;background:#f0f4ff;border-radius:6px;display:inline-flex;align-items:center;gap:4px;transition:background 0.2s }
     .src-btn:hover { background:#e0e8ff }
-    .src-item { margin-bottom:14px;border:1px solid #e8eaed;border-radius:8px;overflow:hidden }
+    .src-item { margin-bottom:14px;border:1px solid #e8eaed;border-radius:8px;overflow:hidden;cursor:pointer;transition:box-shadow 0.2s }
+    .src-item:hover { box-shadow:0 2px 8px rgba(91,107,240,0.15) }
     .src-title { font-size:12px;font-weight:600;color:#fff;background:var(--primary);padding:6px 10px;display:flex;align-items:center;gap:6px }
     .src-text { font-size:12px;color:#444;line-height:1.7;white-space:pre-wrap;max-height:250px;overflow-y:auto;padding:10px;background:#fafbfc }
+    .src-item-hint { font-size:11px;color:var(--primary);padding:4px 10px 6px;background:#fafbfc;border-top:1px dashed #e8eaed;text-align:center }
     @keyframes fadeIn { from { opacity:0;transform:translateY(-4px) } to { opacity:1;transform:none } }
+
+    /* 全屏原文浮窗 */
+    .source-overlay { display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.5);animation:fadeIn 0.2s }
+    .source-overlay.open { display:flex;align-items:center;justify-content:center }
+    .source-modal { background:#fff;width:min(900px,95vw);height:90vh;border-radius:16px;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.25);overflow:hidden }
+    .source-modal-header { display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid #e5e7eb;background:#f8f9fb;flex-shrink:0 }
+    .source-modal-title { flex:1;font-size:15px;font-weight:700;color:var(--primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+    .source-modal-close { width:32px;height:32px;border:none;background:#fee2e2;color:#dc2626;border-radius:8px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s;flex-shrink:0 }
+    .source-modal-close:hover { background:#fca5a5 }
+    .source-modal-body { flex:1;overflow-y:auto;padding:24px;font-size:14px;line-height:2;color:#333;white-space:pre-wrap;word-break:break-word }
+    .source-modal-loading { display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-secondary);font-size:14px }
 
     /* New conversation button */
     .new-chat-btn { padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px;
@@ -336,6 +349,20 @@
   </style>
 </head>
 <body>
+
+<!-- 全屏原文浮窗 -->
+<div class="source-overlay" id="sourceOverlay" onclick="if(event.target===this)closeSourceModal()">
+  <div class="source-modal">
+    <div class="source-modal-header">
+      <div class="source-modal-title" id="sourceModalTitle">原文</div>
+      <button class="source-modal-close" onclick="closeSourceModal()">&times;</button>
+    </div>
+    <div class="source-modal-body" id="sourceModalBody">
+      <div class="source-modal-loading">加载中...</div>
+    </div>
+  </div>
+</div>
+
 <div class="app">
   <!-- Header -->
   <div class="header">
@@ -491,6 +518,43 @@
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
+// ===== 全屏原文浮窗 =====
+function openSourceModal(sourceFile, kepan) {
+  const overlay = document.getElementById('sourceOverlay');
+  const title = document.getElementById('sourceModalTitle');
+  const body = document.getElementById('sourceModalBody');
+
+  const displayName = (sourceFile || '未知来源').replace(/^lecture\//, '').replace(/\.txt$/, '');
+  title.textContent = kepan ? displayName + ' | ' + kepan : displayName;
+  body.innerHTML = '<div class="source-modal-loading">加载中...</div>';
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+
+  const params = new URLSearchParams({ product: 'buddhism', source_file: sourceFile });
+  fetch('/api/source_content?' + params)
+    .then(r => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(data => {
+      body.textContent = data.content || '（内容为空）';
+    })
+    .catch(err => {
+      body.innerHTML = '<div class="source-modal-loading" style="color:#dc2626">加载失败: ' + (err.message || err) + '</div>';
+    });
+}
+
+function closeSourceModal() {
+  document.getElementById('sourceOverlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('sourceOverlay').classList.contains('open')) {
+    closeSourceModal();
+  }
+});
+
 // ===== State =====
 let chatHistory = [];
 const MAX_HISTORY = 10;
@@ -992,6 +1056,8 @@ function addMessage(text, role, opts = {}) {
       for (const src of raw_sources) {
         const srcItem = document.createElement('div');
         srcItem.className = 'src-item';
+        srcItem.title = '点击查看完整原文';
+        srcItem.onclick = () => openSourceModal(src.source || '', src.kepan || '');
 
         // 来源标题
         const srcTitle = document.createElement('div');
@@ -1000,11 +1066,17 @@ function addMessage(text, role, opts = {}) {
         srcTitle.innerHTML = `📖 ${srcName}${src.kepan ? ' <span style="opacity:0.8;font-weight:400">| ' + src.kepan + '</span>' : ''}`;
         srcItem.appendChild(srcTitle);
 
-        // 原文内容
+        // 原文摘要
         const srcText = document.createElement('div');
         srcText.className = 'src-text';
-        srcText.textContent = src.text || '';
+        srcText.textContent = (src.text || '').slice(0, 200) + ((src.text || '').length > 200 ? '...' : '');
         srcItem.appendChild(srcText);
+
+        // 点击提示
+        const srcHint = document.createElement('div');
+        srcHint.className = 'src-item-hint';
+        srcHint.textContent = '点击查看完整原文 \u2192';
+        srcItem.appendChild(srcHint);
 
         srcPanel.appendChild(srcItem);
       }

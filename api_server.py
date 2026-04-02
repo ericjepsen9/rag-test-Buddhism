@@ -1610,6 +1610,26 @@ def admin_knowledge_files(product: str):
     return {"product": product, "files": files}
 
 
+@app.get("/api/source_content")
+def api_source_content(product: str = Query("buddhism"), source_file: str = Query(...)):
+    """读取知识库源文件完整内容（供前端查看讲记原文）"""
+    product = _validate_product_name(product)
+    # 安全校验：禁止路径遍历
+    if ".." in source_file:
+        raise HTTPException(status_code=400, detail="非法路径")
+    fpath = KNOWLEDGE_DIR / product / source_file
+    if not fpath.resolve().is_relative_to(KNOWLEDGE_DIR.resolve()):
+        raise HTTPException(status_code=400, detail="非法路径")
+    if not fpath.exists():
+        raise HTTPException(status_code=404, detail=f"文件不存在: {source_file}")
+    try:
+        content = fpath.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        content = fpath.read_text(encoding="utf-8-sig", errors="replace")
+    return {"product": product, "source_file": source_file, "content": content,
+            "size": len(content)}
+
+
 @app.get("/admin/knowledge/{product}/{filename}")
 def admin_knowledge_read(product: str, filename: str):
     """读取知识库文件内容"""
