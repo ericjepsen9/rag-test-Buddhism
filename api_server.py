@@ -3459,6 +3459,214 @@ def admin_fetch_url(request: Request, req: FetchUrlRequest):
     return {"title": title, "content": text, "url": url, "length": len(text), "media": media}
 
 
+# ===== 书籍页面抓取（单页多文章拆分） =====
+
+class BookPageRequest(BaseModel):
+    url: str = Field(..., description="书籍页面 URL")
+    type: str = Field(default="talk", description="知识类型（talk/lecture/doctrine）")
+    treatise_name: str = Field(default="", description="论典/开示名称")
+    heading_selector: str = Field(default="", description="可选：文章标题 CSS 选择器")
+    build: bool = True
+    dry_run: bool = False
+
+
+def _split_book_page(html: str, heading_selector: str = "") -> list[dict]:
+    """将单个长页面按标题拆分为多篇文章。
+
+    返回 [{"title": str, "text": str}, ...]
+    """
+    from bs4 import BeautifulSoup
+    import re as _re
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    # 移除脚本/样式
+    for tag in soup.find_all(["script", "style"]):
+        tag.decompose()
+
+    # 找正文容器：优先 article, .entry-content, .post-content, main, .content
+    content_area = (
+        soup.find("article")
+        or soup.find(class_=_re.compile(r"entry.content|post.content|article.content|book.content|reader", _re.I))
+        or soup.find("main")
+        or soup.find(class_=_re.compile(r"^content$", _re.I))
+        or soup.find("body")
+    )
+    if not content_area:
+        return []
+
+    # 确定文章标题标签
+    if heading_selector:
+        headings = content_area.select(heading_selector)
+    else:
+        # 自动检测：找正文区域中的 h2/h3 作为文章标题
+        headings = content_area.find_all(["h2", "h3"])
+        # 如果 h2 只有 1 个（可能是页面总标题），尝试 h3
+        if len(headings) <= 1:
+            headings = content_area.find_all("h3")
+        # 还是不够，尝试 h2+h3
+        if len(headings) <= 1:
+            headings = content_area.find_all(["h2", "h3", "h4"])
+
+    if not headings:
+        return []
+
+    articles = []
+    for i, heading in enumerate(headings):
+        title = heading.get_text(strip=True)
+        if not title or len(title) < 2:
+            continue
+
+        # 收集该标题到下一个标题之间的所有内容
+        parts = []
+        for sibling in heading.find_next_siblings():
+            # 碰到下一个同级或更高级标题时停止
+            if sibling in headings:
+                break
+            text = sibling.get_text(separator="\n", strip=True)
+            if text:
+                parts.append(text)
+
+        body = "\n\n".join(parts).strip()
+        if body and len(body) >= 50:  # 至少50字才算有效文章
+            articles.append({"title": title, "text": body})
+
+    return articles
+
+
+@app.post("/admin/crawl_book_page")
+@limiter.limit(_ADMIN_RATE_LIMIT)
+def admin_crawl_book_page(request: Request, req: BookPageRequest):
+    """抓取书籍页面，按标题拆分为多篇文章，逐篇导入知识库。
+
+    适用于：单个页面包含多篇文章/章节的网站（如 mingguang.im 的开示合集）。
+    """
+    from import_knowledge import (
+        _ENTITY_TYPES, _get_openai_client, _generate_knowledge,
+        _write_knowledge_files,
+    )
+    import requests as http_requests
+    from urllib.parse import urlparse
+    import ipaddress
+    import socket
+
+    url = req.url.strip()
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="请提供完整 URL")
+
+    # SSRF 防护
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+    try:
+        resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        for _, _, _, _, addr in resolved:
+            ip = ipaddress.ip_address(addr[0])
+            if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
+                raise HTTPException(status_code=400, detail="不允许访问内网地址")
+    except socket.gaierror:
+        raise HTTPException(status_code=400, detail=f"无法解析域名: {hostname}")
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Referer": url,
+    }
+
+    try:
+        resp = http_requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+        resp.raise_for_status()
+    except http_requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"抓取失败: {e}")
+
+    resp.encoding = resp.apparent_encoding or "utf-8"
+    articles = _split_book_page(resp.text, req.heading_selector)
+
+    if not articles:
+        raise HTTPException(status_code=422,
+            detail="未能从页面中拆分出文章。可能页面结构不兼容，请尝试指定 heading_selector 或手动复制内容。")
+
+    # dry_run：只返回拆分预览
+    if req.dry_run:
+        preview = []
+        for a in articles:
+            preview.append({
+                "title": a["title"],
+                "text_length": len(a["text"]),
+                "preview": a["text"][:200] + ("..." if len(a["text"]) > 200 else ""),
+            })
+        return {"ok": True, "dry_run": True, "total": len(articles), "articles": preview}
+
+    # 实际导入
+    entity_type = req.type or "talk"
+    if entity_type not in _ENTITY_TYPES:
+        raise HTTPException(status_code=400, detail=f"不支持的类型: {entity_type}")
+
+    treatise_name = req.treatise_name.strip()
+    results = []
+    success_count = 0
+    need_build = set()
+    import time as _time
+
+    for idx, article in enumerate(articles):
+        entry = {"index": idx + 1, "title": article["title"], "status": "pending", "error": None}
+        try:
+            entity_id = _title_to_id(article["title"])
+            if treatise_name:
+                entity_id = f"{treatise_name}/{entity_id}"
+
+            entry["type"] = entity_type
+            entry["id"] = entity_id
+
+            client = _get_openai_client()
+            result = _generate_knowledge(client, article["text"], entity_type, entity_id)
+            entry["files_generated"] = {}
+            if result.get("main_txt"):
+                entry["files_generated"]["main.txt"] = len(result["main_txt"])
+            if result.get("faq_txt"):
+                entry["files_generated"]["faq.txt"] = len(result["faq_txt"])
+
+            out_dir = _write_knowledge_files(result, entity_type, entity_id, dry_run=False)
+            entry["output_dir"] = str(out_dir)
+
+            _extract_keywords_from_content(article["text"], entity_type, entity_id)
+            need_build.add("buddhism")
+
+            entry["status"] = "ok"
+            success_count += 1
+        except Exception as e:
+            entry["status"] = "failed"
+            entry["error"] = str(e)
+            log_error("crawl_book_page", repr(e), meta={"title": article["title"]})
+
+        results.append(entry)
+        if idx < len(articles) - 1:
+            _time.sleep(1)  # 避免 LLM API 过快
+
+    # 建索引
+    built_index = False
+    if req.build and need_build and success_count > 0:
+        try:
+            from build_faiss import build_for_product
+            for p in need_build:
+                build_for_product(p)
+            from rag_answer import invalidate_store_cache
+            invalidate_store_cache()
+            built_index = True
+        except Exception as e:
+            log_error("crawl_book_page_build", repr(e))
+
+    return {
+        "ok": True,
+        "total": len(articles),
+        "success": success_count,
+        "failed": len(articles) - success_count,
+        "built_index": built_index,
+        "results": results,
+    }
+
+
 # ===== 自动抓取 + 导入一站式接口 =====
 
 class AutoImportItem(BaseModel):

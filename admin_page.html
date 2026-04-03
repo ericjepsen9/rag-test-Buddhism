@@ -834,10 +834,11 @@
       <div class="card-title">网页导入</div>
 
       <!-- 模式切换 -->
-      <div style="display:flex;gap:16px;margin-bottom:14px;font-size:13px">
+      <div style="display:flex;gap:16px;margin-bottom:14px;font-size:13px;flex-wrap:wrap">
         <label style="cursor:pointer"><input type="radio" name="webMode" value="single" checked onchange="_switchWebMode('single')"> 单个URL抓取</label>
         <label style="cursor:pointer"><input type="radio" name="webMode" value="crawl" onchange="_switchWebMode('crawl')"> 自动爬取导入</label>
         <label style="cursor:pointer"><input type="radio" name="webMode" value="batch" onchange="_switchWebMode('batch')"> 批量URL模板</label>
+        <label style="cursor:pointer"><input type="radio" name="webMode" value="book" onchange="_switchWebMode('book')"> 书籍页面拆分</label>
       </div>
 
       <!-- ===== 模式A：单个URL抓取 ===== -->
@@ -1006,6 +1007,47 @@
           <div id="batchResultContent" style="font-size:13px;max-height:300px;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px"></div>
         </div>
       </div>
+
+      <!-- ===== 模式D：书籍页面拆分 ===== -->
+      <div id="webModeBook" style="display:none">
+        <p style="font-size:12px;color:var(--text-sec);margin-bottom:12px">
+          适用于单个页面包含多篇文章/章节的网站（如 mingguang.im 开示合集）。自动按标题拆分并逐篇导入。
+        </p>
+        <div class="row-flex" style="flex-wrap:wrap;gap:10px">
+          <div style="flex:4;min-width:200px">
+            <label>书籍页面 URL</label>
+            <input type="url" id="bookUrl" placeholder="https://mingguang.im/r/kai-shi-020/">
+          </div>
+        </div>
+        <div class="row-flex" style="margin-top:10px;flex-wrap:wrap;gap:10px">
+          <div style="flex:2;min-width:120px">
+            <label>知识类型</label>
+            <select id="bookType">
+              <option value="talk">talk — 法师开示/演讲</option>
+              <option value="lecture">lecture — 论典讲记</option>
+              <option value="doctrine">doctrine — 教义</option>
+              <option value="scripture">scripture — 经典</option>
+              <option value="practice">practice — 修行</option>
+            </select>
+          </div>
+          <div style="flex:2;min-width:120px">
+            <label>论典/开示名称（用于 ID 前缀）</label>
+            <input type="text" id="bookTreatiseName" placeholder="如：开示020_离幸福很近">
+          </div>
+          <div style="flex:2;min-width:150px">
+            <label>标题选择器（可选，默认自动检测）</label>
+            <input type="text" id="bookHeadingSelector" placeholder="如 h2, h3, .article-title">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-outline" id="bookPreviewBtn" onclick="doBookPreview()">预览拆分</button>
+          <button class="btn btn-info" id="bookImportBtn" onclick="doBookImport()">拆分并导入</button>
+        </div>
+        <div id="bookResult" style="display:none;margin-top:12px">
+          <div id="bookResultContent" style="font-size:13px;max-height:400px;overflow-y:auto;background:#f8f9fb;border:1px solid var(--border);border-radius:8px;padding:12px"></div>
+        </div>
+      </div>
+
     </div>
 
     <!-- 文件导入（合并：单文件提取 + 批量文件导入） -->
@@ -3072,6 +3114,78 @@
       document.getElementById('webModeSingle').style.display = mode === 'single' ? '' : 'none';
       document.getElementById('webModeCrawl').style.display = mode === 'crawl' ? '' : 'none';
       document.getElementById('webModeBatch').style.display = mode === 'batch' ? '' : 'none';
+      document.getElementById('webModeBook').style.display = mode === 'book' ? '' : 'none';
+    }
+
+    // ===== 书籍页面拆分 =====
+    async function doBookPreview() {
+      const url = document.getElementById('bookUrl').value.trim();
+      if (!url) { toast('请输入 URL'); return; }
+      const type = document.getElementById('bookType').value;
+      const treatise_name = document.getElementById('bookTreatiseName').value.trim();
+      const heading_selector = document.getElementById('bookHeadingSelector').value.trim();
+      const btn = document.getElementById('bookPreviewBtn');
+      btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 分析中…';
+      const el = document.getElementById('bookResult');
+      const content = document.getElementById('bookResultContent');
+      el.style.display = ''; content.innerHTML = '<span class="spin"></span> 正在抓取页面并拆分文章…';
+      try {
+        const r = await apiFetch('/admin/crawl_book_page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, type, treatise_name, heading_selector, dry_run: true, build: false })
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.detail || d.error || '预览失败');
+        let html = `<div style="font-weight:600;margin-bottom:8px">共发现 ${d.total} 篇文章：</div>`;
+        html += '<table style="width:100%;font-size:12px"><thead><tr><th>#</th><th>标题</th><th>字数</th><th>摘要</th></tr></thead><tbody>';
+        for (const a of d.articles) {
+          html += `<tr><td>${d.articles.indexOf(a)+1}</td><td><b>${a.title}</b></td><td>${a.text_length}</td><td style="color:var(--text-sec)">${a.preview.slice(0,80)}…</td></tr>`;
+        }
+        html += '</tbody></table>';
+        content.innerHTML = html;
+      } catch(e) {
+        content.innerHTML = `<span style="color:var(--danger)">${e.message}</span>`;
+      } finally {
+        btn.disabled = false; btn.textContent = '预览拆分';
+      }
+    }
+
+    async function doBookImport() {
+      const url = document.getElementById('bookUrl').value.trim();
+      if (!url) { toast('请输入 URL'); return; }
+      const type = document.getElementById('bookType').value;
+      const treatise_name = document.getElementById('bookTreatiseName').value.trim();
+      const heading_selector = document.getElementById('bookHeadingSelector').value.trim();
+      if (!treatise_name) { toast('请填写论典/开示名称，用于 ID 分类'); return; }
+      const btn = document.getElementById('bookImportBtn');
+      btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 导入中…';
+      const el = document.getElementById('bookResult');
+      const content = document.getElementById('bookResultContent');
+      el.style.display = ''; content.innerHTML = '<span class="spin"></span> 正在抓取、拆分并逐篇通过 LLM 导入，请耐心等待…';
+      try {
+        const r = await apiFetch('/admin/crawl_book_page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, type, treatise_name, heading_selector, dry_run: false, build: true })
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.detail || d.error || '导入失败');
+        let html = `<div style="font-weight:600;margin-bottom:8px;color:var(--success)">导入完成：成功 ${d.success} / 失败 ${d.failed} / 共 ${d.total}${d.built_index ? '  ✓ 索引已重建' : ''}</div>`;
+        html += '<table style="width:100%;font-size:12px"><thead><tr><th>#</th><th>标题</th><th>状态</th><th>ID</th><th>备注</th></tr></thead><tbody>';
+        for (const r of d.results) {
+          const color = r.status === 'ok' ? 'var(--success)' : 'var(--danger)';
+          html += `<tr><td>${r.index}</td><td>${r.title}</td><td style="color:${color};font-weight:600">${r.status}</td><td style="font-size:11px">${r.id||''}</td><td style="color:var(--text-sec);font-size:11px">${r.error||''}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        content.innerHTML = html;
+        toast(`导入完成: ${d.success}/${d.total} 成功`, 'success');
+      } catch(e) {
+        content.innerHTML = `<span style="color:var(--danger)">${e.message}</span>`;
+        toast(e.message, 'error');
+      } finally {
+        btn.disabled = false; btn.textContent = '拆分并导入';
+      }
     }
 
     async function doFetchUrl() {
