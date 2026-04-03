@@ -785,6 +785,66 @@ def _deduplicate_hits(hits: List[Dict], base_overlap_threshold: float = 0.7,
 # Context building (reference architecture)
 # ===================================================================
 
+def _source_to_citation(source_file: str) -> str:
+    """Convert source_file path to a human-readable citation label.
+    e.g. '入行论/第06品_安忍.txt' -> '《入行论》第06品·安忍'
+    e.g. '楞严经/main.txt' -> '《楞严经》'
+    """
+    if not source_file:
+        return "未知来源"
+    s = source_file.replace(".txt", "").replace("faq_", "FAQ:")
+    parts = s.split("/")
+    if len(parts) >= 2:
+        book = parts[0]
+        chapter = parts[-1]
+        if chapter == "main":
+            return f"《{book}》"
+        chapter = chapter.replace("_", "·")
+        return f"《{book}》{chapter}"
+    return f"《{parts[0]}》"
+
+
+def _build_context_with_citations(hits: List[Dict], max_chars: int = 6000, min_score: float = 0.12) -> str:
+    """Build context with clear citation labels for each source.
+    Each snippet gets a human-readable citation like 《金刚经》第N品.
+    This helps LLM produce accurate source attributions in comparison answers."""
+    parts = []
+    total = 0
+    seen_texts = set()
+    for i, h in enumerate(hits, 1):
+        score = h.get("hybrid_score") or h.get("score", 0.0)
+        if i > 1 and score < min_score:
+            continue
+        text = (h.get("text") or "").strip()
+        if not text or len(text) < 20:
+            continue
+        text_key = text[:100]
+        if text_key in seen_texts:
+            continue
+        seen_texts.add(text_key)
+
+        meta = h.get("meta") or {}
+        source = meta.get("source_file", "")
+        citation = _source_to_citation(source)
+        kepan = meta.get("kepan_breadcrumb", "")
+        concept_tag = h.get("_concept_tag", "")
+
+        header = f"[来源{i}: {citation}"
+        if kepan:
+            header += f" | {kepan}"
+        if concept_tag:
+            header += f" | 概念{'A' if concept_tag == 'A' else 'B'}相关"
+        header += f" | 相关度:{score:.2f}]"
+
+        part = f"{header}\n{text}"
+        sep_len = 2 if parts else 0
+        if parts and total + sep_len + len(part) > max_chars:
+            break
+        parts.append(part)
+        total += sep_len + len(part)
+    return "\n\n".join(parts)
+
+
 def _build_context(hits: List[Dict], max_chars: int = 5000, min_score: float = 0.15) -> str:
     """Build LLM context string from hits, truncating at chunk boundaries.
     First 3 snippets include full metadata header; subsequent ones only get index.
@@ -839,15 +899,15 @@ def _build_context(hits: List[Dict], max_chars: int = 5000, min_score: float = 0
         if i <= 3:
             meta = h.get("meta") or {}
             source = meta.get("source_file", "unknown")
-            chunk_id = meta.get("chunk_id", "?")
+            citation = _source_to_citation(source)
             kepan = meta.get("kepan_breadcrumb", "")
             score = h.get("hybrid_score") or h.get("score", 0.0)
-            header_parts = [f"[片段{i} | {source}#{chunk_id} | 相关度:{score:.2f}"]
+            header_parts = [f"[来源{i}: {citation} | 相关度:{score:.2f}"]
             if kepan:
                 header_parts.append(f" | 科判:{kepan}")
             header = "".join(header_parts) + "]"
         else:
-            header = f"[片段{i}]"
+            header = f"[来源{i}]"
         part = f"{header}\n{text}"
         sep_len = 2 if parts else 0
         if parts and total + sep_len + len(part) > max_chars:
@@ -1268,9 +1328,11 @@ def llm_generate_answer(question: str, context: str, route: str, mode: str,
         "comparison": (
             "\n## 回答策略：比较类问题\n"
             "用户想对比两个概念，请：\n"
-            "- 分别解释两者的定义\n"
+            "- 分别解释两者的定义，**必须注明出自哪部经典**\n"
             "- 列出主要相同点和不同点\n"
             "- 总结两者的关系\n"
+            "- 引用经典原文时用「」括起，并标注经典名称，如「一切有为法，如梦幻泡影」（《金刚经》）\n"
+            "- 若参考资料中有不同经典的内容，务必分别引用，不要混为一谈\n"
         ),
         "list": (
             "\n## 回答策略：列举类问题\n"
@@ -1526,10 +1588,11 @@ def llm_generate_answer(question: str, context: str, route: str, mode: str,
         "- 只基于参考资料和确定的佛学知识回答，不要编造经论名称、人物、年代\n"
         "- 如果不确定某个说法的准确性，标注「（待确认）」\n"
         "- 不同来源的观点如有分歧，分别呈现而非只取一个\n\n"
-        "## 来源标注\n"
-        "- 如果回答主要基于参考资料，在关键引用后标注[来源N]\n"
+        "## 来源标注（必须遵守）\n"
+        "- 每个参考片段都有明确的经典来源标签（如 [来源1: 《入行论》第六品·安忍]）\n"
+        "- 引用经典原文时，在引用后标注经典名称，如：「一切有为法，如梦幻泡影」（《金刚经》）[来源N]\n"
         "- 如果回答包含你的佛学通识补充，末尾标注「（补充说明）」\n"
-        "- 让用户清楚哪些来自知识库，哪些是通用知识\n"
+        "- 让用户清楚每个观点出自哪部经典或讲记\n"
         f"{qtype_instruction}"
         f"{history_block}"
     )
@@ -1789,26 +1852,63 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
     # 比较类问题：拆分为两个子查询分别检索，合并结果
     if _qtype == "comparison" and _qclass.get("comparison_concepts"):
         concept_a, concept_b = _qclass["comparison_concepts"]
-        # 分别检索两个概念
-        _hits_a = vector_search(product, concept_a + " 定义 含义", route_top_k)
-        _hits_b = vector_search(product, concept_b + " 定义 含义", route_top_k)
-        # 合并去重
+        # 分别检索两个概念，同时搜索产品索引和共享索引
+        _search_stores = [product]
+        _shared_store = STORE_ROOT / "_shared"
+        if _shared_store.exists() and (_shared_store / "index.faiss").exists():
+            _search_stores.append("_shared")
+
+        _hits_a, _hits_b = [], []
+        for store_name in _search_stores:
+            _hits_a.extend(vector_search(store_name, concept_a + " 定义 含义 经典", route_top_k))
+            _hits_b.extend(vector_search(store_name, concept_b + " 定义 含义 经典", route_top_k))
+
+        # 合并去重，同时标记每个 hit 来自哪个概念
         _seen = set()
         _combined = []
-        for h in _hits_a + _hits_b:
+        for h in _hits_a:
             key = h.get("text", "")[:100]
             if key not in _seen:
                 _seen.add(key)
+                h["_concept_tag"] = "A"
                 _combined.append(h)
+        for h in _hits_b:
+            key = h.get("text", "")[:100]
+            if key not in _seen:
+                _seen.add(key)
+                h["_concept_tag"] = "B"
+                _combined.append(h)
+
         if _combined:
-            # 比较类问题用更低的阈值，因为两个概念分开搜索分数可能较低
-            hits = sorted(_combined, key=lambda x: x.get("score", 0), reverse=True)[:route_top_k]
-            hits = filter_by_score(hits, max(0.10, route_threshold - 0.10))
-            hits = _deduplicate_hits(hits)
+            # 比较类问题用更低的阈值
+            _combined = filter_by_score(
+                sorted(_combined, key=lambda x: x.get("score", 0), reverse=True),
+                max(0.10, route_threshold - 0.10))
+
+            # 保证两个概念的来源多样性：每个概念至少选 top 3
+            _final_hits = []
+            _a_hits = [h for h in _combined if h.get("_concept_tag") == "A"][:max(3, route_top_k // 2)]
+            _b_hits = [h for h in _combined if h.get("_concept_tag") == "B"][:max(3, route_top_k // 2)]
+            _final_hits = _a_hits + _b_hits
+            # 补充其他高分 hit
+            _final_seen = {h.get("text", "")[:100] for h in _final_hits}
+            for h in _combined:
+                if len(_final_hits) >= route_top_k:
+                    break
+                if h.get("text", "")[:100] not in _final_seen:
+                    _final_hits.append(h)
+                    _final_seen.add(h.get("text", "")[:100])
+
+            hits = _deduplicate_hits(_final_hits)
             if USE_OPENAI and hits:
-                context = _build_context(hits)
+                context = _build_context_with_citations(hits)
                 if context:
-                    comp_hint = f"\n[提示：用户在对比「{concept_a}」和「{concept_b}」，请分别解释两者，然后总结异同。]\n"
+                    comp_hint = (
+                        f"\n[比较任务：用户在对比「{concept_a}」和「{concept_b}」]\n"
+                        f"[要求：1. 分别引用相关经典原文解释两者含义 "
+                        f"2. 明确标注每个观点出自哪部经典/讲记 "
+                        f"3. 对比异同 4. 总结关系]\n"
+                    )
                     llm_answer = llm_generate_answer(
                         question, comp_hint + context, route, mode,
                         history_summary=rewrite.get("history_summary", ""),
@@ -1817,7 +1917,7 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
                         question_type="comparison",
                     )
                     if llm_answer and len(llm_answer.strip()) >= 15:
-                        evidence = build_evidence(hits[:3])
+                        evidence = build_evidence(hits[:5])
                         answer = format_structured_answer(route, [_clean_llm_output(llm_answer)], evidence)
                         log_qa(question, answer, rewritten_query=rewrite.get("expanded", ""),
                                matched_sources=evidence, hit=True,
