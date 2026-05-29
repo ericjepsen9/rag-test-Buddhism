@@ -125,21 +125,13 @@ Local RAG (Retrieval-Augmented Generation) knowledge base system for Buddhist te
   - `/admin/synonyms/learned` GET/PUT
 
 ### Phase: Knowledge Base Gaps
-- [ ] **Buddhism & Daily Life** — users may ask practical questions like:
-  - "工作压力大，佛法怎么帮助减压？" (How can Buddhism help with work stress?)
-  - "佛教怎么看待感情和婚姻？" (Buddhist views on relationships/marriage?)
-  - "学佛的人可以吃肉吗？" (Can Buddhists eat meat?)
-  - "佛教怎么看待财富和赚钱？" (Buddhist views on wealth?)
-  - "如何用佛法处理人际关系？" (Applying Buddhism to interpersonal relationships?)
-  - "佛教和科学矛盾吗？" (Does Buddhism conflict with science?)
-  - "佛教怎么看待心理疾病和抑郁？" (Buddhist views on mental health/depression?)
-- [ ] **Comparative Religion** — "佛教和道教有什么区别？" / "佛教和基督教的区别？"
-- [ ] **Misunderstandings/Myths** — "佛教是不是消极避世？" / "信佛是不是迷信？"
-- [ ] **Specific Practice Guidance** — "初学者应该读哪本经？" / "在家供佛需要注意什么？"
+- [x] **Buddhism & Daily Life** — work stress, relationships, diet, wealth, mental health (added `life` route + knowledge + FAQ)
+- [x] **Comparative Religion** — Buddhism vs Taoism, Christianity, Confucianism (added in main.txt section 12)
+- [x] **Misunderstandings/Myths** — "消极避世" / "迷信" / "烧香求保佑" / "神通感应" (added section 11)
+- [x] **Specific Practice Guidance** — beginner book recommendations, home altar setup (added section 12)
+- [x] **Vegetarianism/Diet** — detailed treatment of Buddhist dietary rules (added in life section)
+- [x] **Dreams/Supernatural** — dreams, spiritual experiences, proper attitude (added in section 11)
 - [ ] **Modern Buddhist Figures** — more on contemporary teachers and organizations
-- [ ] **Vegetarianism/Diet** — detailed treatment of Buddhist dietary rules
-- [ ] **Dreams/Supernatural** — "念佛会做梦见佛吗？" / "怎么看待感应？"
-- [ ] Add `life` route for Buddhism-and-life questions (currently no route covers this)
 
 ### Phase: RAG Quality
 - [ ] Optimize chunking strategy (from original PROGRESS.md)
@@ -188,7 +180,7 @@ Local RAG (Retrieval-Augmented Generation) knowledge base system for Buddhist te
 | `history` | Chinese Buddhism history, key figures, Eight Schools | "玄奘的贡献" |
 | `ritual` | Ceremonies, festivals, etiquette, offerings | "盂兰盆节是什么" |
 | `basic` | General intro, Buddha's life, getting started | "什么是佛教" |
-| **Missing: `life`** | Buddhism & modern life, stress, relationships, diet | "佛教怎么看待婚姻" |
+| `life` | Buddhism & modern life, stress, relationships, diet, myths, comparisons, beginner guidance | "佛教怎么看待婚姻" |
 
 ### Regression Test Coverage
 - 15 test cases in `regression_cases.json` covering all 8 existing routes

@@ -105,7 +105,7 @@ _thread_local = threading.local()
 # ---------------------------------------------------------------------------
 _ROUTE_ORDER = [
     "scripture", "doctrine", "practice", "sect", "concept",
-    "history", "ritual", "basic",
+    "history", "ritual", "life", "basic",
 ]
 _ROUTE_ORDER_IDX = {r: i for i, r in enumerate(_ROUTE_ORDER)}
 
@@ -124,6 +124,10 @@ _HISTORY_SIGNALS = ("历史", "朝代", "传入", "发展", "祖师", "高僧",
                     "达摩", "玄奘", "鸠摩罗什", "佛教史")
 _RITUAL_SIGNALS = ("仪轨", "法会", "供养", "礼拜", "早课", "晚课",
                    "回向", "发愿", "忏悔", "法事", "放生")
+_LIFE_SIGNALS = ("生活", "日常", "压力", "减压", "焦虑", "抑郁", "情绪",
+                 "工作", "婚姻", "感情", "家庭", "人际", "吃肉", "素食",
+                 "财富", "赚钱", "消极", "避世", "迷信", "科学",
+                 "道教", "基督教", "比较", "区别", "初学", "入门书")
 
 # Chitchat regex patterns — 使用非锚定模式支持句中匹配
 _RE_CHAT_GREETING = re.compile(r"(你好|嗨|hi|hello|hey|您好|在吗|在不在)", re.IGNORECASE)
@@ -536,7 +540,7 @@ def detect_route(question: str) -> str:
         "doctrine": _DOCTRINE_SIGNALS, "practice": _PRACTICE_SIGNALS,
         "scripture": _SCRIPTURE_SIGNALS, "sect": _SECT_SIGNALS,
         "concept": _CONCEPT_SIGNALS, "history": _HISTORY_SIGNALS,
-        "ritual": _RITUAL_SIGNALS,
+        "ritual": _RITUAL_SIGNALS, "life": _LIFE_SIGNALS,
     }
     # 跟踪每个信号词被哪些路由使用，避免同一信号同时加分多个路由
     signal_used_by: Dict[str, str] = {}
@@ -1126,6 +1130,7 @@ def llm_generate_answer(question: str, context: str, route: str, mode: str,
         "concept": "详细解释佛教概念的含义、出处和在修行中的意义。",
         "history": "说明佛教历史事件、人物和发展脉络。",
         "ritual": "说明仪轨的具体步骤、意义和注意事项。",
+        "life": "结合佛法智慧回答现代生活问题，语言平实、贴近日常，兼顾佛教理论与实用建议。",
     }
 
     history_block = ""
