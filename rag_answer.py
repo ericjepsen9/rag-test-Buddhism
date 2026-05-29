@@ -1748,6 +1748,16 @@ def answer_one(question: str, mode: str, rewrite: dict = None,
     _strategy = _qclass["strategy"]
     skip_faq = _strategy.get("skip_faq", False)
 
+    # 1.5 SQL 数据库查询路径
+    from sql_bridge import needs_sql, answer_from_sql
+    if needs_sql(question):
+        sql_answer = answer_from_sql(question)
+        if sql_answer:
+            log_qa(question, sql_answer, rewritten_query=rewrite.get("expanded", ""),
+                   matched_sources=[], hit=True,
+                   meta={**_log_meta, "method": "sql_query"})
+            return sql_answer
+
     faq_answer = ""
     if not skip_faq:
         faq_text = read_knowledge_file(product, "faq.txt")

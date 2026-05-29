@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional, Literal, Dict, Any, List
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -2396,6 +2396,69 @@ def admin_llm_test():
         latency_ms = int((time.monotonic() - t0) * 1000)
         return JSONResponse(status_code=502,
             content={"ok": False, "error": str(e), "latency_ms": latency_ms})
+
+
+# ===== SQL 数据库集成接口 =====
+
+@app.get("/admin/sql/config")
+def admin_sql_config():
+    """获取 SQL 数据库配置"""
+    from sql_bridge import get_config_safe, is_configured
+    return {"ok": True, "config": get_config_safe(), "configured": is_configured()}
+
+
+@app.post("/admin/sql/config")
+def admin_sql_save_config(cfg: dict = Body(...)):
+    """保存 SQL 数据库配置"""
+    from sql_bridge import save_config, reset_pool
+    save_config(cfg)
+    reset_pool()
+    return {"ok": True}
+
+
+@app.post("/admin/sql/test")
+def admin_sql_test():
+    """测试 SQL 数据库连接"""
+    from sql_bridge import test_connection, is_configured
+    if not is_configured():
+        return {"ok": False, "error": "SQL 数据库未配置"}
+    return test_connection()
+
+
+@app.get("/admin/sql/schema")
+def admin_sql_schema():
+    """获取数据库表结构"""
+    from sql_bridge import introspect_schema, is_configured
+    if not is_configured():
+        return {"ok": False, "error": "SQL 数据库未配置"}
+    return introspect_schema()
+
+
+@app.post("/admin/sql/query")
+def admin_sql_query(body: dict = Body(...)):
+    """手动执行 SQL 查询（仅 SELECT）"""
+    from sql_bridge import execute_query
+    sql = body.get("sql", "").strip()
+    if not sql:
+        return {"ok": False, "error": "SQL 不能为空"}
+    return execute_query(sql)
+
+
+@app.post("/admin/sql/ask")
+def admin_sql_ask(body: dict = Body(...)):
+    """自然语言查询数据库（调试用）"""
+    from sql_bridge import text_to_sql, execute_query, format_query_result, is_configured
+    if not is_configured():
+        return {"ok": False, "error": "SQL 数据库未配置"}
+    question = body.get("question", "").strip()
+    if not question:
+        return {"ok": False, "error": "问题不能为空"}
+    sql, err = text_to_sql(question)
+    if not sql:
+        return {"ok": False, "error": err, "sql": None}
+    result = execute_query(sql)
+    answer = format_query_result(question, sql, result) if result.get("ok") else None
+    return {"ok": True, "sql": sql, "result": result, "answer": answer}
 
 
 # ===== 缓存管理接口 =====
