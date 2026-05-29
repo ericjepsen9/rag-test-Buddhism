@@ -779,10 +779,13 @@ function addMessage(text, role, opts = {}) {
   // Bubble
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
+  let textWrap = null;
   if (role === 'user') {
     bubble.textContent = text;
   } else {
-    bubble.innerHTML = renderMarkdown(text);
+    textWrap = document.createElement('div');
+    textWrap.className = 'msg-text';
+    bubble.appendChild(textWrap);
   }
 
   // Media
@@ -1010,10 +1013,9 @@ function addMessage(text, role, opts = {}) {
       }
 
       srcBtn.onclick = () => {
-        const shown = srcPanel.style.display !== 'none';
-        srcPanel.style.display = shown ? '' : 'none';
-        srcPanel.style.display = shown ? 'none' : '';
-        srcBtn.innerHTML = `${shown ? '📖' : '📕'} ${shown ? '查看' : '收起'}讲记原文 <span style="font-size:11px;opacity:0.7">(${raw_sources.length}个来源)</span>`;
+        const isHidden = getComputedStyle(srcPanel).display === 'none';
+        srcPanel.style.display = isHidden ? 'block' : 'none';
+        srcBtn.innerHTML = `${isHidden ? '📕' : '📖'} ${isHidden ? '收起' : '查看'}讲记原文 <span style="font-size:11px;opacity:0.7">(${raw_sources.length}个来源)</span>`;
       };
 
       srcWrap.appendChild(srcBtn);
@@ -1033,6 +1035,15 @@ function addMessage(text, role, opts = {}) {
   let excess = msgRows.length - MAX_BUBBLES;
   for (let i = 0; i < excess; i++) {
     msgRows[i].remove();
+  }
+
+  // Render bot text (typewriter or direct)
+  if (textWrap) {
+    if (text.length > 20) {
+      _typewriterRender(textWrap, text, renderMarkdown);
+    } else {
+      textWrap.innerHTML = renderMarkdown(text);
+    }
   }
 
   // Scroll to bottom
