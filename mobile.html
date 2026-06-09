@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>佛学知识库快捷导入</title>
+  <style>
+    :root {
+      --primary: #5b6bf0; --primary-dark: #4558e0;
+      --success: #22c55e; --danger: #ef4444; --warning: #f59e0b;
+      --bg: #f4f6f9; --card: #fff; --border: #e2e5ea;
+      --text: #1e2330; --text-sec: #6b7280;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+      background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.6;
+      padding: 16px; min-height: 100vh;
+    }
+    .header { text-align: center; padding: 20px 0 16px; }
+    .header h1 { font-size: 20px; font-weight: 700; }
+    .header p { font-size: 13px; color: var(--text-sec); margin-top: 4px; }
+
+    .card {
+      background: var(--card); border-radius: var(--radius); padding: 20px;
+      margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 4px 12px rgba(0,0,0,.06);
+    }
+    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text); }
+    .hint { font-size: 12px; color: var(--text-sec); margin-bottom: 10px; }
+
+    input[type="text"], input[type="password"], input[type="url"], select, textarea {
+      width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 15px; font-family: inherit; background: #fff; color: var(--text);
+      -webkit-appearance: none; appearance: none;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(91,107,240,.12);
+    }
+    textarea { min-height: 200px; resize: vertical; line-height: 1.5; }
+    select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%236b7280' stroke-width='1.5'/%3E%3C/svg%3E");
+             background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+
+    .row { display: flex; gap: 12px; margin-bottom: 14px; }
+    .row > * { flex: 1; }
+
+    .btn {
+      display: block; width: 100%; padding: 14px; border: none; border-radius: 10px;
+      font-size: 16px; font-weight: 600; cursor: pointer; text-align: center;
+      transition: all .2s; -webkit-tap-highlight-color: transparent;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-primary:active { transform: scale(.98); }
+    .btn-primary:disabled { background: #a5aef5; cursor: not-allowed; }
+
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-success:disabled { background: #86efac; cursor: not-allowed; }
+
+    .btn-outline {
+      background: transparent; color: var(--primary); border: 1.5px solid var(--primary);
+      padding: 12px; font-size: 14px; margin-top: 10px;
+    }
+    .btn-sm {
+      display: inline-block; width: auto; padding: 8px 16px; font-size: 14px;
+      border-radius: 8px;
+    }
+
+    .status {
+      margin-top: 16px; padding: 14px; border-radius: 10px; font-size: 14px;
+      display: none; line-height: 1.6; word-break: break-all;
+    }
+    .status.success { display: block; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+    .status.error { display: block; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .status.loading { display: block; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+
+    .login-card { max-width: 400px; margin: 60px auto; }
+    .login-card h2 { text-align: center; margin-bottom: 20px; font-size: 18px; }
+
+    .tips { font-size: 12px; color: var(--text-sec); line-height: 1.8; }
+    .tips b { color: var(--text); }
+
+    .hidden { display: none !important; }
+
+    .auth-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 12px; color: var(--text-sec); margin-bottom: 12px;
+    }
+    .auth-bar .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+                     background: var(--success); margin-right: 4px; vertical-align: middle; }
+    .auth-bar a { color: var(--danger); text-decoration: none; font-size: 12px; }
+
+    /* 标签切换 */
+    .tabs { display: flex; gap: 0; margin-bottom: 16px; background: #e5e7eb; border-radius: 10px; padding: 3px; }
+    .tab {
+      flex: 1; padding: 10px; text-align: center; font-size: 14px; font-weight: 600;
+      border-radius: 8px; cursor: pointer; transition: all .2s; color: var(--text-sec);
+      border: none; background: transparent;
+    }
+    .tab.active { background: #fff; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* URL 输入行 */
+    .url-row { display: flex; gap: 8px; margin-bottom: 14px; }
+    .url-row input { flex: 1; }
+    .url-row .btn { width: auto; flex-shrink: 0; padding: 10px 16px; font-size: 14px; }
+
+    /* 书签脚本区域 */
+    .bookmark-code {
+      background: #1e2330; color: #e5e7eb; padding: 14px; border-radius: 8px;
+      font-size: 12px; font-family: monospace; word-break: break-all; line-height: 1.6;
+      margin: 10px 0; max-height: 120px; overflow-y: auto;
+    }
+    .step-num {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border-radius: 50%; background: var(--primary);
+      color: #fff; font-size: 12px; font-weight: 700; margin-right: 6px; flex-shrink: 0;
+    }
+    .step-item { display: flex; align-items: flex-start; margin-bottom: 12px; font-size: 13px; }
+    .step-item p { margin: 0; }
+
+    /* 媒体审查 */
+    .media-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 12px 0; }
+    .media-item {
+      position: relative; border-radius: 8px; overflow: hidden;
+      border: 2px solid var(--border); cursor: pointer; transition: all .2s;
+    }
+    .media-item.selected { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(91,107,240,.3); }
+    .media-item img {
+      width: 100%; height: 120px; object-fit: cover; display: block;
+    }
+    .media-item .video-placeholder {
+      width: 100%; height: 120px; background: #1e2330; display: flex;
+      align-items: center; justify-content: center; color: #fff; font-size: 32px;
+    }
+    .media-item .media-check {
+      position: absolute; top: 6px; right: 6px; width: 24px; height: 24px;
+      border-radius: 50%; background: rgba(0,0,0,.5); color: #fff;
+      display: flex; align-items: center; justify-content: center; font-size: 14px;
+    }
+    .media-item.selected .media-check { background: var(--primary); }
+    .media-item .media-label {
+      padding: 4px 8px; font-size: 11px; color: var(--text-sec);
+      background: #f9fafb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .media-item .media-type-badge {
+      position: absolute; top: 6px; left: 6px; padding: 2px 6px; border-radius: 4px;
+      font-size: 10px; font-weight: 600; color: #fff;
+      background: rgba(0,0,0,.6);
+    }
+    .media-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .media-actions .btn { flex: 1; padding: 10px; font-size: 14px; }
+    .media-meta-input {
+      width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 13px; margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== 登录界面 ===== -->
+<div id="loginView">
+  <div class="card login-card">
+    <h2>佛学知识库快捷导入</h2>
+    <div style="margin-bottom:16px">
+      <label>管理密钥</label>
+      <input type="password" id="apiKeyInput" placeholder="输入 ADMIN_API_KEY" autocomplete="off">
+    </div>
+    <button class="btn btn-primary" onclick="doLogin()">登 录</button>
+    <div id="loginStatus" class="status"></div>
+  </div>
+</div>
+
+<!-- ===== 主界面 ===== -->
+<div id="mainView" class="hidden">
+  <div class="header">
+    <h1>佛学知识库快捷导入</h1>
+    <p>手机端快速导入佛学文章到知识库</p>
+  </div>
+
+  <div class="auth-bar">
+    <span><span class="dot"></span>已登录</span>
+    <a href="javascript:void(0)" onclick="doLogout()">退出</a>
+  </div>
+
+  <!-- 输入方式切换 -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('url')">粘贴链接</button>
+    <button class="tab" onclick="switchTab('text')">粘贴正文</button>
+    <button class="tab" onclick="switchTab('bookmark')">书签脚本</button>
+  </div>
+
+  <!-- Tab 1: 粘贴链接 -->
+  <div id="tab-url" class="tab-content active">
+    <div class="card">
+      <div class="tips" style="margin-bottom:14px">
+        <b>步骤：</b>微信文章 → 右上角 <b>···</b> → <b>复制链接</b> → 粘贴到下方
+      </div>
+      <label>文章链接</label>
+      <div class="url-row">
+        <input type="url" id="urlInput" placeholder="粘贴公众号文章链接...">
+        <button class="btn btn-success" id="fetchBtn" onclick="doFetchUrl()">提取</button>
+      </div>
+      <div id="fetchStatus" class="status"></div>
+    </div>
+  </div>
+
+  <!-- Tab 2: 粘贴正文 -->
+  <div id="tab-text" class="tab-content">
+    <div class="card">
+      <div class="tips" style="margin-bottom:14px">
+        <b>步骤：</b>微信文章 → 长按正文 → <b>全选</b> → <b>复制</b> → 粘贴到下方
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 3: 书签脚本 -->
+  <div id="tab-bookmark" class="tab-content">
+    <div class="card">
+      <label>Android Chrome 书签脚本安装</label>
+      <div class="tips" style="margin-bottom:14px">
+        在 Chrome 中打开微信文章后，点书签即可一键提取并跳转到本页面自动填入内容。
+      </div>
+
+      <div class="step-item">
+        <span class="step-num">1</span>
+        <p>点下方按钮复制书签脚本代码</p>
+      </div>
+      <div class="bookmark-code" id="bookmarkCode"></div>
+      <button class="btn btn-sm btn-primary" onclick="copyBookmark()" style="margin-bottom:16px">复制书签脚本代码</button>
+
+      <div class="step-item">
+        <span class="step-num">2</span>
+        <p>在 Chrome 中随便收藏一个网页（点右上角 ⋮ → 添加书签）</p>
+      </div>
+      <div class="step-item">
+        <span class="step-num">3</span>
+        <p>打开 Chrome 书签管理（⋮ → 书签），找到刚收藏的书签，点编辑</p>
+      </div>
+      <div class="step-item">
+        <span class="step-num">4</span>
+        <p>将<b>名称</b>改为「导入知识库」，将<b>网址</b>栏清空后粘贴刚才复制的代码，保存</p>
+      </div>
+      <div class="step-item">
+        <span class="step-num">5</span>
+        <p><b>使用方法：</b>微信文章 → 复制链接 → Chrome 打开 → 地址栏输入「导入」搜索书签 → 点击执行</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 公共表单 -->
+  <div class="card" id="formCard">
+    <div style="margin-bottom:14px">
+      <label>文章标题（可选）</label>
+      <input type="text" id="titleInput" placeholder="例：心经讲解">
+    </div>
+
+    <div class="row">
+      <div>
+        <label>知识类型</label>
+        <select id="typeSelect">
+          <option value="scripture">经典 (scripture)</option>
+          <option value="doctrine">教义 (doctrine)</option>
+          <option value="practice">修行方法 (practice)</option>
+          <option value="sect">宗派 (sect)</option>
+          <option value="master">高僧大德 (master)</option>
+          <option value="lecture">论典讲记 (lecture)</option>
+          <option value="talk">法师开示/演讲 (talk)</option>
+          <option value="general">通用知识 (general)</option>
+          <option value="history">历史 (history)</option>
+          <option value="ritual">仪轨 (ritual)</option>
+          <option value="glossary">术语解释 (glossary)</option>
+        </select>
+      </div>
+      <div>
+        <label>实体 ID</label>
+        <input type="text" id="idInput" placeholder="如：product_01">
+      </div>
+    </div>
+
+    <div style="margin-bottom:14px">
+      <label>文章内容 <span id="contentLen" style="font-weight:400;color:var(--text-sec)"></span></label>
+      <div class="hint">文章正文（通过链接提取或手动粘贴）</div>
+      <textarea id="contentArea" placeholder="在此粘贴文章正文内容..." oninput="updateLen()"></textarea>
+    </div>
+
+    <div class="row" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="buildCheck" checked style="width:18px;height:18px">
+        <label for="buildCheck" style="margin:0">自动建索引</label>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="dryRunCheck" style="width:18px;height:18px">
+        <label for="dryRunCheck" style="margin:0">仅预览</label>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="submitBtn" onclick="doSubmit()">提交导入</button>
+    <button class="btn btn-outline" onclick="clearForm()">清空表单</button>
+  </div>
+
+  <!-- 媒体审查 -->
+  <div class="card hidden" id="mediaCard">
+    <label>文章媒体审查 <span id="mediaCount" style="font-weight:400;color:var(--text-sec)"></span></label>
+    <div class="hint">点击选中要保存到知识库的图片/视频，未选中的将被忽略</div>
+
+    <div style="margin-bottom:10px">
+      <button class="btn btn-sm btn-outline" style="display:inline-block;width:auto;margin:0" onclick="selectAllMedia(true)">全选</button>
+      <button class="btn btn-sm btn-outline" style="display:inline-block;width:auto;margin:0;margin-left:6px" onclick="selectAllMedia(false)">取消全选</button>
+    </div>
+
+    <div class="media-grid" id="mediaGrid"></div>
+
+    <!-- 选中项的关键词/路由编辑 -->
+    <div id="mediaEditSection" class="hidden" style="margin-top:14px">
+      <label>为选中的媒体设置关键词（可选）</label>
+      <div class="hint">多个关键词用逗号分隔，用于知识库搜索匹配</div>
+      <input type="text" class="media-meta-input" id="mediaKeywords" placeholder="例：般若, 禅修, 净土">
+      <label style="margin-top:10px">路由标签（可选）</label>
+      <input type="text" class="media-meta-input" id="mediaRoutes" placeholder="例：practice, concept">
+    </div>
+
+    <div class="media-actions">
+      <button class="btn btn-primary" id="saveMediaBtn" onclick="doSaveMedia()">保存选中媒体</button>
+    </div>
+    <div id="mediaStatus" class="status"></div>
+  </div>
+
+  <!-- 结果 -->
+  <div id="resultStatus" class="status"></div>
+
+  <!-- 历史 -->
+  <div class="card" id="historyCard" style="display:none">
+    <label>最近导入</label>
+    <div id="historyList" style="font-size:13px;color:var(--text-sec)"></div>
+  </div>
+</div>
+
+<script>
+const API_BASE = location.origin;
+let apiKey = localStorage.getItem('rag_admin_key') || '';
+
+// ===== Tab 切换 =====
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    const tabs = ['url', 'text', 'bookmark'];
+    t.classList.toggle('active', tabs[i] === name);
+  });
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ===== 登录 =====
+function doLogin() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (!key) { showLoginStatus('请输入密钥', 'error'); return; }
+  showLoginStatus('验证中...', 'loading');
+  fetch(API_BASE + '/admin/products', {
+    headers: { 'Authorization': 'Bearer ' + key }
+  }).then(r => {
+    if (r.ok) {
+      apiKey = key;
+      localStorage.setItem('rag_admin_key', key);
+      showMain();
+    } else {
+      showLoginStatus('密钥错误或服务不可用', 'error');
+    }
+  }).catch(() => showLoginStatus('无法连接服务器', 'error'));
+}
+
+function doLogout() {
+  apiKey = '';
+  localStorage.removeItem('rag_admin_key');
+  document.getElementById('loginView').classList.remove('hidden');
+  document.getElementById('mainView').classList.add('hidden');
+}
+
+function showMain() {
+  document.getElementById('loginView').classList.add('hidden');
+  document.getElementById('mainView').classList.remove('hidden');
+  loadProducts();
+  generateBookmark();
+  checkUrlParams();
+}
+
+function showLoginStatus(msg, type) {
+  const el = document.getElementById('loginStatus');
+  el.className = 'status ' + type;
+  el.textContent = msg;
+}
+
+// ===== 自动登录 =====
+if (apiKey) {
+  fetch(API_BASE + '/admin/products', {
+    headers: { 'Authorization': 'Bearer ' + apiKey }
+  }).then(r => { if (r.ok) showMain(); }).catch(() => {});
+}
+
+// ===== 加载知识条目列表 =====
+function loadProducts() {
+  fetch(API_BASE + '/admin/products', {
+    headers: { 'Authorization': 'Bearer ' + apiKey }
+  }).then(r => r.json()).then(data => {
+    if (!data.products) return;
+    const dl = document.createElement('datalist');
+    dl.id = 'productList';
+    data.products.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.product;
+      dl.appendChild(opt);
+    });
+    const old = document.getElementById('productList');
+    if (old) old.remove();
+    document.body.appendChild(dl);
+    document.getElementById('idInput').setAttribute('list', 'productList');
+  }).catch(e => { console.warn('加载产品列表失败:', e.message || e); });
+}
+
+// ===== URL 提取 =====
+let fetchedMedia = []; // 提取到的媒体列表
+let selectedMedia = new Set(); // 选中的媒体索引
+
+function doFetchUrl() {
+  const url = document.getElementById('urlInput').value.trim();
+  if (!url) { showFetchStatus('请粘贴文章链接', 'error'); return; }
+  if (!url.startsWith('http')) { showFetchStatus('请输入完整链接（以 http 开头）', 'error'); return; }
+
+  const btn = document.getElementById('fetchBtn');
+  btn.disabled = true;
+  btn.textContent = '提取中...';
+  showFetchStatus('正在提取文章内容和媒体...', 'loading');
+
+  const fetchCtrl = new AbortController();
+  const fetchTimer = setTimeout(() => fetchCtrl.abort(), 30000);
+  fetch(API_BASE + '/admin/fetch_url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+    body: JSON.stringify({ url: url }),
+    signal: fetchCtrl.signal
+  })
+  .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+  .then(({ ok, data }) => {
+    btn.disabled = false;
+    btn.textContent = '提取';
+    if (ok) {
+      document.getElementById('titleInput').value = data.title || '';
+      document.getElementById('contentArea').value = data.content || '';
+      updateLen();
+
+      // 处理媒体
+      fetchedMedia = data.media || [];
+      selectedMedia.clear();
+      if (fetchedMedia.length > 0) {
+        renderMediaGrid();
+        document.getElementById('mediaCard').classList.remove('hidden');
+        showFetchStatus('提取成功！正文 ' + data.length + ' 字，发现 ' + fetchedMedia.length + ' 个媒体文件。请审查下方媒体。', 'success');
+      } else {
+        document.getElementById('mediaCard').classList.add('hidden');
+        showFetchStatus('提取成功！共 ' + data.length + ' 字，未发现媒体。', 'success');
+      }
+    } else {
+      showFetchStatus('提取失败: ' + (data.detail || '未知错误') + '\n可尝试手动复制粘贴', 'error');
+    }
+  })
+  .catch(e => {
+    btn.disabled = false;
+    btn.textContent = '提取';
+    const msg = e.name === 'AbortError' ? '请求超时，请稍后重试' : '请求失败: ' + e.message;
+    showFetchStatus(msg, 'error');
+  })
+  .finally(() => clearTimeout(fetchTimer));
+}
+
+// ===== 媒体审查 =====
+function renderMediaGrid() {
+  const grid = document.getElementById('mediaGrid');
+  const imgCount = fetchedMedia.filter(m => m.type === 'image').length;
+  const vidCount = fetchedMedia.filter(m => m.type === 'video').length;
+  document.getElementById('mediaCount').textContent =
+    '(' + imgCount + ' 张图片' + (vidCount > 0 ? ', ' + vidCount + ' 个视频' : '') + ')';
+
+  grid.innerHTML = fetchedMedia.map((m, i) => {
+    const isImg = m.type === 'image';
+    const proxyUrl = API_BASE + '/admin/proxy_media?url=' + encodeURIComponent(m.url);
+    const sel = selectedMedia.has(i) ? ' selected' : '';
+    const checkIcon = selectedMedia.has(i) ? '&#10003;' : '';
+    const content = isImg
+      ? '<img src="' + proxyUrl + '" loading="lazy" onerror="this.src=\'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22><text x=%2210%22 y=%2250%22 fill=%22gray%22>加载失败</text></svg>\'">'
+      : '<div class="video-placeholder">&#9654;</div>';
+    return '<div class="media-item' + sel + '" onclick="toggleMedia(' + i + ')">' +
+      content +
+      '<span class="media-type-badge">' + (isImg ? '图片' : '视频') + '</span>' +
+      '<span class="media-check">' + checkIcon + '</span>' +
+      '<div class="media-label">' + (m.alt || (isImg ? '图片 ' + (i+1) : '视频 ' + (i+1))) + '</div>' +
+    '</div>';
+  }).join('');
+
+  updateMediaEdit();
+}
+
+function toggleMedia(idx) {
+  if (selectedMedia.has(idx)) {
+    selectedMedia.delete(idx);
+  } else {
+    selectedMedia.add(idx);
+  }
+  renderMediaGrid();
+}
+
+function selectAllMedia(select) {
+  if (select) {
+    fetchedMedia.forEach((_, i) => selectedMedia.add(i));
+  } else {
+    selectedMedia.clear();
+  }
+  renderMediaGrid();
+}
+
+function updateMediaEdit() {
+  const section = document.getElementById('mediaEditSection');
+  if (selectedMedia.size > 0) {
+    section.classList.remove('hidden');
+  } else {
+    section.classList.add('hidden');
+  }
+}
+
+function doSaveMedia() {
+  const product = document.getElementById('idInput').value.trim();
+  if (!product) {
+    showMediaStatus('请先在上方填写实体 ID', 'error');
+    return;
+  }
+  if (selectedMedia.size === 0) {
+    showMediaStatus('请至少选择一个媒体', 'error');
+    return;
+  }
+
+  const keywords = document.getElementById('mediaKeywords').value.trim()
+    .split(/[,，]/).map(s => s.trim()).filter(Boolean);
+  const routes = document.getElementById('mediaRoutes').value.trim()
+    .split(/[,，]/).map(s => s.trim()).filter(Boolean);
+
+  const mediaList = [];
+  selectedMedia.forEach(i => {
+    const m = fetchedMedia[i];
+    mediaList.push({
+      title: m.alt || (m.type === 'image' ? '图片' : '视频'),
+      type: m.type,
+      url: m.url,
+      keywords: keywords,
+      routes: routes,
+    });
+  });
+
+  const btn = document.getElementById('saveMediaBtn');
+  btn.disabled = true;
+  btn.textContent = '保存中...';
+
+  fetch(API_BASE + '/admin/save_media', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+    body: JSON.stringify({ product: product, media: mediaList })
+  })
+  .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+  .then(({ ok, data }) => {
+    btn.disabled = false;
+    btn.textContent = '保存选中媒体';
+    if (ok) {
+      showMediaStatus('保存成功！新增 ' + data.added + ' 个，总计 ' + data.total + ' 个媒体', 'success');
+    } else {
+      showMediaStatus('保存失败: ' + (data.detail || JSON.stringify(data)), 'error');
+    }
+  })
+  .catch(e => {
+    btn.disabled = false;
+    btn.textContent = '保存选中媒体';
+    showMediaStatus('请求失败: ' + e.message, 'error');
+  });
+}
+
+function showMediaStatus(msg, type) {
+  const el = document.getElementById('mediaStatus');
+  el.className = 'status ' + type;
+  el.textContent = msg;
+}
+
+function showFetchStatus(msg, type) {
+  const el = document.getElementById('fetchStatus');
+  el.className = 'status ' + type;
+  el.textContent = msg;
+  el.style.whiteSpace = 'pre-wrap';
+}
+
+// ===== 提交导入 =====
+function doSubmit() {
+  const type = document.getElementById('typeSelect').value;
+  const id = document.getElementById('idInput').value.trim();
+  const content = document.getElementById('contentArea').value.trim();
+  const title = document.getElementById('titleInput').value.trim();
+  const build = document.getElementById('buildCheck').checked;
+  const dryRun = document.getElementById('dryRunCheck').checked;
+
+  if (!content || content.length < 10) {
+    showResult('请先提取或粘贴文章内容（至少10个字符）', 'error'); return;
+  }
+  if (['product','procedure','equipment','material'].includes(type) && !id) {
+    showResult('该类型需要填写实体 ID', 'error'); return;
+  }
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = '导入中，请稍候...';
+  showResult('正在调用 LLM 整理文档，可能需要 10-30 秒...', 'loading');
+
+  const fullContent = title ? '\u3010' + title + '\u3011\n\n' + content : content;
+
+  const submitCtrl = new AbortController();
+  const submitTimer = setTimeout(() => submitCtrl.abort(), 60000);
+  fetch(API_BASE + '/admin/import_knowledge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+    body: JSON.stringify({ type: type, id: id, content: fullContent, build: build, dry_run: dryRun }),
+    signal: submitCtrl.signal
+  })
+  .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+  .then(({ ok, data }) => {
+    btn.disabled = false;
+    btn.textContent = '提交导入';
+    if (ok) {
+      const msg = dryRun
+        ? '预览成功！\n' + JSON.stringify(data, null, 2)
+        : '导入成功！' + (data.files_generated ? '\n生成文件: ' + Object.keys(data.files_generated).join(', ') : '');
+      showResult(msg, 'success');
+      addHistory(title || id || type, true);
+    } else {
+      showResult('导入失败: ' + (data.detail || JSON.stringify(data)), 'error');
+    }
+  })
+  .catch(e => {
+    btn.disabled = false;
+    btn.textContent = '提交导入';
+    const msg = e.name === 'AbortError' ? '请求超时（60秒），LLM 处理可能仍在进行' : '请求失败: ' + e.message;
+    showResult(msg, 'error');
+  })
+  .finally(() => clearTimeout(submitTimer));
+}
+
+function showResult(msg, type) {
+  const el = document.getElementById('resultStatus');
+  el.className = 'status ' + type;
+  el.textContent = msg;
+  el.style.whiteSpace = 'pre-wrap';
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function clearForm() {
+  document.getElementById('titleInput').value = '';
+  document.getElementById('idInput').value = '';
+  document.getElementById('contentArea').value = '';
+  document.getElementById('urlInput').value = '';
+  document.getElementById('resultStatus').className = 'status';
+  document.getElementById('resultStatus').style.display = 'none';
+  document.getElementById('fetchStatus').className = 'status';
+  document.getElementById('fetchStatus').style.display = 'none';
+  document.getElementById('mediaCard').classList.add('hidden');
+  document.getElementById('mediaKeywords').value = '';
+  document.getElementById('mediaRoutes').value = '';
+  fetchedMedia = [];
+  selectedMedia.clear();
+  updateLen();
+}
+
+function updateLen() {
+  const len = document.getElementById('contentArea').value.length;
+  document.getElementById('contentLen').textContent = len > 0 ? '(' + len + ' 字)' : '';
+}
+
+// ===== 书签脚本 =====
+function generateBookmark() {
+  const serverUrl = API_BASE + '/mobile';
+  // 书签脚本：提取当前页面正文，编码后跳转到 /mobile 页面
+  const code = "javascript:void(function(){var t=document.title||'';var c=document.getElementById('js_content');var txt=c?c.innerText:(document.body.innerText||'');var u='" + serverUrl + "?bm_title='+encodeURIComponent(t)+'&bm_content='+encodeURIComponent(txt.substring(0,8000));location.href=u;}())";
+  document.getElementById('bookmarkCode').textContent = code;
+}
+
+function copyBookmark() {
+  const code = document.getElementById('bookmarkCode').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    const btn = event.target;
+    btn.textContent = '已复制！';
+    setTimeout(() => { btn.textContent = '复制书签脚本代码'; }, 2000);
+  }).catch(() => {
+    // fallback
+    const ta = document.createElement('textarea');
+    ta.value = code;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    const btn = event.target;
+    btn.textContent = '已复制！';
+    setTimeout(() => { btn.textContent = '复制书签脚本代码'; }, 2000);
+  });
+}
+
+// ===== 检查 URL 参数（书签脚本跳转过来时自动填入） =====
+function checkUrlParams() {
+  const params = new URLSearchParams(location.search);
+  const bmTitle = params.get('bm_title');
+  const bmContent = params.get('bm_content');
+  if (bmContent) {
+    document.getElementById('titleInput').value = bmTitle || '';
+    document.getElementById('contentArea').value = bmContent;
+    updateLen();
+    switchTab('text');
+    showResult('书签脚本已自动填入内容（' + bmContent.length + ' 字），请选择类型和ID后提交', 'success');
+    // 清除 URL 参数，避免刷新重复填入
+    history.replaceState(null, '', location.pathname);
+  }
+}
+
+// ===== 历史记录 =====
+function addHistory(name, success) {
+  const list = JSON.parse(localStorage.getItem('rag_import_history') || '[]');
+  list.unshift({ name, success, time: new Date().toLocaleString('zh-CN') });
+  if (list.length > 10) list.length = 10;
+  localStorage.setItem('rag_import_history', JSON.stringify(list));
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = JSON.parse(localStorage.getItem('rag_import_history') || '[]');
+  if (!list.length) return;
+  document.getElementById('historyCard').style.display = '';
+  document.getElementById('historyList').innerHTML = list.map(h =>
+    '<div style="padding:6px 0;border-bottom:1px solid #f0f0f0">' +
+      (h.success ? '<span style="color:#22c55e">&#10003;</span> ' : '<span style="color:#ef4444">&#10007;</span> ') +
+      h.name + ' <span style="float:right;font-size:11px">' + h.time + '</span>' +
+    '</div>'
+  ).join('');
+}
+renderHistory();
+</script>
+</body>
+</html>
